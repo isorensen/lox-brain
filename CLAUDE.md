@@ -78,6 +78,42 @@ The project follows an 11-phase plan with explicit gate approval between phases.
 - Cloud Logging with audit trail for all access
 - Daily disk snapshots for backup
 
+## Security & Engineering Standards
+
+### Infrastructure Security (CRITICAL)
+- **NEVER** expose database ports (5432, 3306, 6379, 27017) to 0.0.0.0 or public IPs.
+- **ALWAYS** enable SSL/TLS on all database connections.
+- **ALWAYS** enable automated backups on database instances.
+- **NEVER** assign public IPs to database instances. Use VPC/private networking.
+- **NEVER** create firewall rules with source 0.0.0.0/0 for SSH/RDP/DB ports.
+- **NEVER** use primitive IAM roles (Editor/Owner) on service accounts.
+- **ALWAYS** deploy Cloud Run/Lambda with authentication required (`--no-allow-unauthenticated`).
+- **ALWAYS** use dedicated service accounts with least-privilege roles.
+
+### Secrets Management (CRITICAL)
+- **NEVER** hardcode passwords, API keys, or tokens in source code.
+- **ALWAYS** use GCP Secret Manager for production secrets.
+- **ALWAYS** ensure .gitignore covers: `.env`, `*.pem`, `*.key`, `credentials.json`, `service-account*.json`
+- If a secret is committed accidentally: **rotate immediately** (removing from history is not enough).
+
+### Code Security
+- **ALWAYS** use prepared statements / parameterized queries for SQL.
+- **ALWAYS** sanitize output to prevent XSS.
+- **ALWAYS** configure security headers (CSP, HSTS, X-Frame-Options, X-Content-Type-Options).
+- **NEVER** use CORS `Access-Control-Allow-Origin: *` in production.
+- **ALWAYS** implement rate limiting on public endpoints.
+
+### Node.js Security
+- Run `npm audit` before committing.
+- Use `helmet` for security headers in Express apps.
+- Use `express-rate-limit` for rate limiting.
+- Never use `eval()` or `new Function()` with user input.
+
+### LGPD/BACEN Compliance
+- **ALWAYS** encrypt personal data at rest and in transit.
+- **ALWAYS** implement audit logging for personal data access.
+- **ALWAYS** use anonymized data in non-production environments.
+
 ## Database Schema
 
 Table `vault_embeddings`: `id` (UUID PK), `file_path` (TEXT UNIQUE), `title`, `content`, `tags` (TEXT[]), `embedding` (vector(1536)), `file_hash` (SHA256), `created_at`, `updated_at`. Indexes: ivfflat on embedding (cosine), GIN on tags, btree on updated_at DESC.

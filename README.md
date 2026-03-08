@@ -393,12 +393,106 @@ chmod +x /home/$USER/obsidian/git-sync.sh
 - **WireGuard VPN:** split tunnel, only 10.10.0.0/24 routed; static IP with firewall-restricted access (UDP 51820 only)
 - **Audit:** Cloud Logging enabled
 
+### Phase 4: PostgreSQL + pgvector
+
+```bash
+# On VM (via SSH IAP):
+sudo apt install -y postgresql postgresql-16-pgvector
+
+# Create database and user
+sudo -u postgres psql << 'SQL'
+CREATE USER obsidian_brain WITH PASSWORD 'FROM_SECRET_MANAGER';
+CREATE DATABASE open_brain OWNER obsidian_brain;
+\c open_brain
+CREATE EXTENSION vector;
+SQL
+
+# Store password in Secret Manager
+echo -n "PASSWORD" | gcloud secrets create pg-obsidian-password --data-file=-
+
+# Schema (see docs/plans for full DDL)
+# Table: vault_embeddings (UUID PK, file_path UNIQUE, embedding vector(1536), tags TEXT[], file_hash)
+# Indexes: ivfflat cosine, GIN tags, btree updated_at DESC
+```
+
+### Phases 5-7: Application Code (TypeScript, TDD)
+
+```bash
+npm install
+npm run build          # tsc
+npm test               # vitest (59 tests)
+npm run test:coverage  # vitest --coverage (target: 80%+)
+```
+
+Components:
+- **Embedding Service** (`src/lib/embedding-service.ts`): OpenAI text-embedding-3-small, parseNote, computeHash
+- **DB Client** (`src/lib/db-client.ts`): upsert, delete, searchSemantic, searchText, listRecent
+- **Vault Watcher** (`src/watcher/`): chokidar file watcher → embedding pipeline
+- **MCP Server** (`src/mcp/`): 6 tools via stdio transport
+
+### Phase 8: Integration Testing
+
+```bash
+# On VM: index all vault notes
+export $(cat .env | xargs) && npm run index-vault
+
+# Start watcher (or use systemd service)
+sudo systemctl start obsidian-watcher
+
+# Test MCP server
+echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | \
+  VAULT_PATH=... PG_PASSWORD=... OPENAI_API_KEY=... npx tsx src/mcp/index.ts
+```
+
+### Phase 11: Claude Code MCP Config
+
+```bash
+# Prerequisites: VPN active, SSH config for obsidian-vm (10.10.0.1)
+
+# Add MCP server to Claude Code (global scope)
+claude mcp add --scope user obsidian-brain -- \
+  ssh obsidian-vm "cd /home/sorensen/obsidian_open_brain && \
+  export \$(cat .env | xargs) && npx tsx src/mcp/index.ts"
+
+# Verify
+claude mcp list
+```
+
+Available MCP tools: `write_note`, `read_note`, `delete_note`, `search_semantic`, `search_text`, `list_recent`
+
+## VM Services (systemd)
+
+```bash
+# Watcher auto-starts on boot
+sudo systemctl status obsidian-watcher    # check status
+sudo journalctl -u obsidian-watcher -f    # follow logs
+
+# MCP Server is invoked on-demand by Claude Code via SSH (no systemd needed)
+```
+
+## Project Status
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | GCP Infrastructure | Complete |
+| 2 | WireGuard VPN | Complete |
+| 3 | Git Vault Sync | Complete |
+| 4 | PostgreSQL + pgvector | Complete |
+| 5 | Embedding Service | Complete |
+| 6 | Vault Watcher | Complete |
+| 7 | MCP Server | Complete |
+| 8 | Integration Testing | Complete |
+| 9 | Cloud Run Panel | Deferred |
+| 10 | Backups & Monitoring | Pending |
+| 11 | Claude Code MCP Config | Complete |
+
 ## Documentation
 
 - [Design](docs/plans/2026-03-07-obsidian-open-brain-design.md)
 - [Implementation Plan](docs/plans/2026-03-07-obsidian-open-brain-plan.md)
 - [Handoff](docs/HANDOFF.md)
 - [Technical Handoff](docs/TECHNICAL_HANDOFF.md)
+- [TODO](TODO.md)
 
 ## License
 

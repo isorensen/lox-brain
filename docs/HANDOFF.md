@@ -20,10 +20,10 @@ O usuario trabalha junto, configura manualmente o que for necessario, testa, e s
 | 5 | Embedding Service (library, TDD) | COMPLETA | Gate 5 |
 | 6 | Vault Watcher (TDD) | COMPLETA | Gate 6 |
 | 7 | MCP Server (TDD) | COMPLETA | Gate 7 |
-| 8 | Integration Testing (end-to-end) | PENDENTE | Gate 8 |
+| 8 | Integration Testing (end-to-end) | COMPLETA | Gate 8 |
 | 9 | Cloud Run Panel (VM start/stop) | PENDENTE | — |
 | 10 | Backups & Monitoring | PENDENTE | — |
-| 11 | Claude Code MCP Config | PENDENTE | Gate 11 |
+| 11 | Claude Code MCP Config | COMPLETA | Gate 11 |
 
 ## Documentos de Referencia
 
@@ -111,3 +111,22 @@ Regra: cada fase deve estar em producao e funcional antes de avancar. Eu confirm
 - Code review: 5 issues + 4 suggestions corrigidos antes do commit
 - Scripts npm: `mcp` (tsx dev), `mcp:prod` (node dist)
 - Proxima fase: Fase 8 (Integration Testing)
+
+### 2026-03-08 — Fase 8 completa
+- Repo clonado na VM: `~/obsidian_open_brain` (branch feat/v0)
+- Token `git-vault-token` atualizado com acesso ao repo `obsidian_open_brain`
+- .env criado na VM com VAULT_PATH, PG_PASSWORD, OPENAI_API_KEY (via Secret Manager)
+- Script `index-vault.ts`: indexou 181/186 notas (5 falharam por exceder 8192 tokens — chunking pendente, ver TODO.md)
+- Watcher testado ao vivo: criacao e remocao de nota detectadas e refletidas no DB
+- MCP Server testado via JSON-RPC stdin: retornou 6 tools corretamente
+- Pendencia: implementar text chunking para notas longas (TODO.md)
+- Proximas fases: Fase 9 (Cloud Run Panel, deferivel), Fase 10 (Backups), Fase 11 (Claude Code MCP Config)
+
+### 2026-03-08 — Systemd + Fase 11 completa
+- Systemd service `obsidian-watcher.service`: watcher inicia automaticamente no boot (enabled)
+- MCP Server nao precisa de systemd — e invocado sob demanda pelo Claude Code via SSH
+- SSH config local: `Host obsidian-vm` aponta para `10.10.0.1` via VPN (chave `google_compute_engine`)
+- Claude Code MCP config (scope user): `claude mcp add --scope user obsidian-brain -- ssh obsidian-vm "cd ... && export $(cat .env | xargs) && npx tsx src/mcp/index.ts"`
+- 6 tools testadas e funcionais: search_semantic, search_text, list_recent, read_note, write_note, delete_note
+- Busca semantica por "cafe" retornou notas corretas com similarity scores
+- Proximas fases pendentes: Fase 9 (Cloud Run Panel, deferida), Fase 10 (Backups & Monitoring)

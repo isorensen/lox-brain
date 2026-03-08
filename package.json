@@ -9,7 +9,9 @@
     "test:coverage": "vitest run --coverage",
     "dev": "tsx watch src/index.ts",
     "watcher": "tsx src/watcher/index.ts",
-    "watcher:prod": "node dist/watcher/index.js"
+    "watcher:prod": "node dist/watcher/index.js",
+    "mcp": "tsx src/mcp/index.ts",
+    "mcp:prod": "node dist/mcp/index.js"
   },
   "repository": {
     "type": "git",
@@ -24,6 +26,7 @@
   },
   "homepage": "https://github.com/isorensen/obsidian_open_brain#readme",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "chokidar": "^5.0.0",
     "openai": "^6.27.0",
     "pg": "^8.20.0"

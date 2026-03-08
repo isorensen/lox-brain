@@ -1,7 +1,7 @@
 # Obsidian Open Brain — Session Handoff
 
 **Projeto:** obsidian_open_brain
-**Ultimo update:** 2026-03-07
+**Ultimo update:** 2026-03-08
 
 ## Regra de Ouro
 
@@ -18,8 +18,8 @@ O usuario trabalha junto, configura manualmente o que for necessario, testa, e s
 | 3 | Git Vault Sync on VM | COMPLETA | Gate 3 |
 | 4 | PostgreSQL + pgvector | COMPLETA | Gate 4 |
 | 5 | Embedding Service (library, TDD) | COMPLETA | Gate 5 |
-| 6 | Vault Watcher (TDD) | PENDENTE | Gate 6 |
-| 7 | MCP Server (TDD) | PENDENTE | Gate 7 |
+| 6 | Vault Watcher (TDD) | COMPLETA | Gate 6 |
+| 7 | MCP Server (TDD) | COMPLETA | Gate 7 |
 | 8 | Integration Testing (end-to-end) | PENDENTE | Gate 8 |
 | 9 | Cloud Run Panel (VM start/stop) | PENDENTE | — |
 | 10 | Backups & Monitoring | PENDENTE | — |
@@ -89,3 +89,25 @@ Regra: cada fase deve estar em producao e funcional antes de avancar. Eu confirm
 - Code review: blocker corrigido (guard empty OpenAI response), YAML list tags, quoted titles, limit validation, error path tests
 - OpenAI API key no Secret Manager: `openai-api-key`
 - Proxima fase: Fase 6 (Vault Watcher)
+
+### 2026-03-08 — Fase 6 completa
+- VaultWatcher class: shouldProcess (filtra .md, ignora .obsidian/.git), handleFileChange (hash skip, parse, embed, upsert), handleFileDelete
+- Entry point com chokidar v5 (dynamic import ESM/CJS), handlers DRY via processFile()
+- Error handling: console.error no catch (nao silencia falhas), erros de delete propagados ao caller
+- UUID gerado no watcher (descartado no UPDATE via ON CONFLICT, documentado com comentario)
+- Embedding text: filter(Boolean).join('\n') — sem \n extra quando titulo e null
+- 33 testes passando (12 novos), tsc --noEmit limpo, 0 vulnerabilidades
+- Code review: 2 blockers + 3 issues + 3 suggestions corrigidos antes do commit
+- Scripts npm: `watcher` (tsx dev), `watcher:prod` (node dist)
+- Proxima fase: Fase 7 (MCP Server)
+
+### 2026-03-08 — Fase 7 completa
+- MCP Server com 6 tools: write_note, read_note, delete_note, search_semantic, search_text, list_recent
+- createTools() com safePath() anti-traversal (path.resolve + prefix check + null-byte rejection)
+- Runtime type guards nos handlers (sem `as string` casts)
+- Entry point stdio transport (@modelcontextprotocol/sdk), env var validation na startup
+- Pool config: 127.0.0.1:5432 explicito, SSL omitido (localhost Zero Trust)
+- 59 testes passando (26 novos MCP), tsc --noEmit limpo, 0 vulnerabilidades
+- Code review: 5 issues + 4 suggestions corrigidos antes do commit
+- Scripts npm: `mcp` (tsx dev), `mcp:prod` (node dist)
+- Proxima fase: Fase 8 (Integration Testing)

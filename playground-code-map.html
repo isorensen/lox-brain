@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Open Brain - Code Map</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface2: #1c2128;
+  --border: #30363d;
+  --border-light: #484f58;
+  --text: #e6edf3;
+  --text-muted: #8b949e;
+  --text-dim: #6e7681;
+  --accent: #58a6ff;
+  --accent-hover: #79c0ff;
+  --green: #3fb950;
+  --red: #f85149;
+  --orange: #d29922;
+  --purple: #bc8cff;
+  --mono: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  --radius: 6px;
+  --radius-lg: 10px;
+
+  --layer-external: #1e3a5f;
+  --layer-infra: #3b2f2f;
+  --layer-mcp: #2d3748;
+  --layer-watcher: #1a3a2a;
+  --layer-core: #2d2444;
+  --layer-data: #3b1f3b;
+  --layer-scripts: #3b3520;
+}
+
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- HEADER ---- */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  gap: 16px;
+  z-index: 20;
+}
+header h1 {
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text);
+}
+header h1 span { color: var(--text-muted); font-weight: 400; }
+
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ---- BUTTONS ---- */
+button {
+  font-family: var(--sans);
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+button:hover { border-color: var(--border-light); color: var(--text); background: var(--surface); }
+button.active { border-color: var(--accent); color: var(--accent); background: rgba(88,166,255,0.08); }
+button.primary {
+  background: var(--accent);
+  color: #0d1117;
+  border-color: var(--accent);
+  font-weight: 600;
+}
+button.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+
+/* ---- MAIN LAYOUT ---- */
+.main-layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ---- SIDEBAR ---- */
+.sidebar {
+  width: 320px;
+  min-width: 320px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.sidebar-section {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.sidebar-section h3 {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+/* Layer toggles */
+.layer-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.layer-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.15s;
+  font-size: 12px;
+}
+.layer-toggle:hover { background: var(--surface2); }
+.layer-toggle input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+}
+.layer-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.layer-toggle span { flex: 1; }
+
+/* Connection toggles */
+.conn-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.conn-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 12px;
+}
+.conn-toggle:hover { background: var(--surface2); }
+.conn-toggle input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+}
+.conn-line {
+  width: 20px;
+  height: 2px;
+  flex-shrink: 0;
+  border-radius: 1px;
+}
+
+/* Comments list */
+.comments-section {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+}
+.comments-section h3 {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.comment-item {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+.comment-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.comment-item-name {
+  font-weight: 600;
+  color: var(--accent);
+  font-size: 11px;
+}
+.comment-item-delete {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 2px;
+  line-height: 1;
+}
+.comment-item-delete:hover { color: var(--red); }
+.comment-item-text { color: var(--text-muted); line-height: 1.4; }
+.no-comments { color: var(--text-dim); font-size: 12px; font-style: italic; }
+
+/* ---- CANVAS AREA ---- */
+.canvas-area {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(88,166,255,0.02) 0%, transparent 70%),
+    var(--bg);
+}
+.canvas-area svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Grid pattern */
+.grid-pattern { fill: url(#gridPattern); }
+
+/* Node styles via SVG */
+.node-group { cursor: pointer; }
+.node-group:hover .node-rect { filter: brightness(1.2); }
+.node-group.selected .node-rect { stroke: var(--accent); stroke-width: 2; }
+
+/* ---- ZOOM CONTROLS ---- */
+.zoom-controls {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 10;
+}
+.zoom-controls button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 600;
+  font-family: var(--mono);
+}
+
+/* ---- PROMPT OUTPUT ---- */
+.prompt-bar {
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 10px 20px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex-shrink: 0;
+  z-index: 20;
+}
+.prompt-bar-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  padding-top: 3px;
+  white-space: nowrap;
+}
+.prompt-text {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  max-height: 80px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.copy-btn { flex-shrink: 0; }
+.copy-btn.copied { color: var(--green); border-color: var(--green); }
+
+/* ---- MODAL ---- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  width: 400px;
+  max-width: 90vw;
+}
+.modal h2 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.modal .modal-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: var(--mono);
+  margin-bottom: 12px;
+}
+.modal textarea {
+  width: 100%;
+  min-height: 80px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  padding: 8px;
+  resize: vertical;
+  margin-bottom: 12px;
+}
+.modal textarea:focus { outline: none; border-color: var(--accent); }
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ---- LEGEND ---- */
+.legend {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  z-index: 10;
+  font-size: 11px;
+}
+.legend h4 {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 3px;
+  color: var(--text-muted);
+}
+.legend-line {
+  width: 24px;
+  height: 0;
+  flex-shrink: 0;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-light); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Open Brain <span>/ Code Map</span></h1>
+  <div class="header-controls">
+    <button id="preset-full" class="active" onclick="applyPreset('full')">Full System</button>
+    <button id="preset-dataflow" onclick="applyPreset('dataflow')">Data Flow</button>
+    <button id="preset-mcp" onclick="applyPreset('mcp')">MCP Pipeline</button>
+    <button id="preset-watch" onclick="applyPreset('watch')">Watch Pipeline</button>
+    <button id="preset-deps" onclick="applyPreset('deps')">Dependencies</button>
+  </div>
+</header>
+
+<div class="main-layout">
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <h3>Layers</h3>
+      <div class="layer-toggles" id="layerToggles"></div>
+    </div>
+    <div class="sidebar-section">
+      <h3>Connections</h3>
+      <div class="conn-toggles" id="connToggles"></div>
+    </div>
+    <div class="comments-section">
+      <h3>Comments</h3>
+      <div id="commentsList"><div class="no-comments">Click a node to add a comment.</div></div>
+    </div>
+  </div>
+
+  <div class="canvas-area" id="canvasArea">
+    <svg id="svg" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <pattern id="gridPattern" width="20" height="20" patternUnits="userSpaceOnUse">
+          <circle cx="1" cy="1" r="0.5" fill="rgba(255,255,255,0.04)"/>
+        </pattern>
+        <marker id="arrow-data" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L8,3 L0,6 Z" fill="#58a6ff"/>
+        </marker>
+        <marker id="arrow-tool" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L8,3 L0,6 Z" fill="#3fb950"/>
+        </marker>
+        <marker id="arrow-dep" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L8,3 L0,6 Z" fill="#6e7681"/>
+        </marker>
+        <marker id="arrow-event" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L8,3 L0,6 Z" fill="#f85149"/>
+        </marker>
+      </defs>
+      <rect class="grid-pattern" width="100%" height="100%"/>
+      <g id="canvasGroup">
+        <g id="connectionsGroup"></g>
+        <g id="nodesGroup"></g>
+      </g>
+    </svg>
+
+    <div class="legend">
+      <h4>Connections</h4>
+      <div class="legend-item">
+        <svg class="legend-line" viewBox="0 0 24 2"><line x1="0" y1="1" x2="24" y2="1" stroke="#58a6ff" stroke-width="2"/></svg>
+        Data Flow
+      </div>
+      <div class="legend-item">
+        <svg class="legend-line" viewBox="0 0 24 2"><line x1="0" y1="1" x2="24" y2="1" stroke="#3fb950" stroke-width="2" stroke-dasharray="6,3"/></svg>
+        Tool Calls
+      </div>
+      <div class="legend-item">
+        <svg class="legend-line" viewBox="0 0 24 2"><line x1="0" y1="1" x2="24" y2="1" stroke="#6e7681" stroke-width="1.5" stroke-dasharray="2,3"/></svg>
+        Dependencies
+      </div>
+      <div class="legend-item">
+        <svg class="legend-line" viewBox="0 0 24 2"><line x1="0" y1="1" x2="24" y2="1" stroke="#f85149" stroke-width="2" stroke-dasharray="4,4"/></svg>
+        Events
+      </div>
+    </div>
+
+    <div class="zoom-controls">
+      <button onclick="zoomIn()" title="Zoom in">+</button>
+      <button onclick="zoomOut()" title="Zoom out">-</button>
+      <button onclick="zoomReset()" title="Reset zoom" style="font-size:11px;">R</button>
+    </div>
+  </div>
+</div>
+
+<div class="prompt-bar">
+  <div class="prompt-bar-label">Prompt</div>
+  <div class="prompt-text" id="promptOutput">Showing the full Open Brain system architecture with all layers and connection types.</div>
+  <button class="copy-btn" id="copyBtn" onclick="copyPrompt()">Copy</button>
+</div>
+
+<!-- Comment Modal -->
+<div class="modal-overlay" id="modalOverlay" onclick="closeModalOutside(event)">
+  <div class="modal">
+    <h2 id="modalTitle"></h2>
+    <div class="modal-subtitle" id="modalSubtitle"></div>
+    <textarea id="modalTextarea" placeholder="Add a comment about this component..."></textarea>
+    <div class="modal-actions">
+      <button onclick="closeModal()">Cancel</button>
+      <button class="primary" onclick="saveComment()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ========== DATA ==========
+
+const LAYERS = {
+  external:  { name: 'External',       color: '#1e3a5f', textColor: '#7eb8e6' },
+  infra:     { name: 'Infrastructure',  color: '#3b2f2f', textColor: '#c4a882' },
+  mcp:       { name: 'MCP Server',      color: '#2d3748', textColor: '#8ea4c8' },
+  watcher:   { name: 'Watcher',         color: '#1a3a2a', textColor: '#7ec49a' },
+  core:      { name: 'Core Library',    color: '#2d2444', textColor: '#b8a0d8' },
+  data:      { name: 'Data',            color: '#3b1f3b', textColor: '#c48ec4' },
+  scripts:   { name: 'Scripts',         color: '#3b3520', textColor: '#c4b87e' },
+};
+
+const CONN_TYPES = {
+  data:  { name: 'Data Flow',    color: '#58a6ff', dash: '',        width: 2,   marker: 'arrow-data' },
+  tool:  { name: 'Tool Calls',   color: '#3fb950', dash: '6,3',    width: 2,   marker: 'arrow-tool' },
+  dep:   { name: 'Dependencies', color: '#6e7681', dash: '2,3',    width: 1.5, marker: 'arrow-dep' },
+  event: { name: 'Events',       color: '#f85149', dash: '4,4',    width: 2,   marker: 'arrow-event' },
+};
+
+const NODES = [
+  // External
+  { id: 'obsidian',    layer: 'external', title: 'Obsidian Desktop',  subtitle: 'Local vault editor' },
+  { id: 'openai',      layer: 'external', title: 'OpenAI API',        subtitle: 'text-embedding-3-small' },
+  { id: 'claude',      layer: 'external', title: 'Claude Code',       subtitle: 'MCP Client via VPN' },
+  // Infrastructure
+  { id: 'wireguard',   layer: 'infra',    title: 'WireGuard VPN',     subtitle: 'UDP 51820' },
+  { id: 'gitsync',     layer: 'infra',    title: 'Git Sync',          subtitle: 'cron 2min push/pull' },
+  // MCP Server
+  { id: 'mcpserver',   layer: 'mcp',      title: 'MCP Server',        subtitle: 'src/mcp/index.ts' },
+  { id: 'mcptools',    layer: 'mcp',      title: 'MCP Tools',         subtitle: 'src/mcp/tools.ts' },
+  // Watcher
+  { id: 'filewatcher', layer: 'watcher',  title: 'File Watcher',      subtitle: 'src/watcher/index.ts' },
+  { id: 'vaultwatcher',layer: 'watcher',  title: 'Vault Watcher',     subtitle: 'src/watcher/vault-watcher.ts' },
+  // Core Library
+  { id: 'embedding',   layer: 'core',     title: 'Embedding Service',  subtitle: 'src/lib/embedding-service.ts' },
+  { id: 'dbclient',    layer: 'core',     title: 'DB Client',          subtitle: 'src/lib/db-client.ts' },
+  { id: 'types',       layer: 'core',     title: 'Types',              subtitle: 'src/lib/types.ts' },
+  // Data
+  { id: 'postgres',    layer: 'data',     title: 'PostgreSQL 16',      subtitle: 'localhost:5432, pgvector' },
+  { id: 'vaultfiles',  layer: 'data',     title: 'Vault Files',        subtitle: '~/.obsidian-vault/*.md' },
+  // Scripts
+  { id: 'indexvault',  layer: 'scripts',  title: 'Index Vault',        subtitle: 'src/scripts/index-vault.ts' },
+];
+
+const CONNECTIONS = [
+  // Data Flow
+  { from: 'obsidian',    to: 'gitsync',      type: 'data',  label: 'git push' },
+  { from: 'gitsync',     to: 'vaultfiles',   type: 'data',  label: 'git pull' },
+  { from: 'filewatcher', to: 'vaultwatcher',  type: 'data',  label: 'file events' },
+  { from: 'vaultwatcher',to: 'embedding',     type: 'data',  label: 'parse & hash' },
+  { from: 'embedding',   to: 'openai',        type: 'data',  label: 'generate embedding' },
+  { from: 'vaultwatcher',to: 'dbclient',      type: 'data',  label: 'upsert note' },
+  { from: 'dbclient',    to: 'postgres',      type: 'data',  label: 'SQL queries' },
+  { from: 'mcptools',    to: 'dbclient',      type: 'data',  label: 'search/list' },
+  { from: 'mcptools',    to: 'vaultfiles',    type: 'data',  label: 'read/write .md' },
+  // Tool Calls
+  { from: 'claude',      to: 'wireguard',     type: 'tool',  label: 'VPN tunnel' },
+  { from: 'wireguard',   to: 'mcpserver',     type: 'tool',  label: 'stdio' },
+  { from: 'mcpserver',   to: 'mcptools',      type: 'tool',  label: 'tool dispatch' },
+  { from: 'mcptools',    to: 'embedding',     type: 'tool',  label: 'embed for write_note' },
+  // Dependencies
+  { from: 'mcpserver',   to: 'dbclient',      type: 'dep',   label: 'imports' },
+  { from: 'mcpserver',   to: 'embedding',     type: 'dep',   label: 'imports' },
+  { from: 'vaultwatcher',to: 'embedding',     type: 'dep',   label: 'imports' },
+  { from: 'vaultwatcher',to: 'dbclient',      type: 'dep',   label: 'imports' },
+  { from: 'indexvault',  to: 'vaultwatcher',   type: 'dep',   label: 'reuses pipeline' },
+  { from: 'indexvault',  to: 'embedding',      type: 'dep',   label: 'imports' },
+  { from: 'indexvault',  to: 'dbclient',       type: 'dep',   label: 'imports' },
+  { from: 'types',       to: 'dbclient',       type: 'dep',   label: 'type imports' },
+  { from: 'types',       to: 'embedding',      type: 'dep',   label: 'type imports' },
+  // Events
+  { from: 'vaultfiles',  to: 'filewatcher',    type: 'event', label: 'chokidar add/change/unlink' },
+];
+
+// ========== NODE POSITIONS (hand-tuned layout) ==========
+
+const NODE_W = 180;
+const NODE_H = 52;
+
+const POSITIONS = {
+  // External - top row
+  obsidian:    { x: 60,   y: 30 },
+  openai:      { x: 760,  y: 30 },
+  claude:      { x: 410,  y: 30 },
+  // Infra - second row
+  wireguard:   { x: 410,  y: 120 },
+  gitsync:     { x: 120,  y: 120 },
+  // MCP Server - third row left
+  mcpserver:   { x: 350,  y: 220 },
+  mcptools:    { x: 560,  y: 220 },
+  // Watcher - third row right area
+  filewatcher: { x: 60,   y: 320 },
+  vaultwatcher:{ x: 280,  y: 320 },
+  // Core Library - fourth row
+  embedding:   { x: 530,  y: 320 },
+  dbclient:    { x: 740,  y: 320 },
+  types:       { x: 530,  y: 410 },
+  // Data - bottom row
+  postgres:    { x: 740,  y: 430 },
+  vaultfiles:  { x: 120,  y: 430 },
+  // Scripts
+  indexvault:  { x: 280,  y: 430 },
+};
+
+// ========== STATE ==========
+
+let state = {
+  layers: {},
+  connTypes: {},
+  comments: {},
+  selectedNode: null,
+  zoom: 1,
+  panX: 0,
+  panY: 0,
+};
+
+// Init toggles
+Object.keys(LAYERS).forEach(k => state.layers[k] = true);
+Object.keys(CONN_TYPES).forEach(k => state.connTypes[k] = true);
+
+// ========== PRESETS ==========
+
+const PRESETS = {
+  full: {
+    layers: { external: true, infra: true, mcp: true, watcher: true, core: true, data: true, scripts: true },
+    connTypes: { data: true, tool: true, dep: true, event: true },
+  },
+  dataflow: {
+    layers: { external: true, infra: true, mcp: true, watcher: true, core: true, data: true, scripts: false },
+    connTypes: { data: true, tool: false, dep: false, event: true },
+  },
+  mcp: {
+    layers: { external: true, infra: false, mcp: true, watcher: false, core: true, data: true, scripts: false },
+    connTypes: { data: true, tool: true, dep: true, event: false },
+  },
+  watch: {
+    layers: { external: true, infra: true, mcp: false, watcher: true, core: true, data: true, scripts: false },
+    connTypes: { data: true, tool: false, dep: true, event: true },
+  },
+  deps: {
+    layers: { external: false, infra: false, mcp: true, watcher: true, core: true, data: false, scripts: true },
+    connTypes: { data: false, tool: false, dep: true, event: false },
+  },
+};
+
+let activePreset = 'full';
+
+function applyPreset(name) {
+  const p = PRESETS[name];
+  if (!p) return;
+  activePreset = name;
+  Object.assign(state.layers, p.layers);
+  Object.assign(state.connTypes, p.connTypes);
+  syncToggles();
+  render();
+  updatePrompt();
+  updatePresetButtons();
+}
+
+function updatePresetButtons() {
+  document.querySelectorAll('.header-controls button').forEach(b => {
+    b.classList.toggle('active', b.id === 'preset-' + activePreset);
+  });
+}
+
+// ========== UI BUILDING ==========
+
+function buildLayerToggles() {
+  const el = document.getElementById('layerToggles');
+  el.innerHTML = '';
+  Object.entries(LAYERS).forEach(([key, layer]) => {
+    const label = document.createElement('label');
+    label.className = 'layer-toggle';
+    label.innerHTML = `
+      <input type="checkbox" data-layer="${key}" ${state.layers[key] ? 'checked' : ''}>
+      <span class="layer-dot" style="background:${layer.color};border:1px solid ${layer.textColor}"></span>
+      <span>${layer.name}</span>
+    `;
+    label.querySelector('input').addEventListener('change', e => {
+      state.layers[key] = e.target.checked;
+      activePreset = '';
+      updatePresetButtons();
+      render();
+      updatePrompt();
+    });
+    el.appendChild(label);
+  });
+}
+
+function buildConnToggles() {
+  const el = document.getElementById('connToggles');
+  el.innerHTML = '';
+  Object.entries(CONN_TYPES).forEach(([key, ct]) => {
+    const label = document.createElement('label');
+    label.className = 'conn-toggle';
+    const dashStyle = ct.dash ? `background:repeating-linear-gradient(90deg,${ct.color} 0,${ct.color} 3px,transparent 3px,transparent 6px)` : `background:${ct.color}`;
+    label.innerHTML = `
+      <input type="checkbox" data-conn="${key}" ${state.connTypes[key] ? 'checked' : ''}>
+      <span class="conn-line" style="${dashStyle};height:${ct.width}px"></span>
+      <span>${ct.name}</span>
+    `;
+    label.querySelector('input').addEventListener('change', e => {
+      state.connTypes[key] = e.target.checked;
+      activePreset = '';
+      updatePresetButtons();
+      render();
+      updatePrompt();
+    });
+    el.appendChild(label);
+  });
+}
+
+function syncToggles() {
+  document.querySelectorAll('[data-layer]').forEach(cb => {
+    cb.checked = state.layers[cb.dataset.layer];
+  });
+  document.querySelectorAll('[data-conn]').forEach(cb => {
+    cb.checked = state.connTypes[cb.dataset.conn];
+  });
+}
+
+// ========== SVG RENDERING ==========
+
+function render() {
+  renderConnections();
+  renderNodes();
+  updateTransform();
+}
+
+function renderNodes() {
+  const g = document.getElementById('nodesGroup');
+  g.innerHTML = '';
+  NODES.forEach(node => {
+    if (!state.layers[node.layer]) return;
+    const layer = LAYERS[node.layer];
+    const pos = POSITIONS[node.id];
+    const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    group.setAttribute('class', 'node-group' + (state.selectedNode === node.id ? ' selected' : ''));
+    group.setAttribute('transform', `translate(${pos.x}, ${pos.y})`);
+    group.addEventListener('click', e => {
+      e.stopPropagation();
+      openModal(node);
+    });
+
+    // Background rect
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('class', 'node-rect');
+    rect.setAttribute('width', NODE_W);
+    rect.setAttribute('height', NODE_H);
+    rect.setAttribute('rx', '6');
+    rect.setAttribute('ry', '6');
+    rect.setAttribute('fill', layer.color);
+    rect.setAttribute('stroke', lighten(layer.color, 0.3));
+    rect.setAttribute('stroke-width', '1');
+    group.appendChild(rect);
+
+    // Comment indicator
+    if (state.comments[node.id]) {
+      const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      dot.setAttribute('cx', NODE_W - 8);
+      dot.setAttribute('cy', 8);
+      dot.setAttribute('r', 4);
+      dot.setAttribute('fill', '#d29922');
+      group.appendChild(dot);
+    }
+
+    // Title
+    const title = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    title.setAttribute('x', NODE_W / 2);
+    title.setAttribute('y', 20);
+    title.setAttribute('text-anchor', 'middle');
+    title.setAttribute('fill', '#e6edf3');
+    title.setAttribute('font-size', '12');
+    title.setAttribute('font-weight', '600');
+    title.setAttribute('font-family', '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif');
+    title.textContent = node.title;
+    group.appendChild(title);
+
+    // Subtitle
+    const sub = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    sub.setAttribute('x', NODE_W / 2);
+    sub.setAttribute('y', 38);
+    sub.setAttribute('text-anchor', 'middle');
+    sub.setAttribute('fill', layer.textColor);
+    sub.setAttribute('font-size', '9.5');
+    sub.setAttribute('font-family', "'SF Mono', 'Cascadia Code', Consolas, monospace");
+    sub.setAttribute('opacity', '0.85');
+    sub.textContent = node.subtitle;
+    group.appendChild(sub);
+
+    g.appendChild(group);
+  });
+}
+
+function renderConnections() {
+  const g = document.getElementById('connectionsGroup');
+  g.innerHTML = '';
+  CONNECTIONS.forEach(conn => {
+    if (!state.connTypes[conn.type]) return;
+    const fromNode = NODES.find(n => n.id === conn.from);
+    const toNode = NODES.find(n => n.id === conn.to);
+    if (!fromNode || !toNode) return;
+    if (!state.layers[fromNode.layer] || !state.layers[toNode.layer]) return;
+
+    const ct = CONN_TYPES[conn.type];
+    const from = POSITIONS[conn.from];
+    const to = POSITIONS[conn.to];
+
+    // Compute edge points (center of each node)
+    const fx = from.x + NODE_W / 2;
+    const fy = from.y + NODE_H / 2;
+    const tx = to.x + NODE_W / 2;
+    const ty = to.y + NODE_H / 2;
+
+    // Compute connection points on node borders
+    const [sx, sy] = edgePoint(from.x, from.y, NODE_W, NODE_H, tx, ty);
+    const [ex, ey] = edgePoint(to.x, to.y, NODE_W, NODE_H, fx, fy);
+
+    // Bezier control points
+    const dx = ex - sx;
+    const dy = ey - sy;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const curvature = Math.min(dist * 0.3, 60);
+    const mx = (sx + ex) / 2;
+    const my = (sy + ey) / 2;
+
+    // Offset control points perpendicular for same-pair dedup
+    const angle = Math.atan2(dy, dx);
+    const cpx1 = sx + Math.cos(angle) * curvature;
+    const cpy1 = sy + Math.sin(angle) * curvature - curvature * 0.15;
+    const cpx2 = ex - Math.cos(angle) * curvature;
+    const cpy2 = ey - Math.sin(angle) * curvature - curvature * 0.15;
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', `M${sx},${sy} C${cpx1},${cpy1} ${cpx2},${cpy2} ${ex},${ey}`);
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', ct.color);
+    path.setAttribute('stroke-width', ct.width);
+    path.setAttribute('stroke-opacity', '0.7');
+    if (ct.dash) path.setAttribute('stroke-dasharray', ct.dash);
+    path.setAttribute('marker-end', `url(#${ct.marker})`);
+    g.appendChild(path);
+
+    // Label
+    if (conn.label) {
+      const lx = mx;
+      const ly = my - 6;
+      const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      text.setAttribute('x', lx);
+      text.setAttribute('y', ly);
+      text.setAttribute('text-anchor', 'middle');
+      text.setAttribute('fill', ct.color);
+      text.setAttribute('font-size', '8.5');
+      text.setAttribute('font-family', "'SF Mono', Consolas, monospace");
+      text.setAttribute('opacity', '0.65');
+
+      // Background for readability
+      const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      const padding = 3;
+      // We need to measure text - approximate
+      const tw = conn.label.length * 5;
+      bg.setAttribute('x', lx - tw / 2 - padding);
+      bg.setAttribute('y', ly - 8);
+      bg.setAttribute('width', tw + padding * 2);
+      bg.setAttribute('height', 11);
+      bg.setAttribute('fill', '#0d1117');
+      bg.setAttribute('rx', '2');
+      bg.setAttribute('opacity', '0.8');
+      g.appendChild(bg);
+
+      text.textContent = conn.label;
+      g.appendChild(text);
+    }
+  });
+}
+
+function edgePoint(rx, ry, rw, rh, targetX, targetY) {
+  const cx = rx + rw / 2;
+  const cy = ry + rh / 2;
+  const dx = targetX - cx;
+  const dy = targetY - cy;
+
+  if (dx === 0 && dy === 0) return [cx, cy];
+
+  const absDx = Math.abs(dx);
+  const absDy = Math.abs(dy);
+  const scaleX = (rw / 2) / (absDx || 1);
+  const scaleY = (rh / 2) / (absDy || 1);
+  const scale = Math.min(scaleX, scaleY);
+
+  return [cx + dx * scale, cy + dy * scale];
+}
+
+function lighten(hex, amount) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const nr = Math.min(255, Math.round(r + (255 - r) * amount));
+  const ng = Math.min(255, Math.round(g + (255 - g) * amount));
+  const nb = Math.min(255, Math.round(b + (255 - b) * amount));
+  return `#${nr.toString(16).padStart(2,'0')}${ng.toString(16).padStart(2,'0')}${nb.toString(16).padStart(2,'0')}`;
+}
+
+// ========== ZOOM & PAN ==========
+
+function updateTransform() {
+  const g = document.getElementById('canvasGroup');
+  g.setAttribute('transform', `translate(${state.panX},${state.panY}) scale(${state.zoom})`);
+  // Update grid
+  const pat = document.getElementById('gridPattern');
+  pat.setAttribute('patternTransform', `translate(${state.panX},${state.panY}) scale(${state.zoom})`);
+}
+
+function zoomIn()  { state.zoom = Math.min(3, state.zoom * 1.2); updateTransform(); }
+function zoomOut() { state.zoom = Math.max(0.3, state.zoom / 1.2); updateTransform(); }
+function zoomReset() { state.zoom = 1; state.panX = 20; state.panY = 10; updateTransform(); }
+
+// Mouse wheel zoom
+document.getElementById('canvasArea').addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor = e.deltaY > 0 ? 0.93 : 1.07;
+  const newZoom = Math.max(0.3, Math.min(3, state.zoom * factor));
+
+  // Zoom toward mouse position
+  const svg = document.getElementById('svg');
+  const rect = svg.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+
+  state.panX = mx - (mx - state.panX) * (newZoom / state.zoom);
+  state.panY = my - (my - state.panY) * (newZoom / state.zoom);
+  state.zoom = newZoom;
+  updateTransform();
+}, { passive: false });
+
+// Pan with mouse drag
+let isPanning = false;
+let panStart = { x: 0, y: 0 };
+
+document.getElementById('canvasArea').addEventListener('mousedown', e => {
+  if (e.target.closest('.node-group') || e.target.closest('.zoom-controls') || e.target.closest('.legend')) return;
+  isPanning = true;
+  panStart = { x: e.clientX - state.panX, y: e.clientY - state.panY };
+  document.body.style.cursor = 'grabbing';
+});
+
+window.addEventListener('mousemove', e => {
+  if (!isPanning) return;
+  state.panX = e.clientX - panStart.x;
+  state.panY = e.clientY - panStart.y;
+  updateTransform();
+});
+
+window.addEventListener('mouseup', () => {
+  isPanning = false;
+  document.body.style.cursor = '';
+});
+
+// ========== MODAL ==========
+
+let modalNode = null;
+
+function openModal(node) {
+  modalNode = node;
+  document.getElementById('modalTitle').textContent = node.title;
+  document.getElementById('modalSubtitle').textContent = node.subtitle;
+  document.getElementById('modalTextarea').value = state.comments[node.id] || '';
+  document.getElementById('modalOverlay').classList.add('open');
+  setTimeout(() => document.getElementById('modalTextarea').focus(), 50);
+}
+
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('open');
+  modalNode = null;
+}
+
+function closeModalOutside(e) {
+  if (e.target === document.getElementById('modalOverlay')) closeModal();
+}
+
+function saveComment() {
+  if (!modalNode) return;
+  const text = document.getElementById('modalTextarea').value.trim();
+  if (text) {
+    state.comments[modalNode.id] = text;
+  } else {
+    delete state.comments[modalNode.id];
+  }
+  closeModal();
+  renderComments();
+  render();
+  updatePrompt();
+}
+
+document.getElementById('modalTextarea').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault();
+    saveComment();
+  }
+});
+
+// ========== COMMENTS LIST ==========
+
+function renderComments() {
+  const el = document.getElementById('commentsList');
+  const keys = Object.keys(state.comments);
+  if (keys.length === 0) {
+    el.innerHTML = '<div class="no-comments">Click a node to add a comment.</div>';
+    return;
+  }
+  el.innerHTML = '';
+  keys.forEach(nodeId => {
+    const node = NODES.find(n => n.id === nodeId);
+    if (!node) return;
+    const item = document.createElement('div');
+    item.className = 'comment-item';
+    item.innerHTML = `
+      <div class="comment-item-header">
+        <span class="comment-item-name">${node.title}</span>
+        <button class="comment-item-delete" onclick="deleteComment('${nodeId}')" title="Delete">&times;</button>
+      </div>
+      <div class="comment-item-text">${escapeHtml(state.comments[nodeId])}</div>
+    `;
+    el.appendChild(item);
+  });
+}
+
+function deleteComment(nodeId) {
+  delete state.comments[nodeId];
+  renderComments();
+  render();
+  updatePrompt();
+}
+
+function escapeHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ========== PROMPT OUTPUT ==========
+
+function updatePrompt() {
+  const parts = [];
+
+  // Determine what is shown
+  const visibleLayers = Object.entries(state.layers).filter(([,v]) => v).map(([k]) => LAYERS[k].name);
+  const hiddenLayers = Object.entries(state.layers).filter(([,v]) => !v).map(([k]) => LAYERS[k].name);
+  const visibleConns = Object.entries(state.connTypes).filter(([,v]) => v).map(([k]) => CONN_TYPES[k].name);
+  const hiddenConns = Object.entries(state.connTypes).filter(([,v]) => !v).map(([k]) => CONN_TYPES[k].name);
+
+  // Preset descriptions
+  const presetDescs = {
+    full: 'Showing the full Open Brain system architecture with all layers and connection types.',
+    dataflow: 'Showing data flow and event propagation through the system, from Obsidian through git sync, file watching, embedding generation, and database storage.',
+    mcp: 'Showing the MCP pipeline: how Claude Code connects via VPN to the MCP Server, which dispatches tool calls through the core library to the database and vault files.',
+    watch: 'Showing the watch pipeline: how file changes in the vault propagate through chokidar, trigger embedding generation via OpenAI, and get upserted into PostgreSQL.',
+    deps: 'Showing module dependency graph: how the MCP Server, Vault Watcher, and Index Vault script depend on the core library modules.',
+  };
+
+  if (activePreset && presetDescs[activePreset]) {
+    parts.push(presetDescs[activePreset]);
+  } else {
+    // Custom view
+    if (hiddenLayers.length > 0 && hiddenLayers.length <= visibleLayers.length) {
+      parts.push(`Hiding ${hiddenLayers.join(', ')} layers.`);
+    } else if (hiddenLayers.length > visibleLayers.length) {
+      parts.push(`Showing only ${visibleLayers.join(', ')} layers.`);
+    } else {
+      parts.push('Showing all layers.');
+    }
+
+    if (hiddenConns.length > 0 && hiddenConns.length <= visibleConns.length) {
+      parts.push(`${hiddenConns.join(' and ')} connections hidden.`);
+    } else if (hiddenConns.length > visibleConns.length) {
+      parts.push(`Showing only ${visibleConns.join(' and ')} connections.`);
+    }
+  }
+
+  // Comments
+  const commentEntries = Object.entries(state.comments);
+  if (commentEntries.length > 0) {
+    parts.push('');
+    parts.push('Comments:');
+    commentEntries.forEach(([nodeId, text]) => {
+      const node = NODES.find(n => n.id === nodeId);
+      if (node) parts.push(`- ${node.title}: ${text}`);
+    });
+  }
+
+  document.getElementById('promptOutput').textContent = parts.join('\n');
+}
+
+// ========== COPY ==========
+
+function copyPrompt() {
+  const text = document.getElementById('promptOutput').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById('copyBtn');
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.textContent = 'Copy';
+      btn.classList.remove('copied');
+    }, 1500);
+  });
+}
+
+// ========== KEYBOARD ==========
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeModal();
+  if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+  if (e.key === '1') applyPreset('full');
+  if (e.key === '2') applyPreset('dataflow');
+  if (e.key === '3') applyPreset('mcp');
+  if (e.key === '4') applyPreset('watch');
+  if (e.key === '5') applyPreset('deps');
+  if (e.key === '+' || e.key === '=') zoomIn();
+  if (e.key === '-') zoomOut();
+  if (e.key === '0') zoomReset();
+});
+
+// ========== INIT ==========
+
+buildLayerToggles();
+buildConnToggles();
+state.panX = 20;
+state.panY = 10;
+render();
+updatePrompt();
+</script>
+</body>
+</html>

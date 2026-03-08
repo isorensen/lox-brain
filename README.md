@@ -460,6 +460,30 @@ claude mcp list
 
 Available MCP tools: `write_note`, `read_note`, `delete_note`, `search_semantic`, `search_text`, `list_recent`
 
+### Search Tools: Metadata-Only by Default
+
+`search_semantic`, `search_text`, and `list_recent` return **metadata only** (no content) by default to keep responses compact. Use `read_note` to fetch full content after identifying the relevant notes.
+
+All three tools share the same pagination parameters:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | number | 10 (search) / 20 (text) | Max results |
+| `offset` | number | 0 | Skip N results (pagination) |
+| `include_content` | boolean | false | Include full note content in results |
+| `content_preview_length` | number | 0 | Chars of content to include as preview (0 = none) |
+
+All search tools return a `PaginatedResult`:
+```json
+{ "results": [...], "total": 42, "limit": 10, "offset": 0 }
+```
+
+**Typical workflow:**
+```
+search_semantic("kafka consumer") → returns titles/paths/tags
+read_note("path/to/note.md")     → fetch full content of chosen note
+```
+
 ## VM Services (systemd)
 
 ```bash

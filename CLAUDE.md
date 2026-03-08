@@ -36,16 +36,29 @@ Claude Code --VPN--> MCP Server --> tools (write_note, read_note, delete_note, s
 
 ## Build & Test Commands
 
-_(To be updated as code is implemented. Project is currently in specification phase.)_
-
 ```bash
-# Expected commands (Phases 5-7):
 npm install
 npm run build          # tsc
 npm test               # vitest
 npm run test:coverage  # vitest --coverage (target: 80%+)
 npm run dev            # tsx watch for development
+npm run mcp            # start MCP server (dev, tsx)
+npm run mcp:prod       # start MCP server (prod, node dist)
+npm run watcher        # start vault watcher (dev)
+npm run index-vault    # one-time vault indexing
 ```
+
+### MCP Server Restart After Code Changes
+
+The MCP server runs via **stdio over SSH** — it is spawned on-demand by Claude Code per session. After deploying code changes to the VM:
+
+1. Kill any lingering process on the VM:
+   ```bash
+   pkill -f "tsx src/mcp/index.ts"
+   ```
+2. Reconnect in Claude Code: run `/mcp` → select `obsidian-brain` → reconnect, **or** restart Claude Code entirely.
+
+Without this step, the old binary remains in memory and changes will not take effect.
 
 ## Implementation Plan
 

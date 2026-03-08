@@ -130,3 +130,11 @@ Regra: cada fase deve estar em producao e funcional antes de avancar. Eu confirm
 - 6 tools testadas e funcionais: search_semantic, search_text, list_recent, read_note, write_note, delete_note
 - Busca semantica por "cafe" retornou notas corretas com similarity scores
 - Proximas fases pendentes: Fase 9 (Cloud Run Panel, deferida), Fase 10 (Backups & Monitoring)
+
+### 2026-03-08 — Search optimization deployed
+- search_semantic, search_text, list_recent: retornam **somente metadata** por padrao (sem content)
+- Novos params em todos os search tools: `offset`, `include_content`, `content_preview_length`
+- searchText: limite padrao alterado de 50 para 20
+- Todos os search tools retornam `PaginatedResult { results, total, limit, offset }`
+- Workflow recomendado: search para descobrir notas → read_note para conteudo completo
+- Operacional: MCP server roda via stdio over SSH. Apos mudancas de codigo na VM, matar processo antigo (`pkill -f "tsx src/mcp/index.ts"`) e reconectar via `/mcp` no Claude Code

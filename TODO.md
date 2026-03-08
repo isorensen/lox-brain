@@ -28,6 +28,8 @@
   - `2 - Source Material/Livros/Ismail_et_al-Exponential Organizations.md` (9297 tokens)
 - **Re-index:** After implementing chunking, re-run `npm run index-vault` — the script is idempotent (hash-based skip), so only missing/changed notes will be re-embedded.
 
-### list_recent response size
-- **Priority:** Low
-- `list_recent` returns full note content, which can be very large. Consider returning only metadata (file_path, title, tags, updated_at) with content available via `read_note`.
+### ~~Search tools response size~~ — DONE (2026-03-08)
+- `search_semantic`, `search_text`, `list_recent` now return metadata only by default.
+- Added `offset`, `include_content`, `content_preview_length` params to all search tools.
+- All search tools return `PaginatedResult { results, total, limit, offset }`.
+- Use `read_note` for full content after finding notes via search.

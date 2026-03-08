@@ -7,12 +7,13 @@ import type { DbClient } from '../../src/lib/db-client.js';
 import type { EmbeddingService } from '../../src/lib/embedding-service.js';
 
 function createMockDbClient(): DbClient {
+  const emptyPaginated = { results: [], total: 0, limit: 0, offset: 0 };
   return {
     upsertNote: vi.fn(),
     deleteNote: vi.fn(),
-    searchSemantic: vi.fn().mockResolvedValue([]),
-    searchText: vi.fn().mockResolvedValue([]),
-    listRecent: vi.fn().mockResolvedValue([]),
+    searchSemantic: vi.fn().mockResolvedValue(emptyPaginated),
+    searchText: vi.fn().mockResolvedValue(emptyPaginated),
+    listRecent: vi.fn().mockResolvedValue(emptyPaginated),
     getFileHash: vi.fn().mockResolvedValue(null),
   } as unknown as DbClient;
 }
@@ -74,10 +75,11 @@ describe('createTools', () => {
 
   describe('search_semantic handler', () => {
     it('should call embeddingService.generateEmbedding and dbClient.searchSemantic', async () => {
-      const mockResults = [
-        { id: '1', file_path: 'note.md', title: 'Note', content: 'content', tags: [], similarity: 0.9, updated_at: new Date() },
-      ];
-      vi.mocked(dbClient.searchSemantic).mockResolvedValue(mockResults);
+      const mockPaginated = {
+        results: [{ id: '1', file_path: 'note.md', title: 'Note', tags: [], similarity: 0.9, updated_at: new Date() }],
+        total: 1, limit: 5, offset: 0,
+      };
+      vi.mocked(dbClient.searchSemantic).mockResolvedValue(mockPaginated);
 
       const tools = createTools(dbClient, embeddingService, tempVaultPath);
       const tool = tools.find((t) => t.name === 'search_semantic')!;
@@ -85,8 +87,11 @@ describe('createTools', () => {
       const result = await tool.handler({ query: 'test query' });
 
       expect(embeddingService.generateEmbedding).toHaveBeenCalledWith('test query');
-      expect(dbClient.searchSemantic).toHaveBeenCalledWith([0.1, 0.2, 0.3], 5);
-      expect(result).toEqual(mockResults);
+      expect(dbClient.searchSemantic).toHaveBeenCalledWith(
+        [0.1, 0.2, 0.3],
+        { limit: 5, offset: 0, includeContent: false, contentPreviewLength: 300 },
+      );
+      expect(result).toEqual(mockPaginated);
     });
 
     it('should use custom limit when provided', async () => {
@@ -95,7 +100,10 @@ describe('createTools', () => {
 
       await tool.handler({ query: 'test', limit: 3 });
 
-      expect(dbClient.searchSemantic).toHaveBeenCalledWith([0.1, 0.2, 0.3], 3);
+      expect(dbClient.searchSemantic).toHaveBeenCalledWith(
+        [0.1, 0.2, 0.3],
+        { limit: 3, offset: 0, includeContent: false, contentPreviewLength: 300 },
+      );
     });
 
     it('should default limit to 5', async () => {
@@ -104,24 +112,67 @@ describe('createTools', () => {
 
       await tool.handler({ query: 'test' });
 
-      expect(dbClient.searchSemantic).toHaveBeenCalledWith(expect.any(Array), 5);
+      expect(dbClient.searchSemantic).toHaveBeenCalledWith(
+        expect.any(Array),
+        { limit: 5, offset: 0, includeContent: false, contentPreviewLength: 300 },
+      );
+    });
+  });
+
+  describe('search_semantic with pagination params', () => {
+    it('should pass SearchOptions to dbClient when include_content and offset provided', async () => {
+      const tools = createTools(dbClient, embeddingService, tempVaultPath);
+      const tool = tools.find((t) => t.name === 'search_semantic')!;
+
+      await tool.handler({ query: 'test', offset: 5, include_content: true, content_preview_length: 200 });
+
+      expect(dbClient.searchSemantic).toHaveBeenCalledWith(
+        [0.1, 0.2, 0.3],
+        { limit: 5, offset: 5, includeContent: true, contentPreviewLength: 200 },
+      );
+    });
+
+    it('should default includeContent to false', async () => {
+      const tools = createTools(dbClient, embeddingService, tempVaultPath);
+      const tool = tools.find((t) => t.name === 'search_semantic')!;
+
+      await tool.handler({ query: 'test' });
+
+      expect(dbClient.searchSemantic).toHaveBeenCalledWith(
+        expect.any(Array),
+        { limit: 5, offset: 0, includeContent: false, contentPreviewLength: 300 },
+      );
+    });
+
+    it('should include offset, include_content, content_preview_length in inputSchema properties', () => {
+      const tools = createTools(dbClient, embeddingService, tempVaultPath);
+      const tool = tools.find((t) => t.name === 'search_semantic')!;
+      const props = (tool.inputSchema as any).properties;
+
+      expect(props).toHaveProperty('offset');
+      expect(props).toHaveProperty('include_content');
+      expect(props).toHaveProperty('content_preview_length');
     });
   });
 
   describe('search_text handler', () => {
-    it('should call dbClient.searchText with query', async () => {
-      const mockResults = [
-        { id: '1', file_path: 'note.md', title: 'Note', content: 'content', tags: [], updated_at: new Date() },
-      ];
-      vi.mocked(dbClient.searchText).mockResolvedValue(mockResults);
+    it('should call dbClient.searchText with query and options', async () => {
+      const mockPaginated = {
+        results: [{ id: '1', file_path: 'note.md', title: 'Note', tags: [], updated_at: new Date() }],
+        total: 1, limit: 20, offset: 0,
+      };
+      vi.mocked(dbClient.searchText).mockResolvedValue(mockPaginated);
 
       const tools = createTools(dbClient, embeddingService, tempVaultPath);
       const tool = tools.find((t) => t.name === 'search_text')!;
 
       const result = await tool.handler({ query: 'hello' });
 
-      expect(dbClient.searchText).toHaveBeenCalledWith('hello', undefined);
-      expect(result).toEqual(mockResults);
+      expect(dbClient.searchText).toHaveBeenCalledWith(
+        'hello', undefined,
+        { limit: 20, offset: 0, includeContent: false, contentPreviewLength: 300 },
+      );
+      expect(result).toEqual(mockPaginated);
     });
 
     it('should pass tags when provided', async () => {
@@ -130,24 +181,56 @@ describe('createTools', () => {
 
       await tool.handler({ query: 'hello', tags: ['project', 'idea'] });
 
-      expect(dbClient.searchText).toHaveBeenCalledWith('hello', ['project', 'idea']);
+      expect(dbClient.searchText).toHaveBeenCalledWith(
+        'hello', ['project', 'idea'],
+        { limit: 20, offset: 0, includeContent: false, contentPreviewLength: 300 },
+      );
+    });
+  });
+
+  describe('search_text with pagination params', () => {
+    it('should pass limit, offset, include_content to dbClient', async () => {
+      const tools = createTools(dbClient, embeddingService, tempVaultPath);
+      const tool = tools.find((t) => t.name === 'search_text')!;
+
+      await tool.handler({ query: 'hello', limit: 15, offset: 10, include_content: false });
+
+      expect(dbClient.searchText).toHaveBeenCalledWith(
+        'hello', undefined,
+        { limit: 15, offset: 10, includeContent: false, contentPreviewLength: 300 },
+      );
+    });
+
+    it('should default limit to 20', async () => {
+      const tools = createTools(dbClient, embeddingService, tempVaultPath);
+      const tool = tools.find((t) => t.name === 'search_text')!;
+
+      await tool.handler({ query: 'hello' });
+
+      expect(dbClient.searchText).toHaveBeenCalledWith(
+        'hello', undefined,
+        { limit: 20, offset: 0, includeContent: false, contentPreviewLength: 300 },
+      );
     });
   });
 
   describe('list_recent handler', () => {
-    it('should call dbClient.listRecent with default limit 10', async () => {
-      const mockResults = [
-        { id: '1', file_path: 'note.md', title: 'Note', content: 'content', tags: [], updated_at: new Date() },
-      ];
-      vi.mocked(dbClient.listRecent).mockResolvedValue(mockResults);
+    it('should call dbClient.listRecent with default options', async () => {
+      const mockPaginated = {
+        results: [{ id: '1', file_path: 'note.md', title: 'Note', tags: [], updated_at: new Date() }],
+        total: 1, limit: 10, offset: 0,
+      };
+      vi.mocked(dbClient.listRecent).mockResolvedValue(mockPaginated);
 
       const tools = createTools(dbClient, embeddingService, tempVaultPath);
       const tool = tools.find((t) => t.name === 'list_recent')!;
 
       const result = await tool.handler({});
 
-      expect(dbClient.listRecent).toHaveBeenCalledWith(10);
-      expect(result).toEqual(mockResults);
+      expect(dbClient.listRecent).toHaveBeenCalledWith(
+        { limit: 10, offset: 0, includeContent: false, contentPreviewLength: 300 },
+      );
+      expect(result).toEqual(mockPaginated);
     });
 
     it('should use custom limit when provided', async () => {
@@ -156,7 +239,33 @@ describe('createTools', () => {
 
       await tool.handler({ limit: 20 });
 
-      expect(dbClient.listRecent).toHaveBeenCalledWith(20);
+      expect(dbClient.listRecent).toHaveBeenCalledWith(
+        { limit: 20, offset: 0, includeContent: false, contentPreviewLength: 300 },
+      );
+    });
+  });
+
+  describe('list_recent with pagination params', () => {
+    it('should pass SearchOptions to dbClient', async () => {
+      const tools = createTools(dbClient, embeddingService, tempVaultPath);
+      const tool = tools.find((t) => t.name === 'list_recent')!;
+
+      await tool.handler({ limit: 5, offset: 10, include_content: true });
+
+      expect(dbClient.listRecent).toHaveBeenCalledWith(
+        { limit: 5, offset: 10, includeContent: true, contentPreviewLength: 300 },
+      );
+    });
+
+    it('should default includeContent to false', async () => {
+      const tools = createTools(dbClient, embeddingService, tempVaultPath);
+      const tool = tools.find((t) => t.name === 'list_recent')!;
+
+      await tool.handler({});
+
+      expect(dbClient.listRecent).toHaveBeenCalledWith(
+        { limit: 10, offset: 0, includeContent: false, contentPreviewLength: 300 },
+      );
     });
   });
 

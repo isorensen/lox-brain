@@ -1,11 +1,72 @@
 import type { Pool } from 'pg';
-import type { NoteRow, SearchResult, RecentNote } from './types.js';
+import type { NoteRow, SearchResult, RecentNote, SearchOptions, PaginatedResult } from './types.js';
+
+const SEMANTIC_DEFAULTS: SearchOptions = {
+  limit: 5,
+  offset: 0,
+  includeContent: false,
+  contentPreviewLength: 300,
+};
+
+const TEXT_DEFAULTS: SearchOptions = {
+  limit: 20,
+  offset: 0,
+  includeContent: false,
+  contentPreviewLength: 300,
+};
+
+const RECENT_DEFAULTS: SearchOptions = {
+  limit: 10,
+  offset: 0,
+  includeContent: false,
+  contentPreviewLength: 300,
+};
 
 export class DbClient {
   private readonly pool: Pool;
 
   constructor(pool: Pool) {
     this.pool = pool;
+  }
+
+  private buildSearchOptions(
+    limitOrOptions: number | Partial<SearchOptions> | undefined,
+    defaults: SearchOptions,
+  ): SearchOptions {
+    if (typeof limitOrOptions === 'number') {
+      return { ...defaults, limit: limitOrOptions };
+    }
+    return { ...defaults, ...limitOrOptions };
+  }
+
+  /**
+   * Builds the SQL content column expression based on search options.
+   * Returns the SQL fragment and any parameter values needed.
+   */
+  private buildContentColumn(
+    opts: SearchOptions,
+    paramIndex: number,
+  ): { sql: string; params: unknown[]; nextParamIndex: number } {
+    if (!opts.includeContent) {
+      return { sql: 'NULL AS content', params: [], nextParamIndex: paramIndex };
+    }
+    if (opts.contentPreviewLength > 0) {
+      return {
+        sql: `LEFT(content, $${paramIndex}) AS content`,
+        params: [opts.contentPreviewLength],
+        nextParamIndex: paramIndex + 1,
+      };
+    }
+    return { sql: 'content', params: [], nextParamIndex: paramIndex };
+  }
+
+  private buildPaginatedResult<T>(
+    rows: Array<T & { total_count?: string }>,
+    opts: SearchOptions,
+  ): PaginatedResult<T> {
+    const total = rows.length > 0 ? parseInt(rows[0].total_count ?? '0', 10) : 0;
+    const results = rows.map(({ total_count: _, ...rest }) => rest) as T[];
+    return { results, total, limit: opts.limit, offset: opts.offset };
   }
 
   async upsertNote(note: NoteRow): Promise<void> {
@@ -37,19 +98,41 @@ export class DbClient {
     await this.pool.query(sql, [filePath]);
   }
 
-  async searchSemantic(embedding: number[], limit: number): Promise<SearchResult[]> {
-    if (limit <= 0) throw new RangeError('limit must be a positive integer');
+  async searchSemantic(
+    embedding: number[],
+    limitOrOptions: number | Partial<SearchOptions> = {},
+  ): Promise<PaginatedResult<SearchResult>> {
+    const opts = this.buildSearchOptions(limitOrOptions, SEMANTIC_DEFAULTS);
+    if (opts.limit <= 0) throw new RangeError('limit must be a positive integer');
+
+    // $1 = embedding (vector), then dynamic params follow
+    let paramIdx = 2;
+    const contentCol = this.buildContentColumn(opts, paramIdx);
+    paramIdx = contentCol.nextParamIndex;
+
+    const limitIdx = paramIdx++;
+    const offsetIdx = paramIdx++;
+
     const sql = `
-      SELECT id, file_path, title, content, tags,
+      SELECT id, file_path, title, ${contentCol.sql}, tags,
              1 - (embedding <=> $1::vector) AS similarity,
-             updated_at
+             updated_at,
+             COUNT(*) OVER() AS total_count
       FROM vault_embeddings
       ORDER BY embedding <=> $1::vector
-      LIMIT $2
+      LIMIT $${limitIdx}
+      OFFSET $${offsetIdx}
     `;
 
-    const result = await this.pool.query(sql, [JSON.stringify(embedding), limit]);
-    return result.rows;
+    const params = [
+      JSON.stringify(embedding),
+      ...contentCol.params,
+      opts.limit,
+      opts.offset,
+    ];
+
+    const result = await this.pool.query(sql, params);
+    return this.buildPaginatedResult(result.rows, opts);
   }
 
   async getFileHash(filePath: string): Promise<string | null> {
@@ -63,40 +146,76 @@ export class DbClient {
     return result.rows[0].file_hash;
   }
 
-  async listRecent(limit: number): Promise<RecentNote[]> {
-    if (limit <= 0) throw new RangeError('limit must be a positive integer');
+  async listRecent(
+    limitOrOptions: number | Partial<SearchOptions> = {},
+  ): Promise<PaginatedResult<RecentNote>> {
+    const opts = this.buildSearchOptions(limitOrOptions, RECENT_DEFAULTS);
+    if (opts.limit <= 0) throw new RangeError('limit must be a positive integer');
+
+    let paramIdx = 1;
+    const contentCol = this.buildContentColumn(opts, paramIdx);
+    paramIdx = contentCol.nextParamIndex;
+
+    const limitIdx = paramIdx++;
+    const offsetIdx = paramIdx++;
+
     const sql = `
-      SELECT id, file_path, title, content, tags, updated_at
+      SELECT id, file_path, title, ${contentCol.sql}, tags, updated_at,
+             COUNT(*) OVER() AS total_count
       FROM vault_embeddings
       ORDER BY updated_at DESC
-      LIMIT $1
+      LIMIT $${limitIdx}
+      OFFSET $${offsetIdx}
     `;
 
-    const result = await this.pool.query(sql, [limit]);
-    return result.rows;
+    const params = [...contentCol.params, opts.limit, opts.offset];
+
+    const result = await this.pool.query(sql, params);
+    return this.buildPaginatedResult(result.rows, opts);
   }
 
-  async searchText(query: string, tags?: string[]): Promise<RecentNote[]> {
+  async searchText(
+    query: string,
+    tags?: string[],
+    options?: Partial<SearchOptions>,
+  ): Promise<PaginatedResult<RecentNote>> {
+    const opts = this.buildSearchOptions(options, TEXT_DEFAULTS);
+
+    let paramIdx = 1;
+
+    // $1 = query pattern
+    const queryParamIdx = paramIdx++;
+
+    let tagsClause = '';
+    let tagsParamIdx = 0;
     if (tags && tags.length > 0) {
-      const sql = `
-        SELECT id, file_path, title, content, tags, updated_at
-        FROM vault_embeddings
-        WHERE content ILIKE $1 AND tags @> $2
-        ORDER BY updated_at DESC
-        LIMIT 50
-      `;
-      const result = await this.pool.query(sql, [`%${query}%`, tags]);
-      return result.rows;
+      tagsParamIdx = paramIdx++;
+      tagsClause = ` AND tags @> $${tagsParamIdx}`;
     }
 
+    const contentCol = this.buildContentColumn(opts, paramIdx);
+    paramIdx = contentCol.nextParamIndex;
+
+    const limitIdx = paramIdx++;
+    const offsetIdx = paramIdx++;
+
     const sql = `
-      SELECT id, file_path, title, content, tags, updated_at
+      SELECT id, file_path, title, ${contentCol.sql}, tags, updated_at,
+             COUNT(*) OVER() AS total_count
       FROM vault_embeddings
-      WHERE content ILIKE $1
+      WHERE content ILIKE $${queryParamIdx}${tagsClause}
       ORDER BY updated_at DESC
-      LIMIT 50
+      LIMIT $${limitIdx}
+      OFFSET $${offsetIdx}
     `;
-    const result = await this.pool.query(sql, [`%${query}%`]);
-    return result.rows;
+
+    const params: unknown[] = [`%${query}%`];
+    if (tags && tags.length > 0) {
+      params.push(tags);
+    }
+    params.push(...contentCol.params, opts.limit, opts.offset);
+
+    const result = await this.pool.query(sql, params);
+    return this.buildPaginatedResult(result.rows, opts);
   }
 }

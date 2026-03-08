@@ -2,6 +2,7 @@ import { readFile, writeFile, unlink, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import type { DbClient } from '../lib/db-client.js';
 import type { EmbeddingService } from '../lib/embedding-service.js';
+import type { SearchOptions } from '../lib/types.js';
 
 export interface Tool {
   name: string;
@@ -125,12 +126,15 @@ export function createTools(
     },
     {
       name: 'search_semantic',
-      description: 'Search notes by semantic similarity using vector embeddings.',
+      description: 'Search notes by semantic similarity. Returns metadata only by default (file_path, title, tags, similarity). Set include_content=true for preview, or use read_note for full content.',
       inputSchema: {
         type: 'object',
         properties: {
           query: { type: 'string', description: 'Natural language search query' },
           limit: { type: 'number', description: 'Maximum number of results (default: 5)' },
+          offset: { type: 'number', description: 'Pagination offset (default: 0)' },
+          include_content: { type: 'boolean', description: 'Include content in results (default: false)' },
+          content_preview_length: { type: 'number', description: 'Truncate content to N chars, 0 for full (default: 300)' },
         },
         required: ['query'],
       },
@@ -139,20 +143,30 @@ export function createTools(
         if (typeof query !== 'string' || query.trim() === '') {
           throw new Error('query must be a non-empty string');
         }
-        const limit = (args.limit as number | undefined) ?? 5;
+
+        const searchOptions: Partial<SearchOptions> = {
+          limit: (args.limit as number | undefined) ?? 5,
+          offset: (args.offset as number | undefined) ?? 0,
+          includeContent: (args.include_content as boolean | undefined) ?? false,
+          contentPreviewLength: (args.content_preview_length as number | undefined) ?? 300,
+        };
 
         const embedding = await embeddingService.generateEmbedding(query);
-        return dbClient.searchSemantic(embedding, limit);
+        return dbClient.searchSemantic(embedding, searchOptions);
       },
     },
     {
       name: 'search_text',
-      description: 'Search notes by text content with optional tag filtering.',
+      description: 'Search notes by text content. Returns metadata only by default. Supports pagination via limit/offset. Use read_note for full content.',
       inputSchema: {
         type: 'object',
         properties: {
           query: { type: 'string', description: 'Text to search for (case-insensitive)' },
           tags: { type: 'array', items: { type: 'string' }, description: 'Optional tags to filter by' },
+          limit: { type: 'number', description: 'Maximum number of results (default: 20)' },
+          offset: { type: 'number', description: 'Pagination offset (default: 0)' },
+          include_content: { type: 'boolean', description: 'Include content in results (default: false)' },
+          content_preview_length: { type: 'number', description: 'Truncate content to N chars, 0 for full (default: 300)' },
         },
         required: ['query'],
       },
@@ -162,21 +176,38 @@ export function createTools(
           throw new Error('query must be a non-empty string');
         }
         const tags = args.tags as string[] | undefined;
-        return dbClient.searchText(query, tags);
+
+        const searchOptions: Partial<SearchOptions> = {
+          limit: (args.limit as number | undefined) ?? 20,
+          offset: (args.offset as number | undefined) ?? 0,
+          includeContent: (args.include_content as boolean | undefined) ?? false,
+          contentPreviewLength: (args.content_preview_length as number | undefined) ?? 300,
+        };
+
+        return dbClient.searchText(query, tags, searchOptions);
       },
     },
     {
       name: 'list_recent',
-      description: 'List the most recently updated notes.',
+      description: 'List most recently updated notes. Returns metadata only by default. Use read_note for full content.',
       inputSchema: {
         type: 'object',
         properties: {
           limit: { type: 'number', description: 'Maximum number of results (default: 10)' },
+          offset: { type: 'number', description: 'Pagination offset (default: 0)' },
+          include_content: { type: 'boolean', description: 'Include content in results (default: false)' },
+          content_preview_length: { type: 'number', description: 'Truncate content to N chars, 0 for full (default: 300)' },
         },
       },
       async handler(args: Record<string, unknown>): Promise<unknown> {
-        const limit = (args.limit as number | undefined) ?? 10;
-        return dbClient.listRecent(limit);
+        const searchOptions: Partial<SearchOptions> = {
+          limit: (args.limit as number | undefined) ?? 10,
+          offset: (args.offset as number | undefined) ?? 0,
+          includeContent: (args.include_content as boolean | undefined) ?? false,
+          contentPreviewLength: (args.content_preview_length as number | undefined) ?? 300,
+        };
+
+        return dbClient.listRecent(searchOptions);
       },
     },
   ];

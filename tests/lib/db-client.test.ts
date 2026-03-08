@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { DbClient } from '../../src/lib/db-client.js';
-import type { NoteRow } from '../../src/lib/types.js';
+import type { NoteRow, SearchOptions } from '../../src/lib/types.js';
 
 describe('DbClient', () => {
   let client: DbClient;
@@ -77,39 +77,128 @@ describe('DbClient', () => {
   });
 
   describe('searchSemantic', () => {
-    it('should query with cosine distance and return similarity', async () => {
+    it('should query with cosine distance and return PaginatedResult', async () => {
       const fakeRows = [
         {
           id: 'id1',
           file_path: 'notes/a.md',
           title: 'Note A',
-          content: 'Content A',
+          content: null,
           tags: ['tag1'],
           similarity: 0.92,
           updated_at: new Date('2026-03-07'),
+          total_count: '1',
         },
       ];
       mockPool.query.mockResolvedValue({ rows: fakeRows });
 
       const embedding = Array.from({ length: 1536 }, () => 0.1);
-      const results = await client.searchSemantic(embedding, 5);
+      const result = await client.searchSemantic(embedding, 5);
 
       expect(mockPool.query).toHaveBeenCalledTimes(1);
       const [sql, params] = mockPool.query.mock.calls[0];
       expect(sql).toContain('1 - (embedding <=>');
       expect(sql).toContain('ORDER BY');
       expect(sql).toContain('LIMIT');
-      expect(params[1]).toBe(5);
-      expect(results).toEqual(fakeRows);
+      expect(sql).toContain('OFFSET');
+      expect(sql).toContain('COUNT(*) OVER()');
 
       // Embedding must be passed as JSON string
       expect(typeof params[0]).toBe('string');
       expect(params[0]).toBe(JSON.stringify(embedding));
+
+      // Should return PaginatedResult
+      expect(result).toHaveProperty('results');
+      expect(result).toHaveProperty('total');
+      expect(result).toHaveProperty('limit');
+      expect(result).toHaveProperty('offset');
+      expect(result.limit).toBe(5);
+      expect(result.offset).toBe(0);
     });
 
     it('should throw RangeError when limit is zero or negative', async () => {
       await expect(() => client.searchSemantic([], 0)).rejects.toThrow(RangeError);
       await expect(() => client.searchSemantic([], -1)).rejects.toThrow(RangeError);
+    });
+  });
+
+  describe('searchSemantic with SearchOptions', () => {
+    it('should accept SearchOptions object', async () => {
+      mockPool.query.mockResolvedValue({ rows: [] });
+
+      const embedding = [0.1, 0.2];
+      await client.searchSemantic(embedding, { limit: 3, offset: 0, includeContent: false, contentPreviewLength: 0 });
+
+      const [sql] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('OFFSET');
+      expect(sql).toContain('NULL AS content');
+    });
+
+    it('should exclude content when includeContent is false', async () => {
+      mockPool.query.mockResolvedValue({ rows: [] });
+
+      await client.searchSemantic([0.1], { includeContent: false });
+
+      const [sql] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('NULL AS content');
+      expect(sql).not.toMatch(/(?<!NULL AS )content,/);
+    });
+
+    it('should truncate content when contentPreviewLength > 0 and includeContent is true', async () => {
+      mockPool.query.mockResolvedValue({ rows: [] });
+
+      await client.searchSemantic([0.1], { includeContent: true, contentPreviewLength: 200 });
+
+      const [sql] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('LEFT(content,');
+    });
+
+    it('should return full content when contentPreviewLength is 0 and includeContent is true', async () => {
+      mockPool.query.mockResolvedValue({ rows: [] });
+
+      await client.searchSemantic([0.1], { includeContent: true, contentPreviewLength: 0 });
+
+      const [sql] = mockPool.query.mock.calls[0];
+      expect(sql).not.toContain('NULL AS content');
+      expect(sql).not.toContain('LEFT(content,');
+    });
+
+    it('should maintain backward compatibility with numeric limit', async () => {
+      mockPool.query.mockResolvedValue({ rows: [] });
+
+      const result = await client.searchSemantic([0.1], 5);
+
+      expect(result).toHaveProperty('results');
+      expect(result).toHaveProperty('total');
+      expect(result.limit).toBe(5);
+      expect(result.offset).toBe(0);
+    });
+
+    it('should support offset for pagination', async () => {
+      mockPool.query.mockResolvedValue({ rows: [] });
+
+      await client.searchSemantic([0.1], { limit: 5, offset: 10 });
+
+      const [sql, params] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('OFFSET');
+      // offset should be in the params
+      expect(params).toContain(10);
+    });
+
+    it('should return PaginatedResult with total count', async () => {
+      const fakeRows = [
+        {
+          id: 'id1', file_path: 'a.md', title: 'A', content: null,
+          tags: [], similarity: 0.9, updated_at: new Date(), total_count: '42',
+        },
+      ];
+      mockPool.query.mockResolvedValue({ rows: fakeRows });
+
+      const result = await client.searchSemantic([0.1], { limit: 5, offset: 0 });
+
+      expect(result.total).toBe(42);
+      expect(result.results).toHaveLength(1);
+      expect(result.results[0]).not.toHaveProperty('total_count');
     });
   });
 
@@ -138,32 +227,57 @@ describe('DbClient', () => {
   });
 
   describe('listRecent', () => {
-    it('should ORDER BY updated_at DESC with LIMIT', async () => {
+    it('should ORDER BY updated_at DESC with LIMIT and return PaginatedResult', async () => {
       const fakeRows = [
         {
           id: 'id1',
           file_path: 'notes/recent.md',
           title: 'Recent',
-          content: 'Content',
+          content: null,
           tags: [],
           updated_at: new Date('2026-03-07'),
+          total_count: '1',
         },
       ];
       mockPool.query.mockResolvedValue({ rows: fakeRows });
 
-      const results = await client.listRecent(10);
+      const result = await client.listRecent(10);
 
       expect(mockPool.query).toHaveBeenCalledTimes(1);
-      const [sql, params] = mockPool.query.mock.calls[0];
+      const [sql] = mockPool.query.mock.calls[0];
       expect(sql).toContain('ORDER BY updated_at DESC');
       expect(sql).toContain('LIMIT');
-      expect(params).toEqual([10]);
-      expect(results).toEqual(fakeRows);
+      expect(sql).toContain('OFFSET');
+      expect(result).toHaveProperty('results');
+      expect(result).toHaveProperty('total');
+      expect(result.limit).toBe(10);
     });
 
     it('should throw RangeError when limit is zero or negative', async () => {
       await expect(() => client.listRecent(0)).rejects.toThrow(RangeError);
       await expect(() => client.listRecent(-5)).rejects.toThrow(RangeError);
+    });
+  });
+
+  describe('listRecent with SearchOptions', () => {
+    it('should accept SearchOptions object', async () => {
+      mockPool.query.mockResolvedValue({ rows: [] });
+
+      await client.listRecent({ limit: 5, offset: 10, includeContent: true, contentPreviewLength: 100 });
+
+      const [sql] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('OFFSET');
+      expect(sql).toContain('LEFT(content,');
+    });
+
+    it('should maintain backward compatibility with numeric limit', async () => {
+      mockPool.query.mockResolvedValue({ rows: [] });
+
+      const result = await client.listRecent(10);
+
+      expect(result).toHaveProperty('results');
+      expect(result).toHaveProperty('total');
+      expect(result.limit).toBe(10);
     });
   });
 
@@ -174,22 +288,23 @@ describe('DbClient', () => {
           id: 'id1',
           file_path: 'notes/match.md',
           title: 'Match',
-          content: 'Matching content',
+          content: null,
           tags: ['tag1'],
           updated_at: new Date('2026-03-07'),
+          total_count: '1',
         },
       ];
       mockPool.query.mockResolvedValue({ rows: fakeRows });
 
-      const results = await client.searchText('matching', ['tag1']);
+      const result = await client.searchText('matching', ['tag1']);
 
       expect(mockPool.query).toHaveBeenCalledTimes(1);
       const [sql, params] = mockPool.query.mock.calls[0];
       expect(sql).toContain('ILIKE');
       expect(sql).toContain('tags @>');
-      expect(sql).toContain('LIMIT 50');
       expect(params[0]).toBe('%matching%');
-      expect(results).toEqual(fakeRows);
+      expect(result).toHaveProperty('results');
+      expect(result).toHaveProperty('total');
     });
 
     it('should search without tags filter when tags not provided', async () => {
@@ -200,8 +315,58 @@ describe('DbClient', () => {
       const [sql, params] = mockPool.query.mock.calls[0];
       expect(sql).toContain('ILIKE');
       expect(sql).not.toContain('tags @>');
-      expect(sql).toContain('LIMIT 50');
       expect(params[0]).toBe('%query%');
+    });
+
+    it('should default limit to 20', async () => {
+      mockPool.query.mockResolvedValue({ rows: [] });
+
+      await client.searchText('query');
+
+      const [sql] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('LIMIT');
+      // Verify the limit param is 20
+      const [, params] = mockPool.query.mock.calls[0];
+      // Last numeric param before offset should be 20
+      expect(params).toContain(20);
+    });
+  });
+
+  describe('searchText with SearchOptions', () => {
+    it('should accept SearchOptions as third parameter', async () => {
+      mockPool.query.mockResolvedValue({ rows: [] });
+
+      await client.searchText('hello', undefined, { limit: 15, offset: 5, includeContent: true, contentPreviewLength: 100 });
+
+      const [sql] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('OFFSET');
+      expect(sql).toContain('LEFT(content,');
+    });
+
+    it('should support pagination with offset', async () => {
+      mockPool.query.mockResolvedValue({ rows: [] });
+
+      await client.searchText('hello', undefined, { offset: 10 });
+
+      const [sql, params] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('OFFSET');
+      expect(params).toContain(10);
+    });
+
+    it('should return PaginatedResult with total count', async () => {
+      const fakeRows = [
+        {
+          id: 'id1', file_path: 'a.md', title: 'A', content: null,
+          tags: [], updated_at: new Date(), total_count: '25',
+        },
+      ];
+      mockPool.query.mockResolvedValue({ rows: fakeRows });
+
+      const result = await client.searchText('hello');
+
+      expect(result.total).toBe(25);
+      expect(result.results).toHaveLength(1);
+      expect(result.results[0]).not.toHaveProperty('total_count');
     });
   });
 });

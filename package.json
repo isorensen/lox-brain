@@ -7,7 +7,9 @@
     "build": "tsc",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "dev": "tsx watch src/index.ts"
+    "dev": "tsx watch src/index.ts",
+    "watcher": "tsx src/watcher/index.ts",
+    "watcher:prod": "node dist/watcher/index.js"
   },
   "repository": {
     "type": "git",
@@ -22,6 +24,7 @@
   },
   "homepage": "https://github.com/isorensen/obsidian_open_brain#readme",
   "dependencies": {
+    "chokidar": "^5.0.0",
     "openai": "^6.27.0",
     "pg": "^8.20.0"
   },

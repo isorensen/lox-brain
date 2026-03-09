@@ -71,9 +71,9 @@ export class DbClient {
 
   async upsertNote(note: NoteRow): Promise<void> {
     const sql = `
-      INSERT INTO vault_embeddings (id, file_path, title, content, tags, embedding, file_hash, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-      ON CONFLICT (file_path) DO UPDATE SET
+      INSERT INTO vault_embeddings (id, file_path, title, content, tags, embedding, file_hash, chunk_index, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+      ON CONFLICT (file_path, chunk_index) DO UPDATE SET
         title = EXCLUDED.title,
         content = EXCLUDED.content,
         tags = EXCLUDED.tags,
@@ -90,6 +90,7 @@ export class DbClient {
       note.tags,
       JSON.stringify(note.embedding),
       note.file_hash,
+      note.chunk_index,
     ]);
   }
 
@@ -136,7 +137,7 @@ export class DbClient {
   }
 
   async getFileHash(filePath: string): Promise<string | null> {
-    const sql = 'SELECT file_hash FROM vault_embeddings WHERE file_path = $1';
+    const sql = 'SELECT file_hash FROM vault_embeddings WHERE file_path = $1 LIMIT 1';
     const result = await this.pool.query(sql, [filePath]);
 
     if (result.rows.length === 0) {
@@ -144,6 +145,11 @@ export class DbClient {
     }
 
     return result.rows[0].file_hash;
+  }
+
+  async deleteChunksAbove(filePath: string, maxChunkIndex: number): Promise<void> {
+    const sql = 'DELETE FROM vault_embeddings WHERE file_path = $1 AND chunk_index > $2';
+    await this.pool.query(sql, [filePath, maxChunkIndex]);
   }
 
   async listRecent(

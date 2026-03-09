@@ -25,6 +25,7 @@ describe('DbClient', () => {
         tags: ['tag1', 'tag2'],
         embedding: Array.from({ length: 1536 }, () => 0.1),
         file_hash: 'abc123hash',
+        chunk_index: 0,
       };
 
       await client.upsertNote(note);
@@ -32,12 +33,13 @@ describe('DbClient', () => {
       expect(mockPool.query).toHaveBeenCalledTimes(1);
       const [sql, params] = mockPool.query.mock.calls[0];
       expect(sql).toContain('INSERT INTO vault_embeddings');
-      expect(sql).toContain('ON CONFLICT (file_path) DO UPDATE');
+      expect(sql).toContain('ON CONFLICT (file_path, chunk_index) DO UPDATE');
       expect(params).toContain(note.id);
       expect(params).toContain(note.file_path);
       expect(params).toContain(note.title);
       expect(params).toContain(note.content);
       expect(params).toContain(note.file_hash);
+      expect(params).toContain(note.chunk_index);
 
       // Embedding must be passed as JSON string, not raw array
       const embeddingParam = params[5];
@@ -56,6 +58,7 @@ describe('DbClient', () => {
         tags: ['tag1'],
         embedding: [0.1, 0.2],
         file_hash: 'abc123hash',
+        chunk_index: 0,
       };
 
       await expect(client.upsertNote(note)).rejects.toThrow('connection refused');
@@ -214,6 +217,7 @@ describe('DbClient', () => {
       const [sql, params] = mockPool.query.mock.calls[0];
       expect(sql).toContain('file_hash');
       expect(sql).toContain('$1');
+      expect(sql).toContain('LIMIT 1');
       expect(params).toEqual(['notes/test.md']);
     });
 
@@ -223,6 +227,24 @@ describe('DbClient', () => {
       const hash = await client.getFileHash('notes/unknown.md');
 
       expect(hash).toBeNull();
+    });
+  });
+
+  describe('deleteChunksAbove', () => {
+    it('should DELETE chunks with chunk_index > maxChunkIndex for given file_path', async () => {
+      mockPool.query.mockResolvedValue({ rowCount: 3 });
+      await client.deleteChunksAbove('notes/large.md', 2);
+      expect(mockPool.query).toHaveBeenCalledTimes(1);
+      const [sql, params] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('DELETE FROM vault_embeddings');
+      expect(sql).toContain('file_path = $1');
+      expect(sql).toContain('chunk_index > $2');
+      expect(params).toEqual(['notes/large.md', 2]);
+    });
+
+    it('should propagate pool.query rejection', async () => {
+      mockPool.query.mockRejectedValue(new Error('connection refused'));
+      await expect(client.deleteChunksAbove('notes/test.md', 0)).rejects.toThrow('connection refused');
     });
   });
 

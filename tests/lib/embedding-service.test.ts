@@ -140,6 +140,75 @@ Content here.`;
     });
   });
 
+  describe('chunkText', () => {
+    it('should return single chunk for text within token limit', () => {
+      const shortText = 'This is a short note.';
+      const chunks = service.chunkText(shortText);
+      expect(chunks).toEqual([shortText]);
+      expect(chunks).toHaveLength(1);
+    });
+
+    it('should split long text into multiple chunks', () => {
+      const paragraph = 'A'.repeat(5000) + '\n\n';
+      const longText = paragraph.repeat(6);
+      const chunks = service.chunkText(longText);
+      expect(chunks.length).toBeGreaterThan(1);
+      for (const chunk of chunks) {
+        expect(chunk.trim().length).toBeGreaterThan(0);
+      }
+    });
+
+    it('should split on paragraph boundaries (\\n\\n)', () => {
+      const para = 'B'.repeat(10000);
+      const text = `${para}\n\n${para}\n\n${para}`;
+      const chunks = service.chunkText(text);
+      expect(chunks.length).toBe(2);
+    });
+
+    it('should include overlap from previous chunk', () => {
+      const paraA = 'AAAA '.repeat(1600);
+      const paraB = 'BBBB '.repeat(1600);
+      const paraC = 'CCCC '.repeat(1600);
+      const paraD = 'DDDD '.repeat(1600);
+      const text = [paraA, paraB, paraC, paraD].join('\n\n');
+      const chunks = service.chunkText(text);
+      expect(chunks.length).toBeGreaterThanOrEqual(2);
+      if (chunks.length >= 2) {
+        expect(chunks[1]).toContain('CCCC');
+      }
+    });
+
+    it('should handle text without \\n\\n separators (single long paragraph)', () => {
+      const longParagraph = 'X'.repeat(30000);
+      const chunks = service.chunkText(longParagraph);
+      expect(chunks.length).toBeGreaterThan(1);
+      for (const chunk of chunks) {
+        expect(chunk.length).toBeLessThanOrEqual(24000);
+      }
+      expect(chunks.join('')).toBe(longParagraph);
+    });
+
+    it('should force-split a single long paragraph that exceeds maxTokens', () => {
+      // Single paragraph of ~7500 tokens (30000 chars), no \n\n
+      const longParagraph = 'X'.repeat(30000);
+      const chunks = service.chunkText(longParagraph);
+
+      // Should be split into multiple chunks, each within token limit
+      expect(chunks.length).toBeGreaterThan(1);
+      // Each chunk should be within the maxTokens limit (6000 tokens = 24000 chars)
+      for (const chunk of chunks) {
+        expect(chunk.length).toBeLessThanOrEqual(24000);
+      }
+      // All content should be preserved
+      expect(chunks.join('')).toBe(longParagraph);
+    });
+
+    it('should return single empty chunk for empty text', () => {
+      const chunks = service.chunkText('');
+      expect(chunks).toEqual(['']);
+    });
+  });
+
   describe('computeHash', () => {
     it('should compute deterministic SHA256 hash', () => {
       const content = 'Hello, World!';

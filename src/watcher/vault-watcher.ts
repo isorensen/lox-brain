@@ -31,21 +31,33 @@ export class VaultWatcher {
 
     try {
       const metadata = this.embeddingService.parseNote(content);
-      const embeddingText = [metadata.title, metadata.content]
-        .filter(Boolean)
-        .join('\n');
-      const embedding = await this.embeddingService.generateEmbedding(embeddingText);
+      const chunks = this.embeddingService.chunkText(metadata.content);
 
-      await this.dbClient.upsertNote({
-        // id is used only for INSERT; ON CONFLICT (file_path) preserves the existing row's id.
-        id: randomUUID(),
-        file_path: relative,
-        title: metadata.title,
-        content: metadata.content,
-        tags: metadata.tags,
-        embedding,
-        file_hash: newHash,
-      });
+      // Phase 1: Generate all embeddings (may fail — no DB writes yet)
+      const chunkData: Array<{ content: string; embedding: number[] }> = [];
+      for (const chunkContent of chunks) {
+        const embeddingText = [metadata.title, chunkContent]
+          .filter(Boolean)
+          .join('\n');
+        const embedding = await this.embeddingService.generateEmbedding(embeddingText);
+        chunkData.push({ content: chunkContent, embedding });
+      }
+
+      // Phase 2: All embeddings succeeded — now upsert all chunks
+      for (let i = 0; i < chunkData.length; i++) {
+        await this.dbClient.upsertNote({
+          id: randomUUID(),
+          file_path: relative,
+          title: metadata.title,
+          content: chunkData[i].content,
+          tags: metadata.tags,
+          embedding: chunkData[i].embedding,
+          file_hash: newHash,
+          chunk_index: i,
+        });
+      }
+
+      await this.dbClient.deleteChunksAbove(relative, chunkData.length - 1);
     } catch (err) {
       console.error(`[VaultWatcher] Failed to index ${relative}:`, err);
     }

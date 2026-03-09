@@ -4,7 +4,7 @@ import type { EmbeddingService } from '../../src/lib/embedding-service.js';
 import type { DbClient } from '../../src/lib/db-client.js';
 
 function createMockEmbeddingService(): {
-  [K in keyof Pick<EmbeddingService, 'parseNote' | 'generateEmbedding' | 'computeHash'>]: ReturnType<typeof vi.fn>;
+  [K in keyof Pick<EmbeddingService, 'parseNote' | 'generateEmbedding' | 'computeHash' | 'chunkText'>]: ReturnType<typeof vi.fn>;
 } {
   return {
     parseNote: vi.fn().mockReturnValue({
@@ -14,16 +14,18 @@ function createMockEmbeddingService(): {
     }),
     generateEmbedding: vi.fn().mockResolvedValue(new Array(1536).fill(0.1)),
     computeHash: vi.fn().mockReturnValue('abc123hash'),
+    chunkText: vi.fn().mockReturnValue(['Some content']),
   };
 }
 
 function createMockDbClient(): {
-  [K in keyof Pick<DbClient, 'getFileHash' | 'upsertNote' | 'deleteNote'>]: ReturnType<typeof vi.fn>;
+  [K in keyof Pick<DbClient, 'getFileHash' | 'upsertNote' | 'deleteNote' | 'deleteChunksAbove'>]: ReturnType<typeof vi.fn>;
 } {
   return {
     getFileHash: vi.fn().mockResolvedValue(null),
     upsertNote: vi.fn().mockResolvedValue(undefined),
     deleteNote: vi.fn().mockResolvedValue(undefined),
+    deleteChunksAbove: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -86,6 +88,9 @@ describe('VaultWatcher', () => {
       expect(mockEmbedding.parseNote).toHaveBeenCalledWith(content);
       expect(mockEmbedding.generateEmbedding).toHaveBeenCalledWith('Test Note\nSome content');
 
+      // chunkText should be called with parsed content
+      expect(mockEmbedding.chunkText).toHaveBeenCalledWith('Some content');
+
       // upsertNote should be called with correct data
       expect(mockDb.upsertNote).toHaveBeenCalledTimes(1);
       const upsertArg = mockDb.upsertNote.mock.calls[0][0];
@@ -96,11 +101,15 @@ describe('VaultWatcher', () => {
         tags: ['tag1', 'tag2'],
         embedding: new Array(1536).fill(0.1),
         file_hash: 'abc123hash',
+        chunk_index: 0,
       });
       // id should be a valid UUID
       expect(upsertArg.id).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
       );
+
+      // orphan cleanup should be called
+      expect(mockDb.deleteChunksAbove).toHaveBeenCalledWith('notes/my-note.md', 0);
     });
 
     it('should skip indexing if hash is unchanged', async () => {
@@ -143,12 +152,61 @@ describe('VaultWatcher', () => {
       expect(mockDb.upsertNote).not.toHaveBeenCalled();
     });
 
+    it('should generate embedding per chunk and upsert each with chunk_index', async () => {
+      mockEmbedding.chunkText.mockReturnValue(['chunk zero', 'chunk one', 'chunk two']);
+      const embeddings = [
+        new Array(1536).fill(0.1),
+        new Array(1536).fill(0.2),
+        new Array(1536).fill(0.3),
+      ];
+      mockEmbedding.generateEmbedding
+        .mockResolvedValueOnce(embeddings[0])
+        .mockResolvedValueOnce(embeddings[1])
+        .mockResolvedValueOnce(embeddings[2]);
+
+      await watcher.handleFileChange(`${VAULT_PATH}/notes/large.md`, 'raw content');
+
+      expect(mockEmbedding.generateEmbedding).toHaveBeenCalledTimes(3);
+      expect(mockDb.upsertNote).toHaveBeenCalledTimes(3);
+      expect(mockDb.upsertNote.mock.calls[0][0].chunk_index).toBe(0);
+      expect(mockDb.upsertNote.mock.calls[1][0].chunk_index).toBe(1);
+      expect(mockDb.upsertNote.mock.calls[2][0].chunk_index).toBe(2);
+      expect(mockDb.upsertNote.mock.calls[0][0].content).toBe('chunk zero');
+      expect(mockDb.upsertNote.mock.calls[1][0].content).toBe('chunk one');
+      expect(mockDb.upsertNote.mock.calls[2][0].content).toBe('chunk two');
+      expect(mockDb.deleteChunksAbove).toHaveBeenCalledWith('notes/large.md', 2);
+    });
+
+    it('should delete orphan chunks when note shrinks', async () => {
+      mockEmbedding.chunkText.mockReturnValue(['chunk A', 'chunk B']);
+
+      await watcher.handleFileChange(`${VAULT_PATH}/notes/shrunk.md`, 'raw content');
+
+      expect(mockDb.upsertNote).toHaveBeenCalledTimes(2);
+      expect(mockDb.deleteChunksAbove).toHaveBeenCalledWith('notes/shrunk.md', 1);
+    });
+
+    it('should not upsert any chunks if embedding fails mid-pipeline', async () => {
+      mockEmbedding.chunkText.mockReturnValue(['chunk zero', 'chunk one', 'chunk two']);
+      mockEmbedding.generateEmbedding
+        .mockResolvedValueOnce(new Array(1536).fill(0.1))
+        .mockRejectedValueOnce(new Error('OpenAI API rate limit exceeded'));
+
+      await watcher.handleFileChange(`${VAULT_PATH}/notes/failing.md`, 'raw content');
+
+      // No upserts should have happened since embedding failed on chunk 1
+      expect(mockDb.upsertNote).not.toHaveBeenCalled();
+      // No orphan cleanup either
+      expect(mockDb.deleteChunksAbove).not.toHaveBeenCalled();
+    });
+
     it('should handle title being null in embedding text', async () => {
       mockEmbedding.parseNote.mockReturnValue({
         title: null,
         tags: [],
         content: 'No title content',
       });
+      mockEmbedding.chunkText.mockReturnValue(['No title content']);
 
       await watcher.handleFileChange(filePath, content);
 

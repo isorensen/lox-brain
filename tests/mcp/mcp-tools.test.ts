@@ -15,6 +15,7 @@ function createMockDbClient(): DbClient {
     searchText: vi.fn().mockResolvedValue(emptyPaginated),
     listRecent: vi.fn().mockResolvedValue(emptyPaginated),
     getFileHash: vi.fn().mockResolvedValue(null),
+    deleteChunksAbove: vi.fn().mockResolvedValue(undefined),
   } as unknown as DbClient;
 }
 

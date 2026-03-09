@@ -73,6 +73,67 @@ export class EmbeddingService {
     return { title, tags, content };
   }
 
+  chunkText(text: string, maxTokens = 6000, overlapTokens = 200): string[] {
+    const estimateTokens = (t: string): number => Math.ceil(t.length / 4);
+
+    if (estimateTokens(text) <= maxTokens) {
+      return [text];
+    }
+
+    const paragraphs = text.split('\n\n');
+    const maxChars = maxTokens * 4;
+    const chunks: string[] = [];
+    let currentParagraphs: string[] = [];
+    let currentTokens = 0;
+    let overlapParagraphs: string[] = [];
+
+    for (const para of paragraphs) {
+      const paraTokens = estimateTokens(para);
+
+      // Force-split oversized paragraphs by character boundary
+      if (paraTokens > maxTokens) {
+        // Flush any accumulated paragraphs first
+        if (currentParagraphs.length > 0) {
+          chunks.push(currentParagraphs.join('\n\n'));
+          currentParagraphs = [];
+          currentTokens = 0;
+        }
+        // Split into sub-chunks directly (no overlap for char-boundary splits)
+        for (let offset = 0; offset < para.length; offset += maxChars) {
+          chunks.push(para.slice(offset, offset + maxChars));
+        }
+        overlapParagraphs = [];
+        continue;
+      }
+
+      if (currentTokens + paraTokens > maxTokens && currentParagraphs.length > 0) {
+        chunks.push(currentParagraphs.join('\n\n'));
+
+        overlapParagraphs = [];
+        let overlapCount = 0;
+        for (let i = currentParagraphs.length - 1; i >= 0; i--) {
+          const pTokens = estimateTokens(currentParagraphs[i]);
+          if (overlapCount + pTokens > overlapTokens && overlapParagraphs.length > 0) break;
+          overlapParagraphs.unshift(currentParagraphs[i]);
+          overlapCount += pTokens;
+          if (overlapCount >= overlapTokens) break;
+        }
+
+        currentParagraphs = [...overlapParagraphs, para];
+        currentTokens = overlapCount + paraTokens;
+      } else {
+        currentParagraphs.push(para);
+        currentTokens += paraTokens;
+      }
+    }
+
+    if (currentParagraphs.length > 0) {
+      chunks.push(currentParagraphs.join('\n\n'));
+    }
+
+    return chunks.length > 0 ? chunks : [text];
+  }
+
   computeHash(content: string): string {
     return createHash('sha256').update(content, 'utf8').digest('hex');
   }

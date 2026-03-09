@@ -12,6 +12,7 @@ export interface NoteRow {
   tags: string[];
   embedding: number[];
   file_hash: string;
+  chunk_index: number;
 }
 
 export interface SearchOptions {

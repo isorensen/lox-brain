@@ -159,47 +159,50 @@ Content here.`;
     });
 
     it('should split on paragraph boundaries (\\n\\n)', () => {
+      // Each paragraph ~3334 tokens at chars/3. Two = 6668 (exceeds 4000).
       const para = 'B'.repeat(10000);
       const text = `${para}\n\n${para}\n\n${para}`;
       const chunks = service.chunkText(text);
-      expect(chunks.length).toBe(2);
+      expect(chunks.length).toBe(3);
     });
 
     it('should include overlap from previous chunk', () => {
-      const paraA = 'AAAA '.repeat(1600);
-      const paraB = 'BBBB '.repeat(1600);
-      const paraC = 'CCCC '.repeat(1600);
-      const paraD = 'DDDD '.repeat(1600);
+      // Each paragraph ~1867 tokens at chars/3 (5600 chars). Two fit in 4000 tokens,
+      // three don't, so chunks split after every 2 paragraphs.
+      const paraA = 'AAAA '.repeat(1120); // 5600 chars
+      const paraB = 'BBBB '.repeat(1120);
+      const paraC = 'CCCC '.repeat(1120);
+      const paraD = 'DDDD '.repeat(1120);
       const text = [paraA, paraB, paraC, paraD].join('\n\n');
       const chunks = service.chunkText(text);
       expect(chunks.length).toBeGreaterThanOrEqual(2);
       if (chunks.length >= 2) {
-        expect(chunks[1]).toContain('CCCC');
+        // Last paragraph of chunk 0 should appear as overlap in chunk 1
+        expect(chunks[1]).toContain('BBBB');
       }
     });
 
     it('should handle text without \\n\\n separators (single long paragraph)', () => {
+      // 30000 chars / 3 = 10000 tokens, exceeds 4000 maxTokens
       const longParagraph = 'X'.repeat(30000);
       const chunks = service.chunkText(longParagraph);
       expect(chunks.length).toBeGreaterThan(1);
+      // maxTokens=4000, chars/3 → max chars per chunk = 12000
       for (const chunk of chunks) {
-        expect(chunk.length).toBeLessThanOrEqual(24000);
+        expect(chunk.length).toBeLessThanOrEqual(12000);
       }
       expect(chunks.join('')).toBe(longParagraph);
     });
 
     it('should force-split a single long paragraph that exceeds maxTokens', () => {
-      // Single paragraph of ~7500 tokens (30000 chars), no \n\n
       const longParagraph = 'X'.repeat(30000);
       const chunks = service.chunkText(longParagraph);
 
-      // Should be split into multiple chunks, each within token limit
       expect(chunks.length).toBeGreaterThan(1);
-      // Each chunk should be within the maxTokens limit (6000 tokens = 24000 chars)
+      // maxTokens=4000, chars/3 → max chars per chunk = 12000
       for (const chunk of chunks) {
-        expect(chunk.length).toBeLessThanOrEqual(24000);
+        expect(chunk.length).toBeLessThanOrEqual(12000);
       }
-      // All content should be preserved
       expect(chunks.join('')).toBe(longParagraph);
     });
 

@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- CI/CD pipeline stabilized (deploy script, SSH keepalive, proper error handling)
+
 ## [0.3.0] — 2026-03-10
 
 ### Added

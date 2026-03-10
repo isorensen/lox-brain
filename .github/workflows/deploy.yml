@@ -22,8 +22,7 @@ jobs:
             --zone=us-east1-b \
             --project=${{ secrets.GCP_PROJECT_ID }} \
             --tunnel-through-iap \
-            --ssh-flag="-o ServerAliveInterval=10 -o ServerAliveCountMax=6" \
-            --command="set -e && cd /home/sorensen/obsidian_open_brain && git pull origin main && npm ci && npm run build && sudo systemctl restart obsidian-watcher && (pkill -f 'tsx src/mcp/index.ts' || true) && echo DEPLOY_SUCCESS"
+            --command="nohup bash /home/sorensen/obsidian_open_brain/scripts/deploy.sh > /tmp/deploy.log 2>&1; cat /tmp/deploy.log"
 
       - name: Health check
         run: |
@@ -31,5 +30,4 @@ jobs:
             --zone=us-east1-b \
             --project=${{ secrets.GCP_PROJECT_ID }} \
             --tunnel-through-iap \
-            --ssh-flag="-o ServerAliveInterval=10 -o ServerAliveCountMax=6" \
-            --command="systemctl is-active obsidian-watcher"
+            --command="systemctl is-active obsidian-watcher && tail -1 /tmp/deploy.log | grep -q DEPLOY_SUCCESS"

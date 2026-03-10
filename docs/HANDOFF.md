@@ -138,3 +138,14 @@ Regra: cada fase deve estar em producao e funcional antes de avancar. Eu confirm
 - Todos os search tools retornam `PaginatedResult { results, total, limit, offset }`
 - Workflow recomendado: search para descobrir notas → read_note para conteudo completo
 - Operacional: MCP server roda via stdio over SSH. Apos mudancas de codigo na VM, matar processo antigo (`pkill -f "tsx src/mcp/index.ts"`) e reconectar via `/mcp` no Claude Code
+
+### 2026-03-10 — CI/CD GitHub Actions completa
+- CI workflow (`ci.yml`): build + tsc --noEmit + test:coverage (80%) + npm audit em PRs para main
+- Deploy workflow (`deploy.yml`): gcloud compute ssh via IAP tunnel no merge para main
+- Deploy steps: git pull, npm ci --omit=dev, build, systemctl restart obsidian-watcher, pkill MCP
+- Health check: verifica que watcher esta ativo apos deploy
+- SA `github-actions-deploy`: roles iap.tunnelResourceAccessor, compute.instanceAdmin.v1, iam.serviceAccountUser, compute.osLogin
+- SA key rotation: manual a cada 90 dias (proximo: 2026-06-08), tracked em TODO.md
+- Branch protection nao disponivel (requer GitHub Pro) — CI roda mas merge nao e bloqueado
+- Warning: google-github-actions v2 usa Node.js 20 deprecated (deadline: junho 2026)
+- Proxima fase pendente: Fase 10 (Backups & Monitoring)

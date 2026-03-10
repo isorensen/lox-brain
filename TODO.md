@@ -16,17 +16,24 @@
 
 ## Pending Improvements
 
-### Text chunking for large notes
+### ~~Text chunking for large notes~~ — DONE (2026-03-09)
+- `EmbeddingService.chunkText()`: maxTokens=4000, overlap=200, paragraph-based splitting
+- Two-phase pipeline: generate all embeddings first, then batch upsert
+- `chunk_index` column added to `vault_embeddings` (unique key: `file_path, chunk_index`)
+- 243/243 notes indexed successfully (was 232/243 before chunking)
+
+### SA key rotation schedule
+- **Priority:** High
+- `obsidian-vm-sa` key expires ~90 days from creation (2026-03-07) → **rotate by 2026-06-05**
+- `github-actions-deploy` key `c3044b0c` (created 2026-03-10, no auto-expiry) → **rotate by 2026-06-08**
+- Consider: automate rotation via Cloud Scheduler + Cloud Function, or at minimum set calendar reminders
+- Long-term: migrate to Workload Identity Federation (keyless) for GitHub Actions
+
+### Add ESLint to project
 - **Priority:** Medium
-- **Context:** During initial vault indexing (Phase 8), 5 notes exceeded OpenAI `text-embedding-3-small` token limit (8192 tokens). These are long legal/regulatory documents (leis, resoluções, portarias).
-- **Solution:** Implement text chunking in `EmbeddingService` — split large texts into chunks (e.g. 6000 tokens with overlap), generate embedding per chunk, store multiple rows per note or average the embeddings.
-- **Affected notes (initial indexing):**
-  - `2 - Source Material/Leis e Resoluções/Lei 10820 compilado.md` (13257 tokens)
-  - `2 - Source Material/Leis e Resoluções/PORTARIA MTE Nº 435, DE 20 DE MARÇO DE 2025.md` (13062 tokens)
-  - `2 - Source Material/Leis e Resoluções/Resolução BCB n 352 de 23 11 2023.md` (45576 tokens)
-  - `2 - Source Material/Leis e Resoluções/Resolução CMN n 4966 de 25 11 2021.md` (34907 tokens)
-  - `2 - Source Material/Livros/Ismail_et_al-Exponential Organizations.md` (9297 tokens)
-- **Re-index:** After implementing chunking, re-run `npm run index-vault` — the script is idempotent (hash-based skip), so only missing/changed notes will be re-embedded.
+- Add ESLint with TypeScript config
+- Integrate into CI/CD PR validation pipeline
+- Fix any existing lint issues
 
 ### ~~Search tools response size~~ — DONE (2026-03-08)
 - `search_semantic`, `search_text`, `list_recent` now return metadata only by default.

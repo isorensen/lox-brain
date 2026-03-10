@@ -22,12 +22,23 @@
 - `chunk_index` column added to `vault_embeddings` (unique key: `file_path, chunk_index`)
 - 243/243 notes indexed successfully (was 232/243 before chunking)
 
+### ~~CI/CD auto-deploy~~ — DONE (2026-03-10)
+- GitHub Actions: `ci.yml` (PR validation: build, test, coverage, audit) + `deploy.yml` (deploy on merge to main via IAP tunnel SSH)
+- GCP SA `github-actions-deploy` with least-privilege roles
+- Deploy: git pull, npm ci, build, restart watcher, kill MCP, health check
+
 ### SA key rotation schedule
 - **Priority:** High
 - `obsidian-vm-sa` key expires ~90 days from creation (2026-03-07) → **rotate by 2026-06-05**
 - `github-actions-deploy` key `c3044b0c` (created 2026-03-10, no auto-expiry) → **rotate by 2026-06-08**
 - Consider: automate rotation via Cloud Scheduler + Cloud Function, or at minimum set calendar reminders
 - Long-term: migrate to Workload Identity Federation (keyless) for GitHub Actions
+
+### Update google-github-actions to Node.js 24 compatible versions
+- **Priority:** Medium
+- **Deadline:** Before June 2, 2026
+- `google-github-actions/auth@v2` and `google-github-actions/setup-gcloud@v2` use deprecated Node.js 20
+- Check for v3 releases and update workflows
 
 ### Add ESLint to project
 - **Priority:** Medium

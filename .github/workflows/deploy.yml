@@ -18,15 +18,15 @@ jobs:
 
       - name: Deploy to VM
         run: |
-          gcloud compute ssh obsidian-vm \
+          gcloud compute ssh sorensen@obsidian-vm \
             --zone=us-east1-b \
             --project=${{ secrets.GCP_PROJECT_ID }} \
             --tunnel-through-iap \
-            --command="cd /home/sorensen/obsidian_open_brain && git pull origin main && npm ci --omit=dev && npm run build && sudo systemctl restart obsidian-watcher && pkill -f 'tsx src/mcp/index.ts' || true"
+            --command="cd /home/sorensen/obsidian_open_brain && git pull origin main && npm ci --omit=dev && npm run build && sudo systemctl restart obsidian-watcher && (pkill -f 'tsx src/mcp/index.ts' || true)"
 
       - name: Health check
         run: |
-          gcloud compute ssh obsidian-vm \
+          gcloud compute ssh sorensen@obsidian-vm \
             --zone=us-east1-b \
             --project=${{ secrets.GCP_PROJECT_ID }} \
             --tunnel-through-iap \

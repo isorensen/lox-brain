@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-03-10
+
+### Added
+- GitHub Actions CI workflow (`ci.yml`): validates PRs with build, type check, test coverage (80%+), and security audit
+- GitHub Actions deploy workflow (`deploy.yml`): auto-deploys to VM via GCP IAP tunnel SSH on merge to main
+- GCP service account `github-actions-deploy` with least-privilege IAM roles
+- Health check step in deploy workflow verifies watcher service is active
+- CI/CD design document and implementation plan
+
+### Changed
+- Updated TODO.md: marked text chunking as DONE, added SA key rotation tracking
+
 ## [0.2.0] — 2026-03-08
 
 ### Added

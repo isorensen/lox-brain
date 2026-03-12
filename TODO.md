@@ -43,13 +43,17 @@
 - Vantagem: já usa GCP, autenticação integrada
 - Desvantagem: mais burocrático que Telegram, cards API limitada para formatting
 
-### Calendar → Obsidian Sync
-- **Priority:** High
-- **Phase 1 (skill):** Claude Code skill `/sync-calendar` — on-demand via MCPs existentes (Calendar + Gmail + Obsidian Brain)
-  - PoC validada (2026-03-12): fluxo completo funcional, 3 notas criadas com sucesso
-  - Branch: `feat/calendar-to-obsidian`
-  - Ver `docs/HANDOFF.md` seção "2026-03-12 PoC Calendar → Obsidian"
-- **Phase 2 (automação VM):** Script standalone TypeScript na VM com cron
+### ~~Calendar → Obsidian Sync (Phase 1 — skill)~~ — DONE (2026-03-12)
+- **Skill:** `~/.claude/skills/sync-calendar/SKILL.md` — on-demand via MCPs existentes (Calendar + Gmail + Obsidian Brain)
+- **Battle-tested:** sync completo de março 2026 (67 eventos criados no vault)
+- **12 melhorias** aplicadas com base em uso real (filtros, formato, subagentes em batch, integração Gemini AI)
+- **Gemini AI meeting notes:** emails de `gemini-notes@google.com` capturados via Gmail MCP com conteúdo completo (summary, tópicos, next steps)
+- **Subagent batch processing:** eventos processados em paralelo para syncs grandes
+- Branch: `feat/calendar-to-obsidian` (mergeado após docs)
+
+### Calendar → Obsidian Automation (Phase 2 — feat/calendar-automation)
+- **Priority:** Medium
+- Script standalone TypeScript na VM com cron
   - Google Calendar API + Gmail API (OAuth2 direto) + escrita .md no vault
   - Roda automaticamente a cada 1-2h, sem depender de sessão Claude Code
   - Precisa: OAuth2 setup, service account ou stored credentials

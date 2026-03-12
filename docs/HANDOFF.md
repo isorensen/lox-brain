@@ -31,15 +31,6 @@ O usuario trabalha junto, configura manualmente o que for necessario, testa, e s
 - Plano: `docs/plans/2026-03-07-obsidian-open-brain-plan.md`
 - Handoff original (infra): `TECHNICAL_HANDOFF.md`
 
-## Prompt de Retomada (colar em nova sessao)
-
-```
-Estou trabalhando no projeto obsidian_open_brain (Obsidian Open Brain).
-Leia docs/HANDOFF.md para ver o status atual das fases.
-Leia docs/plans/2026-03-07-obsidian-open-brain-plan.md para detalhes da fase atual.
-Regra: cada fase deve estar em producao e funcional antes de avancar. Eu confirmo quando podemos ir para a proxima.
-```
-
 ## Notas de Sessao
 
 ### 2026-03-07 — Fase 1 completa
@@ -150,29 +141,33 @@ Regra: cada fase deve estar em producao e funcional antes de avancar. Eu confirm
 - Warning: google-github-actions v2 usa Node.js 20 deprecated (deadline: junho 2026)
 - Proxima fase pendente: Fase 10 (Backups & Monitoring)
 
-### 2026-03-12 — PoC Calendar → Obsidian (branch feat/calendar-to-obsidian)
-- **Objetivo:** Capturar eventos do Google Calendar e notas de reuniao do Gemini → criar notas no Obsidian (pasta `7 - Meeting Notes`)
-- **Brainstorm:** 3 abordagens avaliadas (Claude Code+MCP, Apps Script, AppSheet/Flows). Escolhida: Abordagem 1 (Claude Code + MCPs existentes) por simplicidade maxima e Zero Trust mantido
-- **PoC Results:**
-  - Google Calendar MCP: funcional. `gcal_list_events(condenseEventDetails=false)` retorna attendees, attachments, description
-  - Notas do Gemini: aparecem como `attachments` nos eventos (Google Docs com title "Anotacoes do Gemini")
-  - Google Docs: inacessiveis via WebFetch (401) e sem MCP Drive disponivel
-  - **Gmail como alternativa:** emails de `gemini-notes@google.com` trazem conteudo COMPLETO das notas (summary, topicos, next steps com responsaveis)
-  - Obsidian Brain MCP: `search_text` funcional para verificar duplicatas, `write_note` para criar notas
-- **Fluxo validado:**
+### 2026-03-12 — sync-calendar skill COMPLETA (branch feat/calendar-to-obsidian)
+- **Status:** skill battle-tested e pronta para uso. 67 eventos sincronizados (marco 2026 completo).
+- **Skill path:** `~/.claude/skills/sync-calendar/SKILL.md`
+- **Fluxo validado (end-to-end):**
   1. `gcal_list_events` → eventos com attendees + metadata
-  2. `gmail_search_messages` (from:gemini-notes@google.com + titulo) → encontra email com notas
-  3. `gmail_read_message` → conteudo completo das notas do Gemini
-  4. `obsidian search_text` → verifica se nota ja existe no vault
-  5. `obsidian write_note` → cria/complementa nota no template `7 - Meeting Notes`
-- **Template:** baseado em `7 - Meeting Notes/Exemplo de reuniao.md` (wikilinks, dataview fields, callouts)
-- **Teste end-to-end (11/03/2026):** 4 eventos processados, 3 notas criadas (1 ignorada por nao ter participado)
-  - Nota com Gemini: topicos, summary, next steps com responsaveis, links pro Google Doc
-  - Nota sem Gemini: template com callout "adicione notas manualmente"
-  - Nota ignorada: `myResponseStatus=needsAction` + `optional=true`
-- **Formato corrigido:** plain text + Dataview inline fields (sem YAML frontmatter). Tags como wikilinks `[[tag]]` para `3 - Tags/`. Status `#baby`.
-- **Memoria salva:** regra de formato persistida em `memory/feedback_obsidian_note_format.md`
-- **Proximo passo:** implementar como skill Claude Code (on-demand) e depois avaliar script standalone na VM (cron) para automacao total
-- **Opcoes de automacao:**
-  - **A) Skill Claude Code** — `/sync-calendar [data]` invoca MCPs existentes (Calendar + Gmail + Obsidian Brain). Simples, on-demand.
-  - **B) Script standalone VM** — TypeScript com Google Calendar API + Gmail API + escrita direta .md. Precisa OAuth2 setup. Roda via cron.
+  2. `gmail_search_messages` (from:gemini-notes@google.com + titulo) → encontra email com notas Gemini
+  3. `gmail_read_message` → conteudo completo (summary, topicos, next steps com responsaveis)
+  4. `obsidian search_text` → verifica duplicatas no vault
+  5. `obsidian write_note` → cria nota em `7 - Meeting Notes/`
+- **12 melhorias aplicadas com base em uso real:**
+  - Filtros de eventos (sem participacao, recusados, opcionais nao aceitos)
+  - Subagent batch processing para syncs grandes (paralelismo)
+  - Integracao completa com Gemini AI meeting notes via Gmail
+  - Formato correto: plain text + Dataview inline fields (sem YAML frontmatter)
+  - Tags como wikilinks `[[tag]]` para `3 - Tags/`
+- **Automacao (proximo passo):** branch `feat/calendar-automation` — script TypeScript standalone na VM com cron a cada 1-2h
+
+## Prompt de Retomada — Proxima Sessao
+
+```
+Estou trabalhando no projeto obsidian_open_brain (Obsidian Open Brain).
+Leia docs/HANDOFF.md para ver o status atual.
+
+Opcoes para proxima sessao:
+1. feat/calendar-automation — script TypeScript standalone na VM com cron (Google Calendar API + Gmail API + OAuth2 setup)
+2. Phase 10 (Backups & Monitoring) — pg_dump cron, VM snapshot schedule, Cloud Logging alerts
+3. ESLint — adicionar ao projeto e integrar no CI/CD
+
+Regra: cada fase deve estar em producao e funcional antes de avancar.
+```

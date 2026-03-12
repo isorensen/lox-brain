@@ -484,6 +484,28 @@ search_semantic("kafka consumer") → returns titles/paths/tags
 read_note("path/to/note.md")     → fetch full content of chosen note
 ```
 
+## Calendar → Obsidian Sync
+
+The `sync-calendar` Claude Code skill syncs Google Calendar events into the Obsidian vault on demand.
+
+**Skill location:** `~/.claude/skills/sync-calendar/SKILL.md`
+
+**Capabilities:**
+- Fetches events from Google Calendar for any date range
+- Captures full Gemini AI meeting notes from Gmail (`gemini-notes@google.com`)
+- Skips events where the user did not participate (declined, optional-not-accepted, no-response)
+- Deduplicates: checks vault before creating a note
+- Creates notes in `7 - Meeting Notes/` using Dataview inline fields (no YAML frontmatter)
+- Tags as wikilinks to `3 - Tags/`
+- Batch processes large date ranges via parallel subagents
+
+**Usage (invoke from Claude Code):**
+```
+/sync-calendar 2026-03-01 2026-03-31
+```
+
+**Automation (planned):** `feat/calendar-automation` — standalone TypeScript script on the VM with cron (1–2h interval), using Google Calendar API + Gmail API directly (no Claude session required).
+
 ## VM Services (systemd)
 
 ```bash

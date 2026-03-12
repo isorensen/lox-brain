@@ -149,3 +149,30 @@ Regra: cada fase deve estar em producao e funcional antes de avancar. Eu confirm
 - Branch protection nao disponivel (requer GitHub Pro) — CI roda mas merge nao e bloqueado
 - Warning: google-github-actions v2 usa Node.js 20 deprecated (deadline: junho 2026)
 - Proxima fase pendente: Fase 10 (Backups & Monitoring)
+
+### 2026-03-12 — PoC Calendar → Obsidian (branch feat/calendar-to-obsidian)
+- **Objetivo:** Capturar eventos do Google Calendar e notas de reuniao do Gemini → criar notas no Obsidian (pasta `7 - Meeting Notes`)
+- **Brainstorm:** 3 abordagens avaliadas (Claude Code+MCP, Apps Script, AppSheet/Flows). Escolhida: Abordagem 1 (Claude Code + MCPs existentes) por simplicidade maxima e Zero Trust mantido
+- **PoC Results:**
+  - Google Calendar MCP: funcional. `gcal_list_events(condenseEventDetails=false)` retorna attendees, attachments, description
+  - Notas do Gemini: aparecem como `attachments` nos eventos (Google Docs com title "Anotacoes do Gemini")
+  - Google Docs: inacessiveis via WebFetch (401) e sem MCP Drive disponivel
+  - **Gmail como alternativa:** emails de `gemini-notes@google.com` trazem conteudo COMPLETO das notas (summary, topicos, next steps com responsaveis)
+  - Obsidian Brain MCP: `search_text` funcional para verificar duplicatas, `write_note` para criar notas
+- **Fluxo validado:**
+  1. `gcal_list_events` → eventos com attendees + metadata
+  2. `gmail_search_messages` (from:gemini-notes@google.com + titulo) → encontra email com notas
+  3. `gmail_read_message` → conteudo completo das notas do Gemini
+  4. `obsidian search_text` → verifica se nota ja existe no vault
+  5. `obsidian write_note` → cria/complementa nota no template `7 - Meeting Notes`
+- **Template:** baseado em `7 - Meeting Notes/Exemplo de reuniao.md` (wikilinks, dataview fields, callouts)
+- **Teste end-to-end (11/03/2026):** 4 eventos processados, 3 notas criadas (1 ignorada por nao ter participado)
+  - Nota com Gemini: topicos, summary, next steps com responsaveis, links pro Google Doc
+  - Nota sem Gemini: template com callout "adicione notas manualmente"
+  - Nota ignorada: `myResponseStatus=needsAction` + `optional=true`
+- **Formato corrigido:** plain text + Dataview inline fields (sem YAML frontmatter). Tags como wikilinks `[[tag]]` para `3 - Tags/`. Status `#baby`.
+- **Memoria salva:** regra de formato persistida em `memory/feedback_obsidian_note_format.md`
+- **Proximo passo:** implementar como skill Claude Code (on-demand) e depois avaliar script standalone na VM (cron) para automacao total
+- **Opcoes de automacao:**
+  - **A) Skill Claude Code** — `/sync-calendar [data]` invoca MCPs existentes (Calendar + Gmail + Obsidian Brain). Simples, on-demand.
+  - **B) Script standalone VM** — TypeScript com Google Calendar API + Gmail API + escrita direta .md. Precisa OAuth2 setup. Roda via cron.

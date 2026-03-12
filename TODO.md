@@ -14,6 +14,42 @@
 - Protected by IAM (`--no-allow-unauthenticated`)
 - Enables remote VM control from mobile/frontend
 
+## Future Integrations
+
+### Telegram Bot (ingestão interativa via celular)
+- **Priority:** Medium
+- **Complexity:** Medium — API oficial, gratuita, sem risco de ban
+- Stack: `telegraf` (TypeScript) + OpenAI Whisper API + Claude API
+- **Fluxo interativo:**
+  1. Usuário envia ideia (texto ou áudio)
+  2. Bot transcreve áudio (Whisper) se necessário
+  3. Claude API formata como nota Obsidian (preview)
+  4. Bot responde com preview + opções: Refinar / Salvar / Cancelar
+  5. Usuário pode pedir refinamento ("expande", "muda título", "adiciona contexto")
+  6. Bot ajusta via Claude API e mostra nova preview
+  7. Ao confirmar → salva no vault → watcher embeda automaticamente
+- **Caso de uso principal:** registrar ideias rápidas (texto/áudio) com follow-up e refinamento antes de salvar
+- Arquitetura: bot + Claude API para formatação inteligente (conhece formato do vault)
+
+### WhatsApp Integration (ingestão via celular)
+- **Priority:** Low
+- **Complexity:** High — sem API oficial gratuita para uso pessoal
+- Opções: Evolution API (self-hosted, risco de ban) ou WhatsApp Business API (paga)
+- Mesmo fluxo do Telegram, mas com mais infra e risco
+
+### Google Chat Bot (ingestão via Workspace)
+- **Priority:** Low
+- **Complexity:** Medium — requer config no GCP Console (OAuth/SA, Pub/Sub ou webhook)
+- Vantagem: já usa GCP, autenticação integrada
+- Desvantagem: mais burocrático que Telegram, cards API limitada para formatting
+
+### New MCP Server Tools
+- **Priority:** Medium
+- `search_by_tags` — query by tags (GIN index already exists)
+- `get_related` — find N most similar notes by embedding distance
+- `get_graph` — extract wikilinks and return connection graph
+- `vault_stats` — note counts by folder, top tags, orphan notes
+
 ## Pending Improvements
 
 ### ~~Text chunking for large notes~~ — DONE (2026-03-09)

@@ -8,6 +8,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Core principle:** Obsidian Vault is the source of truth. pgvector is a read index derived from it.
 
+### Relationship with `obsidian-ingest` skill
+
+The Claude Code skill `obsidian-ingest` (`~/.claude/skills/obsidian-ingest/`) is a **separate project**. It writes notes directly to the local vault filesystem without requiring any infrastructure. Open Brain is the evolution: a full system with semantic search (pgvector), remote access (MCP Server over VPN), and automated embedding pipeline. They share the same vault and note format but are independent — `obsidian-ingest` works without Open Brain, and vice versa.
+
 ## Architecture
 
 ```

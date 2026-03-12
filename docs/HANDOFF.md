@@ -31,15 +31,6 @@ O usuario trabalha junto, configura manualmente o que for necessario, testa, e s
 - Plano: `docs/plans/2026-03-07-obsidian-open-brain-plan.md`
 - Handoff original (infra): `TECHNICAL_HANDOFF.md`
 
-## Prompt de Retomada (colar em nova sessao)
-
-```
-Estou trabalhando no projeto obsidian_open_brain (Obsidian Open Brain).
-Leia docs/HANDOFF.md para ver o status atual das fases.
-Leia docs/plans/2026-03-07-obsidian-open-brain-plan.md para detalhes da fase atual.
-Regra: cada fase deve estar em producao e funcional antes de avancar. Eu confirmo quando podemos ir para a proxima.
-```
-
 ## Notas de Sessao
 
 ### 2026-03-07 — Fase 1 completa
@@ -149,3 +140,34 @@ Regra: cada fase deve estar em producao e funcional antes de avancar. Eu confirm
 - Branch protection nao disponivel (requer GitHub Pro) — CI roda mas merge nao e bloqueado
 - Warning: google-github-actions v2 usa Node.js 20 deprecated (deadline: junho 2026)
 - Proxima fase pendente: Fase 10 (Backups & Monitoring)
+
+### 2026-03-12 — sync-calendar skill COMPLETA (branch feat/calendar-to-obsidian)
+- **Status:** skill battle-tested e pronta para uso. 67 eventos sincronizados (marco 2026 completo).
+- **Skill path:** `~/.claude/skills/sync-calendar/SKILL.md`
+- **Fluxo validado (end-to-end):**
+  1. `gcal_list_events` → eventos com attendees + metadata
+  2. `gmail_search_messages` (from:gemini-notes@google.com + titulo) → encontra email com notas Gemini
+  3. `gmail_read_message` → conteudo completo (summary, topicos, next steps com responsaveis)
+  4. `obsidian search_text` → verifica duplicatas no vault
+  5. `obsidian write_note` → cria nota em `7 - Meeting Notes/`
+- **12 melhorias aplicadas com base em uso real:**
+  - Filtros de eventos (sem participacao, recusados, opcionais nao aceitos)
+  - Subagent batch processing para syncs grandes (paralelismo)
+  - Integracao completa com Gemini AI meeting notes via Gmail
+  - Formato correto: plain text + Dataview inline fields (sem YAML frontmatter)
+  - Tags como wikilinks `[[tag]]` para `3 - Tags/`
+- **Automacao (proximo passo):** branch `feat/calendar-automation` — script TypeScript standalone na VM com cron a cada 1-2h
+
+## Prompt de Retomada — Proxima Sessao
+
+```
+Estou trabalhando no projeto obsidian_open_brain (Obsidian Open Brain).
+Leia docs/HANDOFF.md para ver o status atual.
+
+Opcoes para proxima sessao:
+1. feat/calendar-automation — script TypeScript standalone na VM com cron (Google Calendar API + Gmail API + OAuth2 setup)
+2. Phase 10 (Backups & Monitoring) — pg_dump cron, VM snapshot schedule, Cloud Logging alerts
+3. ESLint — adicionar ao projeto e integrar no CI/CD
+
+Regra: cada fase deve estar em producao e funcional antes de avancar.
+```

@@ -6,6 +6,20 @@ All notable changes to this project will be documented in this file.
 
 - CI/CD pipeline stabilized (deploy script, SSH keepalive, proper error handling)
 
+## [0.4.0] — 2026-03-12
+
+### Added
+- `sync-calendar` Claude Code skill (`~/.claude/skills/sync-calendar/SKILL.md`): on-demand Google Calendar → Obsidian vault sync via existing MCPs (Calendar + Gmail + Obsidian Brain)
+- Gemini AI meeting notes integration: captures full content (summary, topics, next steps with owners) from `gemini-notes@google.com` emails via Gmail MCP
+- Subagent batch processing for large syncs (parallel event processing)
+- Smart event filtering: skips events where user did not participate, declined, or was optional and did not accept
+- Note format: plain text + Dataview inline fields, tags as wikilinks to `3 - Tags/` (no YAML frontmatter)
+- Memory rule persisted for vault note format: `memory/feedback_obsidian_note_format.md`
+
+### Tested
+- Full month sync: 67 events created across March 2026 (all-day, timed, meetings with/without Gemini notes)
+- 12 improvements applied based on real-world usage during battle-testing
+
 ## [0.3.0] — 2026-03-10
 
 ### Added

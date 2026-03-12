@@ -14,6 +14,57 @@
 - Protected by IAM (`--no-allow-unauthenticated`)
 - Enables remote VM control from mobile/frontend
 
+## Future Integrations
+
+### Telegram Bot (ingestão interativa via celular)
+- **Priority:** Medium
+- **Complexity:** Medium — API oficial, gratuita, sem risco de ban
+- Stack: `telegraf` (TypeScript) + OpenAI Whisper API + Claude API
+- **Fluxo interativo:**
+  1. Usuário envia ideia (texto ou áudio)
+  2. Bot transcreve áudio (Whisper) se necessário
+  3. Claude API formata como nota Obsidian (preview)
+  4. Bot responde com preview + opções: Refinar / Salvar / Cancelar
+  5. Usuário pode pedir refinamento ("expande", "muda título", "adiciona contexto")
+  6. Bot ajusta via Claude API e mostra nova preview
+  7. Ao confirmar → salva no vault → watcher embeda automaticamente
+- **Caso de uso principal:** registrar ideias rápidas (texto/áudio) com follow-up e refinamento antes de salvar
+- Arquitetura: bot + Claude API para formatação inteligente (conhece formato do vault)
+
+### WhatsApp Integration (ingestão via celular)
+- **Priority:** Low
+- **Complexity:** High — sem API oficial gratuita para uso pessoal
+- Opções: Evolution API (self-hosted, risco de ban) ou WhatsApp Business API (paga)
+- Mesmo fluxo do Telegram, mas com mais infra e risco
+
+### Google Chat Bot (ingestão via Workspace)
+- **Priority:** Low
+- **Complexity:** Medium — requer config no GCP Console (OAuth/SA, Pub/Sub ou webhook)
+- Vantagem: já usa GCP, autenticação integrada
+- Desvantagem: mais burocrático que Telegram, cards API limitada para formatting
+
+### ~~Calendar → Obsidian Sync (Phase 1 — skill)~~ — DONE (2026-03-12)
+- **Skill:** `~/.claude/skills/sync-calendar/SKILL.md` — on-demand via MCPs existentes (Calendar + Gmail + Obsidian Brain)
+- **Battle-tested:** sync completo de março 2026 (67 eventos criados no vault)
+- **12 melhorias** aplicadas com base em uso real (filtros, formato, subagentes em batch, integração Gemini AI)
+- **Gemini AI meeting notes:** emails de `gemini-notes@google.com` capturados via Gmail MCP com conteúdo completo (summary, tópicos, next steps)
+- **Subagent batch processing:** eventos processados em paralelo para syncs grandes
+- Branch: `feat/calendar-to-obsidian` (mergeado após docs)
+
+### Calendar → Obsidian Automation (Phase 2 — feat/calendar-automation)
+- **Priority:** Medium
+- Script standalone TypeScript na VM com cron
+  - Google Calendar API + Gmail API (OAuth2 direto) + escrita .md no vault
+  - Roda automaticamente a cada 1-2h, sem depender de sessão Claude Code
+  - Precisa: OAuth2 setup, service account ou stored credentials
+
+### New MCP Server Tools
+- **Priority:** Medium
+- `search_by_tags` — query by tags (GIN index already exists)
+- `get_related` — find N most similar notes by embedding distance
+- `get_graph` — extract wikilinks and return connection graph
+- `vault_stats` — note counts by folder, top tags, orphan notes
+
 ## Pending Improvements
 
 ### ~~Text chunking for large notes~~ — DONE (2026-03-09)

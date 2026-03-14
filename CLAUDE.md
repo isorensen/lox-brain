@@ -15,15 +15,15 @@ The Claude Code skill `obsidian-ingest` (`~/.claude/skills/obsidian-ingest/`) is
 ## Architecture
 
 ```
-Local (Obsidian Desktop) <--git sync--> VM (GCE e2-small, us-central1)
+Local (Obsidian Desktop) <--git sync--> VM (GCE e2-small, us-east1-b)
                                          |
                                          +-- PostgreSQL 16 + pgvector (localhost only)
                                          +-- Vault Watcher (chokidar, detects .md changes)
                                          +-- Embedding Service (OpenAI text-embedding-3-small)
                                          +-- MCP Server (TypeScript, Anthropic SDK)
-                                         +-- WireGuard VPN (UDP 51820)
+                                         +-- WireGuard VPN (UDP 51820, 2 peers)
 
-Claude Code --VPN--> MCP Server --> tools (write_note, read_note, delete_note, search_semantic, search_text, list_recent)
+Claude Code (Arch 10.10.0.2 | Mac 10.10.0.3) --VPN--> MCP Server --> tools
 ```
 
 **Data flow:** Local edit -> git push -> VM git pull (cron 2min) -> Watcher -> OpenAI embedding -> pgvector upsert. Reverse: Claude Code -> MCP Server -> creates .md -> Watcher -> embedding -> pgvector -> git push -> local pull.
@@ -63,6 +63,19 @@ The MCP server runs via **stdio over SSH** — it is spawned on-demand by Claude
 2. Reconnect in Claude Code: run `/mcp` → select `obsidian-brain` → reconnect, **or** restart Claude Code entirely.
 
 Without this step, the old binary remains in memory and changes will not take effect.
+
+### SSH Connection
+
+The SSH user on the VM is **`sorensen`** (not the local macOS/Linux username). SSH config (`~/.ssh/config`):
+
+```
+Host obsidian-vm
+  HostName 10.10.0.1
+  User sorensen
+  IdentityFile ~/.ssh/google_compute_engine
+```
+
+> **Note:** WireGuard VPN must be active before SSH connects. Arch Linux uses `10.10.0.2`; Mac uses `10.10.0.3`.
 
 ## Implementation Plan
 

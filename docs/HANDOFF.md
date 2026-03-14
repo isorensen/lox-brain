@@ -1,7 +1,7 @@
 # Obsidian Open Brain — Session Handoff
 
 **Projeto:** obsidian_open_brain
-**Ultimo update:** 2026-03-08
+**Ultimo update:** 2026-03-14
 
 ## Regra de Ouro
 
@@ -158,11 +158,26 @@ O usuario trabalha junto, configura manualmente o que for necessario, testa, e s
   - Tags como wikilinks `[[tag]]` para `3 - Tags/`
 - **Automacao (proximo passo):** branch `feat/calendar-automation` — script TypeScript standalone na VM com cron a cada 1-2h
 
+### 2026-03-14 — Mac configurado como segundo cliente WireGuard + MCP
+
+- **Novo peer WireGuard (Mac):** IP `10.10.0.3/32` registrado na VM e persistido em `/etc/wireguard/wg0.conf`
+- **VM agora tem 2 peers ativos:**
+  - Arch Linux desktop: `10.10.0.2/32`
+  - Mac (iDev): `10.10.0.3/32`
+- **WireGuard config no Mac:** `~/.ssh/wg-obsidian.conf`
+- **SSH:** gcloud auto-gerou chaves SSH (`google_compute_engine`); chave publica copiada para `/home/sorensen/.ssh/authorized_keys`
+- **SSH config no Mac:** `Host obsidian-vm` → `User sorensen` → `HostName 10.10.0.1`
+- **MCP:** adicionado via `claude mcp add --scope user obsidian-brain` no Mac
+- **Validacao:** VPN conectada, SSH funcional, MCP reconectado, skill sync-calendar testada e funcional no Mac
+- **Nota importante:** SSH user na VM e `sorensen` (nao o username local da maquina)
+
 ## Prompt de Retomada — Proxima Sessao
 
 ```
 Estou trabalhando no projeto obsidian_open_brain (Obsidian Open Brain).
 Leia docs/HANDOFF.md para ver o status atual.
+
+Infra atual: 2 clientes VPN ativos (Arch Linux 10.10.0.2, Mac 10.10.0.3). SSH user na VM: sorensen.
 
 Opcoes para proxima sessao:
 1. feat/calendar-automation — script TypeScript standalone na VM com cron (Google Calendar API + Gmail API + OAuth2 setup)

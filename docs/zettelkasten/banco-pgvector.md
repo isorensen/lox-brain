@@ -7,7 +7,7 @@ source: claude-skill
 
 # PostgreSQL + pgvector no Open Brain
 
-O banco de dados do Open Brain usa PostgreSQL 16 com a extensao pgvector 0.8.2 para armazenamento e busca vetorial. Escuta **somente em localhost** (127.0.0.1) como parte do modelo [[seguranca-zero-trust]].
+O banco de dados do Open Brain usa PostgreSQL 16 com a extensao pgvector 0.8.2 para armazenamento e busca vetorial. Escuta **somente em localhost** (127.0.0.1) como parte do modelo [[Open Brain - Seguranca Zero Trust]].
 
 ## Schema: vault_embeddings
 
@@ -60,10 +60,10 @@ Todas as queries usam **parameterized queries** (`$1`, `$2`, ...) -- nenhum SQL 
 
 ## Relacoes
 
-- usado por: [[mcp-server]], [[vault-watcher]]
-- armazena output de: [[embedding-service]]
-- protegido por: [[seguranca-zero-trust]]
-- contido em: [[_MOC]]
+- usado por: [[Open Brain - MCP Server]], [[Open Brain - Vault Watcher]]
+- armazena output de: [[Open Brain - Servico de Embedding]]
+- protegido por: [[Open Brain - Seguranca Zero Trust]]
+- contido em: [[Open Brain]]
 
 ## References
 

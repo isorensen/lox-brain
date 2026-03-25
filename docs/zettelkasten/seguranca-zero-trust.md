@@ -13,7 +13,7 @@ O Open Brain adota postura Zero Trust em todas as camadas: nenhum componente e c
 
 ### Sem IP publico
 
-A VM (`obsidian-vm`) nao tem IP publico. Toda comunicacao externa passa por Cloud NAT (outbound-only para apt/npm/git). O acesso ao sistema e exclusivamente via [[wireguard-vpn]].
+A VM (`obsidian-vm`) nao tem IP publico. Toda comunicacao externa passa por Cloud NAT (outbound-only para apt/npm/git). O acesso ao sistema e exclusivamente via [[Open Brain - WireGuard VPN]].
 
 ### Firewall deny-all
 
@@ -26,7 +26,7 @@ A VPC default do GCP foi deletada como hardening adicional.
 
 ### PostgreSQL localhost-only
 
-O [[banco-pgvector]] escuta somente em `127.0.0.1`. SSL e omitido intencionalmente -- nao ha rede entre client e server (ambos rodam na mesma VM). Conexao via TCP local.
+O [[Open Brain - Banco pgvector]] escuta somente em `127.0.0.1`. SSL e omitido intencionalmente -- nao ha rede entre client e server (ambos rodam na mesma VM). Conexao via TCP local.
 
 ### Secrets no Secret Manager
 
@@ -44,7 +44,7 @@ Na VM, os secrets sao carregados em `.env` (que esta no `.gitignore`).
 
 ### Path traversal prevention
 
-O [[mcp-server]] usa `safePath()` para prevenir path traversal em todas as operacoes de filesystem -- null byte injection, `../` e caminhos fora do vault sao rejeitados.
+O [[Open Brain - MCP Server]] usa `safePath()` para prevenir path traversal em todas as operacoes de filesystem -- null byte injection, `../` e caminhos fora do vault sao rejeitados.
 
 ## Rotacao de chaves
 
@@ -53,10 +53,10 @@ O [[mcp-server]] usa `safePath()` para prevenir path traversal em todas as opera
 
 ## Relacoes
 
-- protege: [[banco-pgvector]], [[mcp-server]], [[infraestrutura-gcp]]
-- implementa: [[wireguard-vpn]]
-- parte de: [[arquitetura-geral]]
-- contido em: [[_MOC]]
+- protege: [[Open Brain - Banco pgvector]], [[Open Brain - MCP Server]], [[Open Brain - Infraestrutura GCP]]
+- implementa: [[Open Brain - WireGuard VPN]]
+- parte de: [[Open Brain - Arquitetura Geral]]
+- contido em: [[Open Brain]]
 
 ## References
 

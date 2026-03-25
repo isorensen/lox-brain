@@ -35,7 +35,7 @@ O Open Brain roda em uma unica VM GCP com todos os componentes co-locados. A inf
 
 O vault e sincronizado via git cron a cada 2 minutos (`git-sync.sh`). O repositorio privado `obsidian-git-sync` usa um fine-grained PAT com escopo minimo (Contents RW + Metadata R), armazenado no Secret Manager.
 
-O repositorio do codigo fonte (`obsidian_open_brain`) tambem esta na VM em `~/obsidian_open_brain`, atualizado automaticamente via [[cicd-github-actions]].
+O repositorio do codigo fonte (`obsidian_open_brain`) tambem esta na VM em `~/obsidian_open_brain`, atualizado automaticamente via [[Open Brain - CI CD GitHub Actions]].
 
 ## Service accounts
 
@@ -43,14 +43,14 @@ Duas service accounts com principio de least privilege:
 - `obsidian-vm-sa`: acesso a secrets + logging
 - `github-actions-deploy`: deploy via IAP tunnel SSH
 
-Ambas com rotacao de chaves a cada 90 dias (ver [[seguranca-zero-trust]]).
+Ambas com rotacao de chaves a cada 90 dias (ver [[Open Brain - Seguranca Zero Trust]]).
 
 ## Relacoes
 
-- hospeda: [[banco-pgvector]], [[vault-watcher]], [[mcp-server]]
-- protegida por: [[seguranca-zero-trust]], [[wireguard-vpn]]
-- deploy via: [[cicd-github-actions]]
-- contido em: [[_MOC]]
+- hospeda: [[Open Brain - Banco pgvector]], [[Open Brain - Vault Watcher]], [[Open Brain - MCP Server]]
+- protegida por: [[Open Brain - Seguranca Zero Trust]], [[Open Brain - WireGuard VPN]]
+- deploy via: [[Open Brain - CI CD GitHub Actions]]
+- contido em: [[Open Brain]]
 
 ## References
 

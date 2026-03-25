@@ -36,7 +36,7 @@ O entry point em `src/watcher/index.ts` usa chokidar v5 via dynamic import (ESM-
 
 ## Execucao
 
-Roda como systemd service (`obsidian-watcher.service`) na VM, iniciado automaticamente no boot. Nao precisa ser reiniciado manualmente -- o deploy via [[cicd-github-actions]] cuida do restart.
+Roda como systemd service (`obsidian-watcher.service`) na VM, iniciado automaticamente no boot. Nao precisa ser reiniciado manualmente -- o deploy via [[Open Brain - CI CD GitHub Actions]] cuida do restart.
 
 ## Error handling
 
@@ -44,10 +44,10 @@ Erros no pipeline de indexacao sao logados via `console.error` mas nao derrubam 
 
 ## Relacoes
 
-- usa: [[embedding-service]], [[banco-pgvector]]
-- parte do pipeline: [[fluxo-de-dados]]
-- deploy via: [[cicd-github-actions]]
-- contido em: [[_MOC]]
+- usa: [[Open Brain - Servico de Embedding]], [[Open Brain - Banco pgvector]]
+- parte do pipeline: [[Open Brain - Fluxo de Dados]]
+- deploy via: [[Open Brain - CI CD GitHub Actions]]
+- contido em: [[Open Brain]]
 
 ## References
 

@@ -1,6 +1,6 @@
 2026-03-14 11:00
 
-Status: #baby
+Status: #child
 
 Tags: [[claude-skill]] [[open-brain]] [[arquitetura]]
 source: claude-skill
@@ -11,23 +11,23 @@ O Open Brain e um sistema hibrido de gestao de conhecimento pessoal que conecta 
 
 ## Principio fundamental
 
-O Obsidian Vault e a **source of truth**. O pgvector e um indice de leitura derivado dele. Toda nota nasce como arquivo `.md` no vault -- seja criada manualmente no Obsidian Desktop, seja via [[mcp-server]] pelo Claude Code.
+O Obsidian Vault é a **source of truth**. O pgvector é um índice de leitura derivado dele. Toda nota nasce como arquivo `.md` no vault -- seja criada manualmente no Obsidian Desktop, seja via [[Open Brain - MCP Server]] pelo Claude Code.
 
 ## Componentes do sistema
 
 O sistema e composto por 6 componentes principais que operam em duas camadas:
 
 **Camada local:**
-- Obsidian Desktop (edicao manual de notas)
+- Obsidian Desktop (edição manual de notas)
 - Git sync (push/pull com a VM)
 
 **Camada VM (GCP):**
-- [[banco-pgvector]] (PostgreSQL 16 + pgvector, armazenamento de embeddings)
-- [[vault-watcher]] (chokidar, detecta mudancas em `.md`)
-- [[embedding-service]] (OpenAI text-embedding-3-small)
-- [[mcp-server]] (6 tools, transporte stdio over SSH)
+- [[Open Brain - Banco pgvector]] (PostgreSQL 16 + pgvector, armazenamento de embeddings)
+- [[Open Brain - Vault Watcher]] (chokidar, detecta mudanças em `.md`)
+- [[Open Brain - Servico de Embedding]] (OpenAI text-embedding-3-small)
+- [[Open Brain - MCP Server]] (6 tools, transporte stdio over SSH)
 
-A comunicacao entre as camadas acontece exclusivamente via [[wireguard-vpn]], sem exposicao de IP publico.
+A comunicação entre as camadas acontece exclusivamente via [[Open Brain - WireGuard VPN]], sem exposição de IP publico.
 
 ## Tech stack
 
@@ -38,11 +38,11 @@ A comunicacao entre as camadas acontece exclusivamente via [[wireguard-vpn]], se
 - **Embeddings:** OpenAI `text-embedding-3-small`
 - **Infra:** GCP (Compute Engine, Secret Manager, Cloud NAT)
 
-## Relacoes
+## Relações
 
-- depende de: [[infraestrutura-gcp]], [[seguranca-zero-trust]]
-- contido em: [[_MOC]]
-- se conecta com: [[fluxo-de-dados]]
+- depende de: [[Open Brain - Infraestrutura GCP]], [[Open Brain - Seguranca Zero Trust]]
+- contido em: [[Open Brain]]
+- se conecta com: [[Open Brain - Fluxo de Dados]]
 
 ## References
 

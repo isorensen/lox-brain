@@ -1,13 +1,13 @@
 2026-03-14 11:01
 
-Status: #baby
+Status: #child
 
 Tags: [[claude-skill]] [[open-brain]] [[data-flow]] [[arquitetura]]
 source: claude-skill
 
 # Fluxo de Dados do Open Brain
 
-O pipeline de dados do Open Brain opera em dois sentidos: edicao local para indexacao, e criacao remota via Claude Code para o vault.
+O pipeline de dados do Open Brain opera em dois sentidos: edição local para indexação, e criação remota via Claude Code para o vault.
 
 ## Fluxo direto (local para index)
 
@@ -36,23 +36,23 @@ Claude Code
             -> Obsidian Desktop git pull
 ```
 
-## Otimizacao por hash
+## Otimização por hash
 
-O [[vault-watcher]] compara o SHA256 do conteudo atual com o hash armazenado no [[banco-pgvector]] via `DbClient.getFileHash()`. Se o hash e identico, o arquivo e ignorado -- evitando chamadas desnecessarias a API da OpenAI e escritas no banco.
+O [[Open Brain - Vault Watcher]] compara o SHA256 do conteúdo atual com o hash armazenado no [[Open Brain - Banco pgvector]] via `DbClient.getFileHash()`. Se o hash e identico, o arquivo e ignorado -- evitando chamadas desnecessárias a API da OpenAI e escritas no banco.
 
 ## Two-phase pipeline
 
-O [[embedding-service]] usa um pipeline de duas fases para garantir consistencia: primeiro gera todos os embeddings (fase que pode falhar por erro de API), e so depois faz o batch upsert no banco. Isso evita estado parcial no caso de falha da OpenAI.
+O [[Open Brain - Servico de Embedding]] usa um pipeline de duas fases para garantir consistência: primeiro gera todos os embeddings (fase que pode falhar por erro de API), e so depois faz o batch upsert no banco. Isso evita estado parcial no caso de falha da OpenAI.
 
 ## Text chunking
 
-Notas longas sao divididas em chunks de ate 4000 tokens estimados (3 chars/token para texto multilingue), com overlap de 200 tokens entre chunks para manter contexto semantico. Cada chunk recebe um `chunk_index` e e armazenado como linha separada no banco.
+Notas longas sao divididas em chunks de ate 4000 tokens estimados (3 chars/token para texto multilingue), com overlap de 200 tokens entre chunks para manter contexto semântico. Cada chunk recebe um `chunk_index` e e armazenado como linha separada no banco.
 
-## Relacoes
+## Relações
 
-- depende de: [[vault-watcher]], [[embedding-service]], [[banco-pgvector]]
-- complementa: [[arquitetura-geral]]
-- contido em: [[_MOC]]
+- depende de: [[Open Brain - Vault Watcher]], [[Open Brain - Servico de Embedding]], [[Open Brain - Banco pgvector]]
+- complementa: [[Open Brain - Arquitetura Geral]]
+- contido em: [[Open Brain]]
 
 ## References
 

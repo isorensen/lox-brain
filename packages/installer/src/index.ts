@@ -19,7 +19,8 @@ async function main(): Promise<void> {
   // Check for subcommands
   const args = process.argv.slice(2);
   if (args[0] === 'migrate') {
-    console.log('lox migrate: coming soon');
+    const { runMigration } = await import('./migrate.js');
+    await runMigration();
     return;
   }
   if (args[0] === 'status') {

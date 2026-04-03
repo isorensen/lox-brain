@@ -6,6 +6,15 @@ import { stepPrerequisites } from './steps/step-prerequisites.js';
 import { stepGcpAuth } from './steps/step-gcp-auth.js';
 import { stepGcpProject } from './steps/step-gcp-project.js';
 import { stepBilling } from './steps/step-billing.js';
+import { stepNetwork } from './steps/step-network.js';
+import { stepVm } from './steps/step-vm.js';
+import { stepVmSetup } from './steps/step-vm-setup.js';
+import { stepVpn } from './steps/step-vpn.js';
+import { stepVault } from './steps/step-vault.js';
+import { stepObsidian } from './steps/step-obsidian.js';
+import { stepDeploy } from './steps/step-deploy.js';
+import { stepMcp } from './steps/step-mcp.js';
+import { runPostInstall } from './steps/step-post-install.js';
 import type { InstallerContext } from './steps/types.js';
 
 async function main(): Promise<void> {
@@ -57,7 +66,64 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  console.log('\nSteps 5-12 coming in next phase...\n');
+  // Step 5: VPC Network
+  const networkResult = await stepNetwork(ctx);
+  if (!networkResult.success) {
+    console.error(`\n${networkResult.message}`);
+    process.exit(1);
+  }
+
+  // Step 6: VM Instance
+  const vmResult = await stepVm(ctx);
+  if (!vmResult.success) {
+    console.error(`\n${vmResult.message}`);
+    process.exit(1);
+  }
+
+  // Step 7: VM Setup (Node.js, PostgreSQL, pgvector)
+  const vmSetupResult = await stepVmSetup(ctx);
+  if (!vmSetupResult.success) {
+    console.error(`\n${vmSetupResult.message}`);
+    process.exit(1);
+  }
+
+  // Step 8: WireGuard VPN
+  const vpnResult = await stepVpn(ctx);
+  if (!vpnResult.success) {
+    console.error(`\n${vpnResult.message}`);
+    process.exit(1);
+  }
+
+  // Step 9: Vault Setup
+  const vaultResult = await stepVault(ctx);
+  if (!vaultResult.success) {
+    console.error(`\n${vaultResult.message}`);
+    process.exit(1);
+  }
+
+  // Step 10: Obsidian
+  const obsidianResult = await stepObsidian(ctx);
+  if (!obsidianResult.success) {
+    console.error(`\n${obsidianResult.message}`);
+    process.exit(1);
+  }
+
+  // Step 11: Deploy Lox Core
+  const deployResult = await stepDeploy(ctx);
+  if (!deployResult.success) {
+    console.error(`\n${deployResult.message}`);
+    process.exit(1);
+  }
+
+  // Step 12: Claude Code MCP
+  const mcpResult = await stepMcp(ctx);
+  if (!mcpResult.success) {
+    console.error(`\n${mcpResult.message}`);
+    process.exit(1);
+  }
+
+  // Post-install: Security audit + success screen
+  await runPostInstall(ctx);
 }
 
 main().catch((err) => {

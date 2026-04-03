@@ -42,4 +42,28 @@ describe('Installer steps — module structure', () => {
     expect(mod.stepBilling).toBeDefined();
     expect(typeof mod.stepBilling).toBe('function');
   });
+
+  it('step-network exports stepNetwork function', async () => {
+    const mod = await import('../../src/steps/step-network.js');
+    expect(mod.stepNetwork).toBeDefined();
+    expect(typeof mod.stepNetwork).toBe('function');
+  });
+
+  it('step-vm exports stepVm function', async () => {
+    const mod = await import('../../src/steps/step-vm.js');
+    expect(mod.stepVm).toBeDefined();
+    expect(typeof mod.stepVm).toBe('function');
+  });
+
+  it('step-vm-setup exports stepVmSetup function', async () => {
+    const mod = await import('../../src/steps/step-vm-setup.js');
+    expect(mod.stepVmSetup).toBeDefined();
+    expect(typeof mod.stepVmSetup).toBe('function');
+  });
+
+  it('step-vpn exports stepVpn function', async () => {
+    const mod = await import('../../src/steps/step-vpn.js');
+    expect(mod.stepVpn).toBeDefined();
+    expect(typeof mod.stepVpn).toBe('function');
+  });
 });

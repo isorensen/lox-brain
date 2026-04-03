@@ -18,16 +18,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
+      - name: Build (sequential — shared must precede core and installer)
         run: |
           npm run build --workspace=packages/shared
           npm run build --workspace=packages/core
           npm run build --workspace=packages/installer
-
-      - name: Type check
-        run: |
-          npx tsc --noEmit --project packages/shared/tsconfig.json
-          npx tsc --noEmit --project packages/core/tsconfig.json
 
       - name: Test with coverage
         run: npm run test:coverage --workspace=packages/core

@@ -2,12 +2,12 @@
 
 Status: #child
 
-Tags: [[claude-skill]] [[open-brain]] [[mcp]] [[typescript]]
+Tags: [[claude-skill]] [[lox]] [[mcp]] [[typescript]]
 source: claude-skill
 
-# MCP Server do Open Brain
+# MCP Server do Lox
 
-O MCP Server e a interface entre Claude Code e o vault. Implementado com `@modelcontextprotocol/sdk`, usa transporte stdio over SSH -- o Claude Code invoca o servidor sob demanda via conexão SSH pela [[Open Brain - WireGuard VPN]].
+O MCP Server e a interface entre Claude Code e o vault. Implementado com `@modelcontextprotocol/sdk`, usa transporte stdio over SSH -- o Claude Code invoca o servidor sob demanda via conexão SSH pela [[Lox - WireGuard VPN]].
 
 ## 6 Tools disponíveis
 
@@ -33,10 +33,10 @@ Toda operação de filesystem passa pela funcao `safePath()` que:
 O MCP Server nao roda como daemon -- e iniciado sob demanda pelo Claude Code via SSH:
 
 ```
-ssh obsidian-vm "cd ~/obsidian_open_brain && export $(cat .env | xargs) && npx tsx src/mcp/index.ts"
+ssh lox-vm "bash -c 'set -a && source /etc/lox/secrets.env && set +a && node ~/lox-brain/packages/core/dist/mcp/index.js'"
 ```
 
-Isso significa que após deploy de código na VM, o processo antigo precisa ser morto (`pkill -f "tsx src/mcp/index.ts"`) e o Claude Code precisa reconectar.
+Isso significa que após deploy de código na VM, o processo antigo precisa ser morto (`pkill -f "packages/core"`) e o Claude Code precisa reconectar.
 
 ## Respostas otimizadas
 
@@ -46,13 +46,13 @@ Todos retornam `PaginatedResult { results, total, limit, offset }`.
 
 ## Relações
 
-- depende de: [[Open Brain - Banco pgvector]], [[Open Brain - Servico de Embedding]]
-- protegido por: [[Open Brain - Seguranca Zero Trust]]
-- parte de: [[Open Brain - Arquitetura Geral]]
-- contido em: [[Open Brain]]
+- depende de: [[Lox - Banco pgvector]], [[Lox - Servico de Embedding]]
+- protegido por: [[Lox - Seguranca Zero Trust]]
+- parte de: [[Lox - Arquitetura Geral]]
+- contido em: [[Lox]]
 
 ## References
 
-- `src/mcp/index.ts` (entry point, Pool config, env validation)
-- `src/mcp/tools.ts` (createTools, safePath, 6 handlers)
-- `src/lib/types.ts` (SearchOptions, PaginatedResult)
+- `packages/core/src/mcp/index.ts` (entry point, Pool config, env validation)
+- `packages/core/src/mcp/tools.ts` (createTools, safePath, 6 handlers)
+- `packages/shared/src/types.ts` (SearchOptions, PaginatedResult)

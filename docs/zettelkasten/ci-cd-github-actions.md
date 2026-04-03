@@ -2,10 +2,10 @@
 
 Status: #baby
 
-Tags: [[claude-skill]] [[open-brain]] [[cicd]] [[infraestrutura]]
+Tags: [[claude-skill]] [[lox]] [[cicd]] [[infraestrutura]]
 source: claude-skill
 
-# CI/CD com GitHub Actions no Open Brain
+# CI/CD com GitHub Actions no Lox
 
 O projeto usa dois workflows GitHub Actions para validacao automatica e deploy continuo.
 
@@ -25,8 +25,8 @@ Se qualquer step falhar, o PR nao pode ser mergeado (embora branch protection na
 Roda automaticamente no merge para `main`:
 1. Autentica via service account `github-actions-deploy` (chave JSON no GitHub Secrets `GCP_SA_KEY`)
 2. Conecta na VM via `gcloud compute ssh` com IAP tunnel (sem expor SSH publicamente)
-3. Executa `scripts/deploy.sh` na VM via `nohup`, logando em `/tmp/deploy.log`
-4. Health check: verifica que `obsidian-watcher` esta ativo e que `/tmp/deploy.log` termina com `DEPLOY_SUCCESS`
+3. Executa `infra/deploy.sh` na VM via `nohup`, logando em `/tmp/deploy.log`
+4. Health check: verifica que `lox-watcher` esta ativo e que `/tmp/deploy.log` termina com `DEPLOY_SUCCESS`
 
 > [!NOTE]
 > O deploy e delegado ao script `scripts/deploy.sh` na VM. O workflow GitHub Actions apenas aciona o script via SSH -- nao executa os passos de build/restart diretamente.
@@ -48,10 +48,10 @@ Chave rotacionada a cada 90 dias (proximo: 2026-06-08). Meta de longo prazo: mig
 
 ## Relacoes
 
-- faz deploy de: [[Open Brain - Vault Watcher]], [[Open Brain - MCP Server]]
-- hospedado em: [[Open Brain - Infraestrutura GCP]]
-- valida: [[Open Brain - Estrategia de Testes]]
-- contido em: [[Open Brain]]
+- faz deploy de: [[Lox - Vault Watcher]], [[Lox - MCP Server]]
+- hospedado em: [[Lox - Infraestrutura GCP]]
+- valida: [[Lox - Estrategia de Testes]]
+- contido em: [[Lox]]
 
 ## References
 

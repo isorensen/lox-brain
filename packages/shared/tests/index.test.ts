@@ -113,7 +113,7 @@ describe('config', () => {
   });
 
   it('DEFAULT_CONFIG should have version 1.0.0 and mode personal', () => {
-    expect(DEFAULT_CONFIG.version).toBe('1.0.0');
+    expect(DEFAULT_CONFIG.version).toBe('0.1.0');
     expect(DEFAULT_CONFIG.mode).toBe('personal');
   });
 
@@ -161,7 +161,7 @@ describe('config', () => {
 
 describe('constants', () => {
   it('LOX_VERSION should be 1.0.0', () => {
-    expect(LOX_VERSION).toBe('1.0.0');
+    expect(LOX_VERSION).toBe('0.1.0');
   });
 
   it('LOX_ASCII_LOGO should contain LOX letter patterns', () => {

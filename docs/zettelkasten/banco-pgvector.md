@@ -2,12 +2,12 @@
 
 Status: #baby
 
-Tags: [[claude-skill]] [[open-brain]] [[banco-de-dados]] [[embeddings]]
+Tags: [[claude-skill]] [[lox]] [[banco-de-dados]] [[embeddings]]
 source: claude-skill
 
-# PostgreSQL + pgvector no Open Brain
+# PostgreSQL + pgvector no Lox
 
-O banco de dados do Open Brain usa PostgreSQL 16 com a extensao pgvector 0.8.2 para armazenamento e busca vetorial. Escuta **somente em localhost** (127.0.0.1) como parte do modelo [[Open Brain - Seguranca Zero Trust]].
+O banco de dados do Lox usa PostgreSQL 16 com a extensao pgvector 0.8.2 para armazenamento e busca vetorial. Escuta **somente em localhost** (127.0.0.1) como parte do modelo [[Lox - Seguranca Zero Trust]].
 
 ## Schema: vault_embeddings
 
@@ -53,19 +53,19 @@ Todas as queries usam **parameterized queries** (`$1`, `$2`, ...) -- nenhum SQL 
 
 ## Configuracao
 
-- Database: `open_brain`
-- User: `obsidian_brain`
-- Senha: armazenada no GCP Secret Manager (`pg-obsidian-password`)
+- Database: `lox_brain` (migration pending from legacy `open_brain`)
+- User: `lox` (migration pending from legacy `obsidian_brain`)
+- Senha: armazenada no GCP Secret Manager (`pg-lox-password`)
 - Conexao: `127.0.0.1:5432` (localhost only, SSL omitido por Zero Trust)
 
 ## Relacoes
 
-- usado por: [[Open Brain - MCP Server]], [[Open Brain - Vault Watcher]]
-- armazena output de: [[Open Brain - Servico de Embedding]]
-- protegido por: [[Open Brain - Seguranca Zero Trust]]
-- contido em: [[Open Brain]]
+- usado por: [[Lox - MCP Server]], [[Lox - Vault Watcher]]
+- armazena output de: [[Lox - Servico de Embedding]]
+- protegido por: [[Lox - Seguranca Zero Trust]]
+- contido em: [[Lox]]
 
 ## References
 
-- `src/lib/db-client.ts`
-- `src/lib/types.ts` (NoteRow, SearchResult, RecentNote, PaginatedResult)
+- `packages/core/src/lib/db-client.ts`
+- `packages/shared/src/types.ts` (NoteRow, SearchResult, RecentNote, PaginatedResult)

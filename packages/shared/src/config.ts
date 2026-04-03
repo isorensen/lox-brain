@@ -37,7 +37,7 @@ export interface LoxConfig {
 }
 
 export const DEFAULT_CONFIG: Partial<LoxConfig> = {
-  version: '1.0.0',
+  version: '0.1.0',
   mode: 'personal',
   database: {
     host: '127.0.0.1',

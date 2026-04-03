@@ -2,12 +2,12 @@
 
 Status: #baby
 
-Tags: [[claude-skill]] [[open-brain]] [[embeddings]] [[typescript]]
+Tags: [[claude-skill]] [[lox]] [[embeddings]] [[typescript]]
 source: claude-skill
 
-# Embedding Service do Open Brain
+# Embedding Service do Lox
 
-O `EmbeddingService` e a biblioteca central que transforma notas Markdown em vetores semanticos. Definido em `src/lib/embedding-service.ts`, encapsula tres responsabilidades atomicas.
+O `EmbeddingService` e a biblioteca central que transforma notas Markdown em vetores semanticos. Definido em `packages/core/src/lib/embedding-service.ts`, encapsula tres responsabilidades atomicas.
 
 ## Responsabilidades
 
@@ -34,7 +34,7 @@ Divide textos longos em chunks menores para respeitar o limite de tokens da API:
 
 ### 4. computeHash(content)
 
-SHA256 do conteudo para detectar mudancas. Usado pelo [[Open Brain - Vault Watcher]] para skip de arquivos inalterados -- evita chamadas desnecessarias a API da OpenAI.
+SHA256 do conteudo para detectar mudancas. Usado pelo [[Lox - Vault Watcher]] para skip de arquivos inalterados -- evita chamadas desnecessarias a API da OpenAI.
 
 ## Design decisions
 
@@ -44,13 +44,13 @@ SHA256 do conteudo para detectar mudancas. Usado pelo [[Open Brain - Vault Watch
 
 ## Relacoes
 
-- usado por: [[Open Brain - Vault Watcher]], [[Open Brain - MCP Server]]
-- persiste via: [[Open Brain - Banco pgvector]]
-- parte do pipeline: [[Open Brain - Fluxo de Dados]]
-- contido em: [[Open Brain]]
+- usado por: [[Lox - Vault Watcher]], [[Lox - MCP Server]]
+- persiste via: [[Lox - Banco pgvector]]
+- parte do pipeline: [[Lox - Fluxo de Dados]]
+- contido em: [[Lox]]
 
 ## References
 
-- `src/lib/embedding-service.ts`
-- `src/lib/types.ts` (NoteMetadata interface)
+- `packages/core/src/lib/embedding-service.ts`
+- `packages/shared/src/types.ts` (NoteMetadata interface)
 - `docs/plans/2026-03-08-text-chunking-design.md`

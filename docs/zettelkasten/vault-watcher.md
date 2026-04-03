@@ -2,10 +2,10 @@
 
 Status: #baby
 
-Tags: [[claude-skill]] [[open-brain]] [[watcher]] [[data-flow]]
+Tags: [[claude-skill]] [[lox]] [[watcher]] [[data-flow]]
 source: claude-skill
 
-# Vault Watcher do Open Brain
+# Vault Watcher do Lox
 
 O Vault Watcher e o componente que detecta mudancas em arquivos `.md` no vault e dispara o pipeline de indexacao. Implementado em duas partes: a classe `VaultWatcher` (logica pura) e o entry point com chokidar (I/O).
 
@@ -36,7 +36,7 @@ O entry point em `src/watcher/index.ts` usa chokidar v5 via dynamic import (ESM-
 
 ## Execucao
 
-Roda como systemd service (`obsidian-watcher.service`) na VM, iniciado automaticamente no boot. Nao precisa ser reiniciado manualmente -- o deploy via [[Open Brain - CI CD GitHub Actions]] cuida do restart.
+Roda como systemd service (`lox-watcher.service`) na VM, iniciado automaticamente no boot. Nao precisa ser reiniciado manualmente -- o deploy via [[Lox - CI CD GitHub Actions]] cuida do restart.
 
 ## Error handling
 
@@ -44,12 +44,12 @@ Erros no pipeline de indexacao sao logados via `console.error` mas nao derrubam 
 
 ## Relacoes
 
-- usa: [[Open Brain - Servico de Embedding]], [[Open Brain - Banco pgvector]]
-- parte do pipeline: [[Open Brain - Fluxo de Dados]]
-- deploy via: [[Open Brain - CI CD GitHub Actions]]
-- contido em: [[Open Brain]]
+- usa: [[Lox - Servico de Embedding]], [[Lox - Banco pgvector]]
+- parte do pipeline: [[Lox - Fluxo de Dados]]
+- deploy via: [[Lox - CI CD GitHub Actions]]
+- contido em: [[Lox]]
 
 ## References
 
-- `src/watcher/vault-watcher.ts` (logica)
-- `src/watcher/index.ts` (entry point chokidar)
+- `packages/core/src/watcher/vault-watcher.ts` (logica)
+- `packages/core/src/watcher/index.ts` (entry point chokidar)

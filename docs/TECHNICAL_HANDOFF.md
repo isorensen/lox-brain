@@ -1,3 +1,7 @@
+> **Historical document from the pre-Lox era.** This is the original architecture brainstorm written before implementation began. Many details (e.g., region, VM specs, cost estimates) were superseded during build. See `docs/handoff-2026-04-03.md` for the current state of the Lox project.
+
+---
+
 # Handoff Técnico — Arquitetura Obsidian CLI + Claude Code + Google Cloud
 
 Autor: Eduardo Sorensen  

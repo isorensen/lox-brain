@@ -2,12 +2,12 @@
 
 Status: #baby
 
-Tags: [[claude-skill]] [[open-brain]] [[vpn]] [[seguranca]]
+Tags: [[claude-skill]] [[lox]] [[vpn]] [[seguranca]]
 source: claude-skill
 
-# WireGuard VPN do Open Brain
+# WireGuard VPN do Lox
 
-O WireGuard e o unico ponto de acesso ao sistema Open Brain. Cria um tunnel criptografado entre os clients (maquinas do usuario) e a VM GCP, sem expor nenhum servico na internet publica.
+O WireGuard e o unico ponto de acesso ao sistema Lox. Cria um tunnel criptografado entre os clients (maquinas do usuario) e a VM GCP, sem expor nenhum servico na internet publica.
 
 ## Topologia da rede
 
@@ -29,7 +29,7 @@ Configurado como split tunnel: somente trafego destinado a `10.10.0.0/24` passa 
 
 ## Conexao do Claude Code
 
-O Claude Code acessa o [[Open Brain - MCP Server]] via SSH pela VPN:
+O Claude Code acessa o [[Lox - MCP Server]] via SSH pela VPN:
 
 ```
 Host obsidian-vm
@@ -45,10 +45,10 @@ A rede suporta multiplos clients simultaneamente. Cada device tem seu proprio pa
 
 ## Relacoes
 
-- protege acesso a: [[Open Brain - MCP Server]], [[Open Brain - Infraestrutura GCP]]
-- parte do modelo: [[Open Brain - Seguranca Zero Trust]]
-- viabiliza: [[Open Brain - Arquitetura Geral]]
-- contido em: [[Open Brain]]
+- protege acesso a: [[Lox - MCP Server]], [[Lox - Infraestrutura GCP]]
+- parte do modelo: [[Lox - Seguranca Zero Trust]]
+- viabiliza: [[Lox - Arquitetura Geral]]
+- contido em: [[Lox]]
 
 ## References
 

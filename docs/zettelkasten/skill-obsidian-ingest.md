@@ -2,12 +2,12 @@
 
 Status: #baby
 
-Tags: [[claude-skill]] [[open-brain]] [[claude-skill-system]]
+Tags: [[claude-skill]] [[lox]] [[claude-skill-system]]
 source: claude-skill
 
 # Skill obsidian-ingest
 
-O `obsidian-ingest` e um skill do Claude Code que ingere conteudo no vault Obsidian via MCP. Opera de forma independente do Open Brain -- nao requer infraestrutura GCP, apenas acesso ao [[Open Brain - MCP Server]].
+O `obsidian-ingest` e um skill do Claude Code que ingere conteudo no vault Obsidian via MCP. Opera de forma independente do Lox -- nao requer infraestrutura GCP, apenas acesso ao [[Lox - MCP Server]].
 
 ## Proposito
 
@@ -15,7 +15,7 @@ Permite ao Claude Code adicionar notas, processar URLs, analisar imagens, import
 
 ## Interface primaria: MCP Tools
 
-Usa `mcp__obsidian-brain__write_note`, `search_semantic`, `search_text`, `read_note`, `list_recent` do [[Open Brain - MCP Server]]. Filesystem direto (`~/Obsidian/iSorensen/`) apenas para binarios (imagens, PDFs).
+Usa `mcp__lox-brain__write_note`, `search_semantic`, `search_text`, `read_note`, `list_recent` do [[Lox - MCP Server]]. Filesystem direto (`~/Obsidian/iSorensen/`) apenas para binarios (imagens, PDFs).
 
 ## Workflow de ingestao
 
@@ -34,7 +34,7 @@ Usa `mcp__obsidian-brain__write_note`, `search_semantic`, `search_text`, `read_n
 
 - Formato: data + Status + Tags + inline Dataview fields + H1 + conteudo
 - Sem YAML frontmatter -- o vault usa plain text + `[source:: value]`
-- Notas de projeto prefixadas: `Open Brain - Titulo.md`
+- Notas de projeto prefixadas: `Lox - Titulo.md`
 - Notas gerais: titulo descritivo em portugues, sem prefixo
 - Status: `#baby` (novo), `#child` (em desenvolvimento), `#adult` (maduro)
 
@@ -48,15 +48,15 @@ Usa `mcp__obsidian-brain__write_note`, `search_semantic`, `search_text`, `read_n
 | Ideia rapida | `1 - Fleeting Notes/` |
 | Clipping web | `Clippings/` |
 
-## Relacao com Open Brain
+## Relacao com Lox
 
-O `obsidian-ingest` e o antecessor conceitual do Open Brain: funciona sem infra, apenas escrevendo arquivos via MCP. O Open Brain e a evolucao -- adiciona busca semantica, acesso remoto e pipeline de indexacao automatica. Ambos compartilham o mesmo vault e formato de notas, mas sao independentes.
+O `obsidian-ingest` e o antecessor conceitual do Lox: funciona sem infra, apenas escrevendo arquivos via MCP. O Lox e a evolucao -- adiciona busca semantica, acesso remoto e pipeline de indexacao automatica. Ambos compartilham o mesmo vault e formato de notas, mas sao independentes.
 
 ## Relacoes
 
-- usa: [[Open Brain - MCP Server]]
-- complementa: [[Open Brain - Skill sync-calendar]], [[Open Brain - Skill zettelkasten]]
-- contido em: [[Open Brain]]
+- usa: [[Lox - MCP Server]]
+- complementa: [[Lox - Skill sync-calendar]], [[Lox - Skill zettelkasten]]
+- contido em: [[Lox]]
 
 ## References
 

@@ -4,58 +4,76 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-- CI/CD pipeline stabilized (deploy script, SSH keepalive, proper error handling)
+## [0.1.0] — 2026-04-03
 
-## [0.4.0] — 2026-03-12
+> **Note:** Version reset to 0.1.0. Previous version numbers (0.1.0–0.4.0) reflected internal phase milestones, not public SemVer. This entry marks the first versioned public-facing release of Lox.
 
-### Added
-- `sync-calendar` Claude Code skill (`~/.claude/skills/sync-calendar/SKILL.md`): on-demand Google Calendar → Obsidian vault sync via existing MCPs (Calendar + Gmail + Obsidian Brain)
-- Gemini AI meeting notes integration: captures full content (summary, topics, next steps with owners) from `gemini-notes@google.com` emails via Gmail MCP
-- Subagent batch processing for large syncs (parallel event processing)
-- Smart event filtering: skips events where user did not participate, declined, or was optional and did not accept
-- Note format: plain text + Dataview inline fields, tags as wikilinks to `3 - Tags/` (no YAML frontmatter)
-- Memory rule persisted for vault note format: `memory/feedback_obsidian_note_format.md`
-
-### Tested
-- Full month sync: 67 events created across March 2026 (all-day, timed, meetings with/without Gemini notes)
-- 12 improvements applied based on real-world usage during battle-testing
-
-## [0.3.0] — 2026-03-10
+### Changed (Breaking)
+- **Renamed project**: obsidian_open_brain → **Lox** (`isorensen/lox-brain`). All references to the old name are deprecated.
+- **Monorepo restructure**: codebase split into `packages/core`, `packages/shared`, `packages/installer` using npm workspaces.
 
 ### Added
-- GitHub Actions CI workflow (`ci.yml`): validates PRs with build, type check, test coverage (80%+), and security audit
+- `packages/installer` — interactive 12-step CLI wizard (i18n: en/pt-BR, 17 security gates)
+- `packages/shared` — types, `LoxConfig` schema, constants (`LOX_VERSION`, `EMBEDDING_MODEL`, etc.)
+- Cross-platform bootstrap scripts: `scripts/install.sh` + `scripts/install.ps1`
+- `lox migrate` command for existing installations
+- MIT License
+- Vault presets: `templates/zettelkasten/` (6 templates + folder structure) and `templates/para/`
+- Infra templates: `infra/postgres/schema.sql`, `infra/wireguard/`, `infra/systemd/lox-watcher.service`
+- `created_by TEXT` column in schema for future multi-user support
+- Security hardening: secrets rotated (PG_PASSWORD + OPENAI_API_KEY), OpenAI key scoped to Embeddings-only
+- Zettelkasten notes renamed from "Open Brain" to "Lox" throughout `docs/zettelkasten/`
+
+### Changed
+- All hardcoded values (DB name/user, GCP project, VPN IPs) replaced with configurable `createPool()` factory
+- Embedding model and chunking constants moved to `@lox-brain/shared`
+- CI/CD updated for monorepo: sequential build (shared → core → installer), parameterized deploy secrets
+- All 4 Claude Code skills updated: `obsidian-brain` MCP reference → `lox-brain`
+- `lox-watcher` systemd service replaces `obsidian-watcher.service`
+- Secrets location: `/etc/lox/secrets.env` (chmod 640, root:sorensen) replaces `.env` in repo root
+
+### Fixed
+- npm audit: picomatch vulnerability resolved
+- CI build order: shared package must build before core and installer (sequential steps)
+- `.tsbuildinfo` files removed from git tracking
+
+---
+
+## Historical Phase Log (pre-SemVer)
+
+These entries document internal development phases completed before the public release. Version numbers below are phase identifiers, not SemVer releases.
+
+### Phase 0.4 — 2026-03-12 (sync-calendar skill)
+
+- `sync-calendar` Claude Code skill: on-demand Google Calendar → Obsidian vault sync via MCPs (Calendar + Gmail + Obsidian Brain)
+- Gemini AI meeting notes integration via `gemini-notes@google.com` emails
+- Subagent batch processing for large syncs
+- Smart event filtering (skips declined/non-participating events)
+- Note format: plain text + Dataview inline fields, tags as wikilinks to `3 - Tags/`
+- Battle-tested: 67 events synced across March 2026
+
+### Phase 0.3 — 2026-03-10 (CI/CD)
+
+- GitHub Actions CI workflow (`ci.yml`): build, type check, test coverage (80%+), security audit on PRs
 - GitHub Actions deploy workflow (`deploy.yml`): auto-deploys to VM via GCP IAP tunnel SSH on merge to main
 - GCP service account `github-actions-deploy` with least-privilege IAM roles
 - Health check step in deploy workflow verifies watcher service is active
-- CI/CD design document and implementation plan
 
-### Changed
-- Updated TODO.md: marked text chunking as DONE, added SA key rotation tracking
+### Phase 0.2 — 2026-03-08 (search optimization)
 
-## [0.2.0] — 2026-03-08
+- `search_semantic`, `search_text`, `list_recent` return metadata only by default (no content)
+- New parameters on all search tools: `offset`, `include_content`, `content_preview_length`
+- All search tools return `PaginatedResult { results, total, limit, offset }`
+- `searchText` default limit changed from 50 to 20
 
-### Added
-- Search optimization: `search_semantic`, `search_text`, `list_recent` return metadata only by default (no content).
-- New parameters on all search tools: `offset`, `include_content`, `content_preview_length`.
-- All search tools now return `PaginatedResult { results, total, limit, offset }` for consistent pagination.
+### Phase 0.1 — 2026-03-08 (initial system)
 
-### Changed
-- `searchText` default limit changed from 50 to 20.
-- Recommended workflow: use search tools to discover notes, then `read_note` for full content.
-
-### Operational Notes
-- MCP server runs via stdio over SSH (spawned on-demand by Claude Code).
-- After code changes on VM: `pkill -f "tsx src/mcp/index.ts"`, then `/mcp` → reconnect in Claude Code.
-
-## [0.1.0] — 2026-03-08
-
-### Added
-- Phase 1–4: GCP infrastructure (VPC, VM, WireGuard VPN, PostgreSQL + pgvector).
-- Phase 5: `EmbeddingService` — OpenAI `text-embedding-3-small`, `parseNote`, `computeHash`.
-- Phase 6: `VaultWatcher` — chokidar file watcher with embedding pipeline.
-- Phase 7: MCP Server with 6 tools: `write_note`, `read_note`, `delete_note`, `search_semantic`, `search_text`, `list_recent`. Path traversal protection via `safePath()`.
-- Phase 8: Integration testing — vault indexed (181/186 notes), watcher validated end-to-end.
-- Phase 11: Claude Code MCP client config via SSH + WireGuard VPN.
-- Systemd service `obsidian-watcher.service` for auto-start on boot.
-- `index-vault` script for one-time vault indexing (idempotent, hash-based skip).
-- Interactive Code Map and Concept Map playgrounds.
+- Phase 1–4: GCP infrastructure (VPC, VM, WireGuard VPN, PostgreSQL + pgvector)
+- Phase 5: `EmbeddingService` — OpenAI `text-embedding-3-small`, `parseNote`, `computeHash`
+- Phase 6: `VaultWatcher` — chokidar file watcher with embedding pipeline
+- Phase 7: MCP Server with 6 tools: `write_note`, `read_note`, `delete_note`, `search_semantic`, `search_text`, `list_recent`
+- Phase 8: Integration testing — vault indexed (181/186 notes), watcher validated end-to-end
+- Phase 11: Claude Code MCP client config via SSH + WireGuard VPN
+- Systemd service `obsidian-watcher.service` for auto-start on boot
+- `index-vault` script for one-time vault indexing (idempotent, hash-based skip)
+- Interactive Code Map and Concept Map playgrounds

@@ -2,10 +2,10 @@
 
 Status: #baby
 
-Tags: [[claude-skill]] [[open-brain]] [[cicd]] [[infraestrutura]]
+Tags: [[claude-skill]] [[lox]] [[cicd]] [[infraestrutura]]
 source: claude-skill
 
-# CI/CD com GitHub Actions no Open Brain
+# CI/CD com GitHub Actions no Lox
 
 O projeto usa dois workflows GitHub Actions para validacao automatica e deploy continuo.
 
@@ -27,8 +27,8 @@ Roda automaticamente no merge para `main`:
 3. `git pull origin main` no diretorio do projeto na VM
 4. `npm ci --omit=dev` (apenas dependencias de producao)
 5. `npm run build` (TypeScript -> JavaScript)
-6. `systemctl restart obsidian-watcher` (reinicia [[vault-watcher]])
-7. `pkill -f "tsx src/mcp/index.ts"` (mata MCP sessions antigas)
+6. `systemctl restart lox-watcher` (reinicia [[vault-watcher]])
+7. `pkill -f "packages/core"` (mata MCP sessions antigas)
 8. Health check: verifica que watcher esta ativo apos deploy
 
 ## Service account para deploy

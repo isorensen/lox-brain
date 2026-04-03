@@ -2,31 +2,31 @@
 
 Status: #baby
 
-Tags: [[claude-skill]] [[open-brain]] [[seguranca]] [[vpn]]
+Tags: [[claude-skill]] [[lox]] [[seguranca]] [[vpn]]
 source: claude-skill
 
-# Modelo Zero Trust do Open Brain
+# Modelo Zero Trust do Lox
 
-O Open Brain adota postura Zero Trust em todas as camadas: nenhum componente e confiavel por padrao, todo acesso e autenticado e autorizado, e a superficie de ataque e minimizada ao extremo.
+O Lox adota postura Zero Trust em todas as camadas: nenhum componente e confiavel por padrao, todo acesso e autenticado e autorizado, e a superficie de ataque e minimizada ao extremo.
 
 ## Principios aplicados
 
 ### Sem IP publico
 
-A VM (`obsidian-vm`) nao tem IP publico. Toda comunicacao externa passa por Cloud NAT (outbound-only para apt/npm/git). O acesso ao sistema e exclusivamente via [[Open Brain - WireGuard VPN]].
+A VM (`obsidian-vm`, futuramente `lox-vm`) nao tem IP publico. Toda comunicacao externa passa por Cloud NAT (outbound-only para apt/npm/git). O acesso ao sistema e exclusivamente via [[Lox - WireGuard VPN]].
 
 ### Firewall deny-all
 
 Regra padrao: deny-all. Apenas 3 regras explicitas:
 - **WireGuard:** UDP 51820 (unica porta exposta)
-- **Internal:** comunicacao dentro da VPC `obsidian-vpc` (subnet `10.0.0.0/24`)
+- **Internal:** comunicacao dentro da VPC `obsidian-vpc` (subnet `10.0.0.0/24`) — futuramente `lox-vpc`
 - **IAP SSH:** acesso SSH via Identity-Aware Proxy (para deploy CI/CD)
 
 A VPC default do GCP foi deletada como hardening adicional.
 
 ### PostgreSQL localhost-only
 
-O [[Open Brain - Banco pgvector]] escuta somente em `127.0.0.1`. SSL e omitido intencionalmente -- nao ha rede entre client e server (ambos rodam na mesma VM). Conexao via TCP local.
+O [[Lox - Banco pgvector]] escuta somente em `127.0.0.1`. SSL e omitido intencionalmente -- nao ha rede entre client e server (ambos rodam na mesma VM). Conexao via TCP local.
 
 ### Secrets no Secret Manager
 
@@ -35,16 +35,16 @@ Nenhum segredo e hardcoded. Todos armazenados no GCP Secret Manager:
 - `pg-obsidian-password` (senha do PostgreSQL)
 - `git-vault-token` (PAT do GitHub com escopo minimo)
 
-Na VM, os secrets sao carregados em `.env` (que esta no `.gitignore`).
+Na VM, os secrets sao carregados de `/etc/lox/secrets.env` (chmod 640, root:sorensen — nao mais `.env` no repo).
 
 ### Service accounts com least privilege
 
-- `obsidian-vm-sa`: apenas `secretmanager.secretAccessor` + `logging.logWriter`
+- `obsidian-vm-sa` (rename to `lox-vm-sa` pending): apenas `secretmanager.secretAccessor` + `logging.logWriter`
 - `github-actions-deploy`: apenas roles IAP tunnel + compute instance admin + OS login
 
 ### Path traversal prevention
 
-O [[Open Brain - MCP Server]] usa `safePath()` para prevenir path traversal em todas as operacoes de filesystem -- null byte injection, `../` e caminhos fora do vault sao rejeitados.
+O [[Lox - MCP Server]] usa `safePath()` para prevenir path traversal em todas as operacoes de filesystem -- null byte injection, `../` e caminhos fora do vault sao rejeitados.
 
 ## Rotacao de chaves
 
@@ -53,10 +53,10 @@ O [[Open Brain - MCP Server]] usa `safePath()` para prevenir path traversal em t
 
 ## Relacoes
 
-- protege: [[Open Brain - Banco pgvector]], [[Open Brain - MCP Server]], [[Open Brain - Infraestrutura GCP]]
-- implementa: [[Open Brain - WireGuard VPN]]
-- parte de: [[Open Brain - Arquitetura Geral]]
-- contido em: [[Open Brain]]
+- protege: [[Lox - Banco pgvector]], [[Lox - MCP Server]], [[Lox - Infraestrutura GCP]]
+- implementa: [[Lox - WireGuard VPN]]
+- parte de: [[Lox - Arquitetura Geral]]
+- contido em: [[Lox]]
 
 ## References
 

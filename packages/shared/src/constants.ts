@@ -1,4 +1,4 @@
-export const LOX_VERSION = '1.0.0';
+export const LOX_VERSION = '0.1.0';
 
 export const LOX_ASCII_LOGO = `  _        ___   __  __
  | |      / _ \\  \\ \\/ /

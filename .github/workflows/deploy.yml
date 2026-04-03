@@ -18,16 +18,16 @@ jobs:
 
       - name: Deploy to VM
         run: |
-          gcloud compute ssh sorensen@obsidian-vm \
-            --zone=us-east1-b \
+          gcloud compute ssh ${{ secrets.VM_SSH_USER }}@${{ secrets.VM_NAME }} \
+            --zone=${{ secrets.GCP_ZONE }} \
             --project=${{ secrets.GCP_PROJECT_ID }} \
             --tunnel-through-iap \
-            --command="nohup bash /home/sorensen/obsidian_open_brain/scripts/deploy.sh > /tmp/deploy.log 2>&1; cat /tmp/deploy.log"
+            --command="bash ~/lox-brain/infra/deploy.sh 2>&1 | tee /tmp/deploy.log"
 
       - name: Health check
         run: |
-          gcloud compute ssh sorensen@obsidian-vm \
-            --zone=us-east1-b \
+          gcloud compute ssh ${{ secrets.VM_SSH_USER }}@${{ secrets.VM_NAME }} \
+            --zone=${{ secrets.GCP_ZONE }} \
             --project=${{ secrets.GCP_PROJECT_ID }} \
             --tunnel-through-iap \
-            --command="systemctl is-active obsidian-watcher && tail -1 /tmp/deploy.log | grep -q DEPLOY_SUCCESS"
+            --command="systemctl is-active lox-watcher && tail -1 /tmp/deploy.log | grep -q DEPLOY_SUCCESS"

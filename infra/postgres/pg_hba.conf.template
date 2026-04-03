@@ -1,0 +1,8 @@
+# Lox Brain — PostgreSQL client authentication
+# TYPE  DATABASE  USER           ADDRESS        METHOD
+local   all       postgres                      peer
+local   all       __LOX_DB_USER__                scram-sha-256
+host    all       __LOX_DB_USER__  127.0.0.1/32  scram-sha-256
+# DENY all other connections (IPv4 and IPv6)
+host    all       all              0.0.0.0/0     reject
+host    all       all              ::/0          reject

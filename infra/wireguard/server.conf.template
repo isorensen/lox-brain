@@ -1,0 +1,11 @@
+[Interface]
+PrivateKey = __WG_SERVER_PRIVATE_KEY__
+Address = __LOX_VPN_SERVER_IP__/24
+ListenPort = __LOX_VPN_LISTEN_PORT__
+PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o __WG_HOST_INTERFACE__ -j MASQUERADE
+PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o __WG_HOST_INTERFACE__ -j MASQUERADE
+
+[Peer]
+# Added by installer for each VPN client
+PublicKey = __WG_CLIENT_PUBLIC_KEY__
+AllowedIPs = __WG_CLIENT_IP__/32

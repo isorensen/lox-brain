@@ -19,13 +19,15 @@ jobs:
         run: npm ci
 
       - name: Type check
-        run: npx tsc --noEmit
+        run: |
+          npx tsc --noEmit --project packages/shared/tsconfig.json
+          npx tsc --noEmit --project packages/core/tsconfig.json
 
       - name: Build
-        run: npm run build
+        run: npm run build --workspaces
 
       - name: Test with coverage
-        run: npm run test:coverage
+        run: npm run test:coverage --workspace=packages/core
 
       - name: Security audit
         run: npm audit --audit-level=high

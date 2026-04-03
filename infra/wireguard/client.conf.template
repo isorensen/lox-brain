@@ -1,0 +1,9 @@
+[Interface]
+PrivateKey = __WG_CLIENT_PRIVATE_KEY__
+Address = __LOX_VPN_CLIENT_IP__/24
+
+[Peer]
+PublicKey = __WG_SERVER_PUBLIC_KEY__
+Endpoint = __WG_ENDPOINT__:__LOX_VPN_LISTEN_PORT__
+AllowedIPs = __LOX_VPN_SUBNET__
+PersistentKeepalive = 25

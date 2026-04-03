@@ -1,5 +1,5 @@
 import type { Pool } from 'pg';
-import type { NoteRow, SearchResult, RecentNote, SearchOptions, PaginatedResult } from './types.js';
+import type { NoteRow, SearchResult, RecentNote, SearchOptions, PaginatedResult } from '@lox-brain/shared';
 
 const SEMANTIC_DEFAULTS: SearchOptions = {
   limit: 5,

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { DbClient } from '../../src/lib/db-client.js';
-import type { NoteRow, SearchOptions } from '../../src/lib/types.js';
+import type { NoteRow, SearchOptions } from '@lox-brain/shared';
 
 describe('DbClient', () => {
   let client: DbClient;

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type OpenAI from 'openai';
-import type { NoteMetadata } from './types.js';
+import type { NoteMetadata } from '@lox-brain/shared';
 
 export class EmbeddingService {
   private readonly openai: OpenAI;

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EmbeddingService } from '../../src/lib/embedding-service.js';
-import type { NoteMetadata } from '../../src/lib/types.js';
+import type { NoteMetadata } from '@lox-brain/shared';
 
 describe('EmbeddingService', () => {
   let service: EmbeddingService;

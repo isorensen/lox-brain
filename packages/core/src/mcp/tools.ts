@@ -2,7 +2,7 @@ import { readFile, writeFile, unlink, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import type { DbClient } from '../lib/db-client.js';
 import type { EmbeddingService } from '../lib/embedding-service.js';
-import type { SearchOptions } from '../lib/types.js';
+import type { SearchOptions } from '@lox-brain/shared';
 
 export interface Tool {
   name: string;

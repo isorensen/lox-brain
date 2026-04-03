@@ -16,7 +16,6 @@
   "dependencies": {
     "@lox-brain/shared": "*",
     "@inquirer/prompts": "^7.0.0",
-    "boxen": "^5.1.2",
     "chalk": "^4.1.2",
     "ora": "^5.4.1"
   },

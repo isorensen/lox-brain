@@ -1,0 +1,163 @@
+export interface I18nStrings {
+  // Language selection
+  language_prompt: string;
+  language_english: string;
+  language_portuguese: string;
+
+  // Splash
+  splash_description: string;
+  splash_features: string;
+
+  // Steps
+  step_prefix: string;
+  step_prerequisites: string;
+  step_security_audit: string;
+  step_language: string;
+  step_vault_preset: string;
+  step_gcp_project: string;
+  step_vpc_network: string;
+  step_vm_instance: string;
+  step_wireguard: string;
+  step_postgresql: string;
+  step_git_sync: string;
+  step_embedding: string;
+  step_mcp: string;
+
+  // Security audit
+  security_audit_title: string;
+  security_audit_passed: string;
+  security_audit_failed: string;
+  security_hygiene_title: string;
+  security_rule_1: string;
+  security_rule_1_detail: string;
+  security_rule_2: string;
+  security_rule_2_detail: string;
+  security_rule_3: string;
+  security_rule_3_detail: string;
+
+  // Success
+  success_title: string;
+  success_subtitle: string;
+  success_vault: string;
+  success_mcp: string;
+  success_claude: string;
+  success_next_steps: string;
+  success_step_1: string;
+  success_step_2: string;
+  success_step_3: string;
+  success_status_hint: string;
+
+  // Prompts
+  press_enter: string;
+  estimated_cost: string;
+  billing_instructions_1: string;
+  billing_instructions_2: string;
+  billing_instructions_3: string;
+  billing_instructions_4: string;
+  billing_instructions_5: string;
+
+  // Status
+  checking: string;
+  installing: string;
+  creating: string;
+  configuring: string;
+  done: string;
+  failed: string;
+  skipped: string;
+
+  // Errors
+  error_prefix: string;
+  confirm_continue: string;
+
+  // Presets
+  preset_zettelkasten: string;
+  preset_zettelkasten_desc: string;
+  preset_para: string;
+  preset_para_desc: string;
+
+  // Modes
+  mode_personal: string;
+  mode_team: string;
+}
+
+export const en: I18nStrings = {
+  // Language selection
+  language_prompt: 'Select your language:',
+  language_english: 'English',
+  language_portuguese: 'Portugues (BR)',
+
+  // Splash
+  splash_description: 'Personal AI-powered Second Brain with semantic search.',
+  splash_features: 'Obsidian + pgvector + MCP Server + WireGuard VPN',
+
+  // Steps
+  step_prefix: 'Step',
+  step_prerequisites: 'Prerequisites',
+  step_security_audit: 'Security Audit',
+  step_language: 'Language',
+  step_vault_preset: 'Vault Preset',
+  step_gcp_project: 'GCP Project',
+  step_vpc_network: 'VPC Network',
+  step_vm_instance: 'VM Instance',
+  step_wireguard: 'WireGuard VPN',
+  step_postgresql: 'PostgreSQL + pgvector',
+  step_git_sync: 'Git Sync',
+  step_embedding: 'Embedding Service',
+  step_mcp: 'MCP Server',
+
+  // Security audit
+  security_audit_title: 'Security Audit',
+  security_audit_passed: 'All security checks passed.',
+  security_audit_failed: 'Security issues detected. Please fix before continuing.',
+  security_hygiene_title: 'Security Hygiene Reminders',
+  security_rule_1: 'No public IPs on databases',
+  security_rule_1_detail: 'PostgreSQL listens on localhost only (127.0.0.1).',
+  security_rule_2: 'Secrets in Secret Manager',
+  security_rule_2_detail: 'API keys and tokens stored in GCP Secret Manager, never hardcoded.',
+  security_rule_3: 'VPN-only access',
+  security_rule_3_detail: 'All services accessible only via WireGuard VPN tunnel.',
+
+  // Success
+  success_title: 'Lox is ready.',
+  success_subtitle: 'Your Second Brain is online.',
+  success_vault: 'Vault synced and indexed',
+  success_mcp: 'MCP Server running on VPN',
+  success_claude: 'Claude Code connected',
+  success_next_steps: 'Next Steps',
+  success_step_1: 'Open Obsidian and verify vault sync.',
+  success_step_2: 'Run "lox status" to check all services.',
+  success_step_3: 'Ask Claude Code to search your notes.',
+  success_status_hint: 'Run "lox status" anytime to check system health.',
+
+  // Prompts
+  press_enter: 'Press Enter to continue...',
+  estimated_cost: 'Estimated monthly cost: ~$7 USD (GCP e2-small)',
+  billing_instructions_1: 'Go to console.cloud.google.com',
+  billing_instructions_2: 'Create or select a project',
+  billing_instructions_3: 'Enable billing for the project',
+  billing_instructions_4: 'Enable Compute Engine API',
+  billing_instructions_5: 'Run "gcloud auth login" to authenticate',
+
+  // Status
+  checking: 'Checking',
+  installing: 'Installing',
+  creating: 'Creating',
+  configuring: 'Configuring',
+  done: 'Done',
+  failed: 'Failed',
+  skipped: 'Skipped',
+
+  // Errors
+  error_prefix: 'Error',
+  confirm_continue: 'Do you want to continue anyway?',
+
+  // Presets
+  preset_zettelkasten: 'Zettelkasten',
+  preset_zettelkasten_desc: 'Atomic notes with unique IDs, interlinked for emergent thinking.',
+  preset_para: 'PARA',
+  preset_para_desc: 'Projects, Areas, Resources, Archives — action-oriented organization.',
+
+  // Modes
+  mode_personal: 'Personal',
+  mode_team: 'Team',
+};

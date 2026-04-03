@@ -18,14 +18,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Type check
-        run: npx tsc --noEmit
-
-      - name: Build
-        run: npm run build
+      - name: Build (sequential — shared must precede core and installer)
+        run: |
+          npm run build --workspace=packages/shared
+          npm run build --workspace=packages/core
+          npm run build --workspace=packages/installer
 
       - name: Test with coverage
-        run: npm run test:coverage
+        run: npm run test:coverage --workspace=packages/core
 
       - name: Security audit
         run: npm audit --audit-level=high

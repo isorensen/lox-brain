@@ -4,13 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Open Brain** is a hybrid personal knowledge management system connecting a local Obsidian Vault with PostgreSQL+pgvector on a GCP VM, exposed via an MCP Server accessible through WireGuard VPN. Claude Code acts as a first-class client, reading/writing notes and performing semantic search.
+**Lox** (formerly Open Brain) is a hybrid personal knowledge management system connecting a local Obsidian Vault with PostgreSQL+pgvector on a GCP VM, exposed via an MCP Server accessible through WireGuard VPN. Claude Code acts as a first-class client, reading/writing notes and performing semantic search.
 
 **Core principle:** Obsidian Vault is the source of truth. pgvector is a read index derived from it.
 
 ### Relationship with `obsidian-ingest` skill
 
-The Claude Code skill `obsidian-ingest` (`~/.claude/skills/obsidian-ingest/`) is a **separate project**. It writes notes directly to the local vault filesystem without requiring any infrastructure. Open Brain is the evolution: a full system with semantic search (pgvector), remote access (MCP Server over VPN), and automated embedding pipeline. They share the same vault and note format but are independent — `obsidian-ingest` works without Open Brain, and vice versa.
+The Claude Code skill `obsidian-ingest` (`~/.claude/skills/obsidian-ingest/`) is a **separate project**. It writes notes directly to the local vault filesystem without requiring any infrastructure. Lox is the evolution: a full system with semantic search (pgvector), remote access (MCP Server over VPN), and automated embedding pipeline. They share the same vault and note format but are independent -- `obsidian-ingest` works without Lox, and vice versa.
 
 ## Architecture
 
@@ -42,40 +42,57 @@ Claude Code (Arch 10.10.0.2 | Mac 10.10.0.3) --VPN--> MCP Server --> tools
 
 ```bash
 npm install
-npm run build          # tsc
-npm test               # vitest
-npm run test:coverage  # vitest --coverage (target: 80%+)
-npm run dev            # tsx watch for development
-npm run mcp            # start MCP server (dev, tsx)
-npm run mcp:prod       # start MCP server (prod, node dist)
-npm run watcher        # start vault watcher (dev)
-npm run index-vault    # one-time vault indexing
+npm run build --workspaces               # tsc (all packages)
+npm run test --workspace=packages/core   # vitest (core package)
+npm run test:coverage                    # vitest --coverage (target: 80%+)
+npm run dev                              # tsx watch for development
+npm run mcp                              # start MCP server (dev, tsx)
+npm run mcp:prod                         # start MCP server (prod, node dist)
+npm run watcher                          # start vault watcher (dev)
+npm run index-vault                      # one-time vault indexing
 ```
 
 ### MCP Server Restart After Code Changes
 
-The MCP server runs via **stdio over SSH** — it is spawned on-demand by Claude Code per session. After deploying code changes to the VM:
+The MCP server runs via **stdio over SSH** -- it is spawned on-demand by Claude Code per session. After deploying code changes to the VM:
 
 1. Kill any lingering process on the VM:
    ```bash
-   pkill -f "tsx src/mcp/index.ts"
+   pkill -f "tsx packages/core/src/mcp/index.ts"
    ```
-2. Reconnect in Claude Code: run `/mcp` → select `obsidian-brain` → reconnect, **or** restart Claude Code entirely.
+2. Reconnect in Claude Code: run `/mcp` -> select `lox-brain` -> reconnect, **or** restart Claude Code entirely.
 
 Without this step, the old binary remains in memory and changes will not take effect.
 
 ### SSH Connection
 
-The SSH user on the VM is **`sorensen`** (not the local macOS/Linux username). SSH config (`~/.ssh/config`):
+The SSH user on the VM is **`sorensen`** (configurable per deployment). SSH config (`~/.ssh/config`):
 
 ```
-Host obsidian-vm
+Host lox-vm
   HostName 10.10.0.1
   User sorensen
   IdentityFile ~/.ssh/google_compute_engine
 ```
 
 > **Note:** WireGuard VPN must be active before SSH connects. Arch Linux uses `10.10.0.2`; Mac uses `10.10.0.3`.
+
+## Monorepo Structure
+
+```
+lox-brain/
+  packages/
+    core/
+      src/
+        lib/               # Embedding service, DB client
+        mcp/               # MCP server (stdio transport)
+        watcher/           # Vault watcher (chokidar)
+      tests/
+    cli/                   # CLI tool (lox status, lox migrate)
+    installer/             # Cross-platform installer
+  docs/
+    plans/
+```
 
 ## Implementation Plan
 
@@ -94,10 +111,10 @@ The project follows an 11-phase plan with explicit gate approval between phases.
 
 ## Key Documentation
 
-- `docs/HANDOFF.md` — Current phase status and session resumption prompt
-- `docs/TECHNICAL_HANDOFF.md` — Architecture overview and principles
-- `docs/plans/2026-03-07-obsidian-open-brain-design.md` — Detailed design (components, schema, stack)
-- `docs/plans/2026-03-07-obsidian-open-brain-plan.md` — 11-phase implementation plan with tasks and gates
+- `docs/HANDOFF.md` -- Current phase status and session resumption prompt
+- `docs/TECHNICAL_HANDOFF.md` -- Architecture overview and principles
+- `docs/plans/2026-03-07-obsidian-open-brain-design.md` -- Detailed design (components, schema, stack)
+- `docs/plans/2026-03-07-obsidian-open-brain-plan.md` -- 11-phase implementation plan with tasks and gates
 
 ## Security (Zero Trust)
 
@@ -137,7 +154,7 @@ The project follows an 11-phase plan with explicit gate approval between phases.
 - Run `npm audit` before committing.
 - Use `helmet` for security headers in Express apps.
 - Use `express-rate-limit` for rate limiting.
-- Never use `eval()` or `new Function()` with user input.
+- Never use dynamic code execution or string-to-code conversion with user input.
 
 ### LGPD/BACEN Compliance
 - **ALWAYS** encrypt personal data at rest and in transit.
@@ -145,6 +162,8 @@ The project follows an 11-phase plan with explicit gate approval between phases.
 - **ALWAYS** use anonymized data in non-production environments.
 
 ## Database Schema
+
+Database: `lox_brain`, User: `lox`
 
 Table `vault_embeddings`: `id` (UUID PK), `file_path` (TEXT UNIQUE), `title`, `content`, `tags` (TEXT[]), `embedding` (vector(1536)), `file_hash` (SHA256), `created_at`, `updated_at`. Indexes: ivfflat on embedding (cosine), GIN on tags, btree on updated_at DESC.
 

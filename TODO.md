@@ -65,6 +65,12 @@
 - `get_graph` — extract wikilinks and return connection graph
 - `vault_stats` — note counts by folder, top tags, orphan notes
 
+### Lox Local Mode
+- **Priority:** Medium
+- Run everything locally without GCP (PostgreSQL local, no VPN, zero cost)
+- Entry-level option for users who don't want cloud infrastructure
+- Installer flag: `--mode=local`
+
 ## Pending Improvements
 
 ### ~~Text chunking for large notes~~ — DONE (2026-03-09)

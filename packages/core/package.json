@@ -1,0 +1,32 @@
+{
+  "name": "@lox-brain/core",
+  "version": "1.0.0",
+  "private": true,
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "mcp": "tsx src/mcp/index.ts",
+    "mcp:prod": "node dist/mcp/index.js",
+    "watcher": "tsx src/watcher/index.ts",
+    "watcher:prod": "node dist/watcher/index.js",
+    "index-vault": "tsx src/scripts/index-vault.ts"
+  },
+  "type": "commonjs",
+  "dependencies": {
+    "@lox-brain/shared": "*",
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "chokidar": "^5.0.0",
+    "openai": "^6.27.0",
+    "pg": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.5",
+    "@types/pg": "^8.18.0",
+    "@vitest/coverage-v8": "^4.0.18",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}

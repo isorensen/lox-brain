@@ -2,10 +2,10 @@
 
 Status: #baby
 
-Tags: [[claude-skill]] [[open-brain]] [[testes]] [[typescript]]
+Tags: [[claude-skill]] [[lox]] [[testes]] [[typescript]]
 source: claude-skill
 
-# Estrategia de Testes do Open Brain
+# Estrategia de Testes do Lox
 
 O projeto segue ciclo TDD rigoroso com cobertura minima de 80%. Todos os componentes foram desenvolvidos test-first usando vitest.
 
@@ -17,13 +17,15 @@ O projeto segue ciclo TDD rigoroso com cobertura minima de 80%. Todos os compone
 
 ## Distribuicao dos testes
 
-O projeto tem **59 testes** distribuidos em tres areas:
+O projeto tem **150 testes** (monorepo: 96 core + 19 shared + 35 installer):
 
 | Area | Testes | Cobre |
 |------|--------|-------|
-| `tests/lib/` | 21 | EmbeddingService (parseNote, chunkText, computeHash, generateEmbedding) + DbClient (upsert, delete, search, pagination) |
-| `tests/watcher/` | 12 | VaultWatcher (shouldProcess, handleFileChange com hash skip, handleFileDelete, two-phase pipeline) |
-| `tests/mcp/` | 26 | createTools (6 tools), safePath (path traversal, null bytes), addFrontmatter, input validation |
+| `packages/core/tests/lib/` | ~21 | EmbeddingService (parseNote, chunkText, computeHash, generateEmbedding) + DbClient |
+| `packages/core/tests/watcher/` | ~12 | VaultWatcher (shouldProcess, handleFileChange, handleFileDelete, two-phase pipeline) |
+| `packages/core/tests/mcp/` | ~26 | createTools (6 tools), safePath (path traversal, null bytes), input validation |
+| `packages/shared/tests/` | 19 | Types, config schema, constants |
+| `packages/installer/tests/` | 35 | Installer steps, i18n, security gates |
 
 ## Patterns usados
 

@@ -87,6 +87,7 @@
 ### SA key rotation schedule
 - **Priority:** High
 - `obsidian-vm-sa` key expires ~90 days from creation (2026-03-07) → **rotate by 2026-06-05**
+  - **Note:** This SA will be renamed to `lox-vm-sa` during VM cleanup (VM directory rename + DB migration pending)
 - `github-actions-deploy` key `c3044b0c` (created 2026-03-10, no auto-expiry) → **rotate by 2026-06-08**
 - Consider: automate rotation via Cloud Scheduler + Cloud Function, or at minimum set calendar reminders
 - Long-term: migrate to Workload Identity Federation (keyless) for GitHub Actions

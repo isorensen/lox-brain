@@ -2,12 +2,12 @@
 
 Status: #baby
 
-Tags: [[claude-skill]] [[open-brain]] [[embeddings]] [[typescript]]
+Tags: [[claude-skill]] [[lox]] [[embeddings]] [[typescript]]
 source: claude-skill
 
-# Embedding Service do Open Brain
+# Embedding Service do Lox
 
-O `EmbeddingService` e a biblioteca central que transforma notas Markdown em vetores semanticos. Definido em `src/lib/embedding-service.ts`, encapsula tres responsabilidades atomicas.
+O `EmbeddingService` e a biblioteca central que transforma notas Markdown em vetores semanticos. Definido em `packages/core/src/lib/embedding-service.ts`, encapsula tres responsabilidades atomicas.
 
 ## Responsabilidades
 
@@ -51,6 +51,6 @@ SHA256 do conteudo para detectar mudancas. Usado pelo [[vault-watcher]] para ski
 
 ## References
 
-- `src/lib/embedding-service.ts`
-- `src/lib/types.ts` (NoteMetadata interface)
+- `packages/core/src/lib/embedding-service.ts`
+- `packages/shared/src/types.ts` (NoteMetadata interface)
 - `docs/plans/2026-03-08-text-chunking-design.md`

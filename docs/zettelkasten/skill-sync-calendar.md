@@ -2,7 +2,7 @@
 
 Status: #baby
 
-Tags: [[claude-skill]] [[open-brain]] [[claude-skill-system]] [[google-calendar]]
+Tags: [[claude-skill]] [[lox]] [[claude-skill-system]] [[google-calendar]]
 source: claude-skill
 
 # Skill sync-calendar
@@ -17,7 +17,7 @@ Automatiza a criacao de meeting notes a partir de eventos do Google Calendar. Ac
 
 - **Google Calendar** (`gcal_list_events`) -- busca eventos do periodo
 - **Gmail** (`gmail_search_messages`, `gmail_read_message`) -- busca resumos do Gemini AI
-- **Obsidian Brain** (`search_text`, `write_note`, `read_note`) -- verifica duplicatas e persiste notas
+- **Lox Brain** (`search_text`, `write_note`, `read_note`) -- verifica duplicatas e persiste notas
 
 ## Workflow de 6 steps
 
@@ -45,9 +45,9 @@ Quando Gemini notes estao disponiveis, "Topicos Discutidos" e preenchido com o r
 
 ## Relacoes
 
-- usa: [[Open Brain - MCP Server]]
-- complementa: [[Open Brain - Skill obsidian-ingest]], [[Open Brain - Skill zettelkasten]]
-- contido em: [[Open Brain]]
+- usa: [[Lox - MCP Server]]
+- complementa: [[Lox - Skill obsidian-ingest]], [[Lox - Skill zettelkasten]]
+- contido em: [[Lox]]
 
 ## References
 

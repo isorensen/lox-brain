@@ -2,12 +2,12 @@
 
 Status: #child
 
-Tags: [[claude-skill]] [[open-brain]] [[data-flow]] [[arquitetura]]
+Tags: [[claude-skill]] [[lox]] [[data-flow]] [[arquitetura]]
 source: claude-skill
 
-# Fluxo de Dados do Open Brain
+# Fluxo de Dados do Lox
 
-O pipeline de dados do Open Brain opera em dois sentidos: edição local para indexação, e criação remota via Claude Code para o vault.
+O pipeline de dados do Lox opera em dois sentidos: edição local para indexação, e criação remota via Claude Code para o vault.
 
 ## Fluxo direto (local para index)
 
@@ -38,11 +38,11 @@ Claude Code
 
 ## Otimização por hash
 
-O [[Open Brain - Vault Watcher]] compara o SHA256 do conteúdo atual com o hash armazenado no [[Open Brain - Banco pgvector]] via `DbClient.getFileHash()`. Se o hash e identico, o arquivo e ignorado -- evitando chamadas desnecessárias a API da OpenAI e escritas no banco.
+O [[Lox - Vault Watcher]] compara o SHA256 do conteúdo atual com o hash armazenado no [[Lox - Banco pgvector]] via `DbClient.getFileHash()`. Se o hash e identico, o arquivo e ignorado -- evitando chamadas desnecessárias a API da OpenAI e escritas no banco.
 
 ## Two-phase pipeline
 
-O [[Open Brain - Servico de Embedding]] usa um pipeline de duas fases para garantir consistência: primeiro gera todos os embeddings (fase que pode falhar por erro de API), e so depois faz o batch upsert no banco. Isso evita estado parcial no caso de falha da OpenAI.
+O [[Lox - Servico de Embedding]] usa um pipeline de duas fases para garantir consistência: primeiro gera todos os embeddings (fase que pode falhar por erro de API), e so depois faz o batch upsert no banco. Isso evita estado parcial no caso de falha da OpenAI.
 
 ## Text chunking
 
@@ -50,12 +50,12 @@ Notas longas sao divididas em chunks de ate 4000 tokens estimados (3 chars/token
 
 ## Relações
 
-- depende de: [[Open Brain - Vault Watcher]], [[Open Brain - Servico de Embedding]], [[Open Brain - Banco pgvector]]
-- complementa: [[Open Brain - Arquitetura Geral]]
-- contido em: [[Open Brain]]
+- depende de: [[Lox - Vault Watcher]], [[Lox - Servico de Embedding]], [[Lox - Banco pgvector]]
+- complementa: [[Lox - Arquitetura Geral]]
+- contido em: [[Lox]]
 
 ## References
 
-- `src/watcher/vault-watcher.ts` (pipeline principal)
-- `src/lib/embedding-service.ts` (chunking e hash)
+- `packages/core/src/watcher/vault-watcher.ts` (pipeline principal)
+- `packages/core/src/lib/embedding-service.ts` (chunking e hash)
 - `docs/plans/2026-03-08-text-chunking-design.md`

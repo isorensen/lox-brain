@@ -2,7 +2,7 @@
 
 Status: #baby
 
-Tags: [[claude-skill]] [[open-brain]] [[claude-skill-system]]
+Tags: [[claude-skill]] [[lox]] [[claude-skill-system]]
 source: claude-skill
 
 # Skill zettelkasten
@@ -24,15 +24,15 @@ Transforma arquivos de codigo em conhecimento navegavel. Extrai arquitetura, dec
 ## Output local e no vault
 
 - Local: `docs/zettelkasten/` (nomes lowercase com hifens: `arquitetura-geral.md`)
-- Obsidian: `6 - Atomic Notes/` (nomes com prefixo de projeto: `Open Brain - Arquitetura Geral.md`)
+- Obsidian: `6 - Atomic Notes/` (nomes com prefixo de projeto: `Lox - Arquitetura Geral.md`)
 - Tags: `docs/zettelkasten/tags/` local, `3 - Tags/` no vault
 - MOC: `docs/zettelkasten/_MOC.md` local, `2 - Projects/<Project>.md` no vault
 
 ## Convencoes de wikilinks
 
 Dois tipos distintos -- misturar cria ghost notes no Obsidian:
-- **Tag links:** nome curto `[[open-brain]]` -> resolve para `3 - Tags/open-brain.md`
-- **Inter-note links:** nome completo `[[Open Brain - Arquitetura Geral]]` -> resolve para `6 - Atomic Notes/Open Brain - Arquitetura Geral.md`
+- **Tag links:** nome curto `[[lox]]` -> resolve para `3 - Tags/open-brain.md`
+- **Inter-note links:** nome completo `[[Lox - Arquitetura Geral]]` -> resolve para `6 - Atomic Notes/Lox - Arquitetura Geral.md`
 
 ## Metadados obrigatorios
 
@@ -40,14 +40,14 @@ Cada nota gerada deve ter: timestamp, `Status: #baby`, Tags com `[[claude-skill]
 
 ## Ingestion automatica no vault
 
-Apos gerar arquivos locais, ingere automaticamente no vault via `mcp__obsidian-brain__write_note`, convertendo `source: claude-skill` para `[source:: claude-skill]` + `[imported:: YYYY-MM-DD]`.
+Apos gerar arquivos locais, ingere automaticamente no vault via `mcp__lox-brain__write_note`, convertendo `source: claude-skill` para `[source:: claude-skill]` + `[imported:: YYYY-MM-DD]`.
 
 ## Relacoes
 
-- usa: [[Open Brain - MCP Server]]
-- complementa: [[Open Brain - Skill obsidian-ingest]], [[Open Brain - Skill sync-calendar]]
-- gerou: [[Open Brain - Arquitetura Geral]], [[Open Brain - Fluxo de Dados]], e todas as notas deste projeto
-- contido em: [[Open Brain]]
+- usa: [[Lox - MCP Server]]
+- complementa: [[Lox - Skill obsidian-ingest]], [[Lox - Skill sync-calendar]]
+- gerou: [[Lox - Arquitetura Geral]], [[Lox - Fluxo de Dados]], e todas as notas deste projeto Lox
+- contido em: [[Lox]]
 
 ## References
 

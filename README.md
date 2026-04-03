@@ -43,13 +43,27 @@ Claude Code --VPN--> MCP Server --> tools
 
 ## Quick Start
 
+The repository is currently private. Clone it first, then run the installer:
+
 ```bash
+git clone https://github.com/isorensen/lox-brain.git
+cd lox-brain
+
 # macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/isorensen/lox-brain/main/install.sh | bash
+bash scripts/install.sh
 
 # Windows (PowerShell)
-irm https://raw.githubusercontent.com/isorensen/lox-brain/main/install.ps1 | iex
+.\scripts\install.ps1
 ```
+
+> **Note:** When the repository is made public, a one-liner will be available:
+> ```bash
+> # macOS / Linux (when repo is public)
+> curl -fsSL https://raw.githubusercontent.com/isorensen/lox-brain/main/scripts/install.sh | bash
+>
+> # Windows PowerShell (when repo is public)
+> irm https://raw.githubusercontent.com/isorensen/lox-brain/main/scripts/install.ps1 | iex
+> ```
 
 ## MCP Tools
 

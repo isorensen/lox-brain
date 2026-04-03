@@ -1,3 +1,7 @@
+> **Historical document from the pre-Lox era (obsidian_open_brain).** Preserved for reference only. See `docs/handoff-2026-04-03.md` for the current state of the Lox project.
+
+---
+
 # Obsidian Open Brain — Session Handoff
 
 **Projeto:** obsidian_open_brain

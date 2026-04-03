@@ -14,10 +14,10 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { type Dirent } from 'node:fs';
 import path from 'node:path';
-import { Pool } from 'pg';
 import OpenAI from 'openai';
 import { EmbeddingService } from '../lib/embedding-service.js';
 import { DbClient } from '../lib/db-client.js';
+import { createPool } from '../lib/create-pool.js';
 import { VaultWatcher } from '../watcher/vault-watcher.js';
 
 // ---------------------------------------------------------------------------
@@ -80,14 +80,7 @@ async function collectMarkdownFiles(dir: string): Promise<string[]> {
 
 async function main(): Promise<void> {
   // Wire up dependencies
-  const pool = new Pool({
-    host: '127.0.0.1',
-    port: 5432,
-    database: 'open_brain',
-    user: 'obsidian_brain',
-    password: PG_PASSWORD,
-    ssl: false, // localhost-only connection through VPN; SSL not applicable
-  });
+  const pool = createPool({ password: PG_PASSWORD });
 
   const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
   const embeddingService = new EmbeddingService(openai);

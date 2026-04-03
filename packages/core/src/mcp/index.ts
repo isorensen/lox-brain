@@ -4,10 +4,11 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { Pool } from 'pg';
 import OpenAI from 'openai';
+import { LOX_MCP_SERVER_NAME, LOX_VERSION } from '@lox-brain/shared';
 import { EmbeddingService } from '../lib/embedding-service.js';
 import { DbClient } from '../lib/db-client.js';
+import { createPool } from '../lib/create-pool.js';
 import { createTools } from './tools.js';
 
 const VAULT_PATH = process.env.VAULT_PATH;
@@ -24,14 +25,7 @@ if (!process.env.PG_PASSWORD) {
   process.exit(1);
 }
 
-const pool = new Pool({
-  host: '127.0.0.1',
-  port: 5432,
-  database: 'open_brain',
-  user: 'obsidian_brain',
-  password: process.env.PG_PASSWORD,
-  // SSL omitted: PostgreSQL listens on localhost only (Zero Trust — no public IP).
-});
+const pool = createPool();
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const embeddingService = new EmbeddingService(openai);
@@ -39,7 +33,7 @@ const dbClient = new DbClient(pool);
 const tools = createTools(dbClient, embeddingService, VAULT_PATH);
 
 const server = new Server(
-  { name: 'obsidian-open-brain', version: '1.0.0' },
+  { name: LOX_MCP_SERVER_NAME, version: LOX_VERSION },
   { capabilities: { tools: {} } },
 );
 
@@ -77,7 +71,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main(): Promise<void> {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('Obsidian Open Brain MCP Server running on stdio');
+  console.error('Lox Brain MCP Server running on stdio');
 }
 
 main().catch((err: unknown) => {

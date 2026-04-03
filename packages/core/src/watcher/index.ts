@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises';
-import { Pool } from 'pg';
 import OpenAI from 'openai';
 import { EmbeddingService } from '../lib/embedding-service.js';
 import { DbClient } from '../lib/db-client.js';
+import { createPool } from '../lib/create-pool.js';
 import { VaultWatcher } from './vault-watcher.js';
 
 const VAULT_PATH = process.env.VAULT_PATH;
@@ -11,13 +11,7 @@ if (!VAULT_PATH) {
   process.exit(1);
 }
 
-const pool = new Pool({
-  host: 'localhost',
-  database: 'open_brain',
-  user: 'obsidian_brain',
-  password: process.env.PG_PASSWORD,
-  // SSL omitted: PostgreSQL listens on localhost only (Zero Trust — no public IP).
-});
+const pool = createPool();
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const embeddingService = new EmbeddingService(openai);

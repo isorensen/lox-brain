@@ -1,6 +1,12 @@
 import { createHash } from 'node:crypto';
 import type OpenAI from 'openai';
 import type { NoteMetadata } from '@lox-brain/shared';
+import {
+  EMBEDDING_MODEL,
+  CHUNK_MAX_TOKENS,
+  CHUNK_OVERLAP_TOKENS,
+  CHARS_PER_TOKEN_ESTIMATE,
+} from '@lox-brain/shared';
 
 export class EmbeddingService {
   private readonly openai: OpenAI;
@@ -11,7 +17,7 @@ export class EmbeddingService {
 
   async generateEmbedding(text: string): Promise<number[]> {
     const response = await this.openai.embeddings.create({
-      model: 'text-embedding-3-small',
+      model: EMBEDDING_MODEL,
       input: text,
     });
 
@@ -73,19 +79,18 @@ export class EmbeddingService {
     return { title, tags, content };
   }
 
-  chunkText(text: string, maxTokens = 4000, overlapTokens = 200): string[] {
+  chunkText(text: string, maxTokens = CHUNK_MAX_TOKENS, overlapTokens = CHUNK_OVERLAP_TOKENS): string[] {
     // Conservative estimate: ~3 chars per token for multilingual text (Portuguese, accents).
     // OpenAI's text-embedding-3-small limit is 8192 tokens; 4000 max leaves room for
     // title prepending and tokenizer variance.
-    const estimateTokens = (t: string): number => Math.ceil(t.length / 3);
+    const estimateTokens = (t: string): number => Math.ceil(t.length / CHARS_PER_TOKEN_ESTIMATE);
 
     if (estimateTokens(text) <= maxTokens) {
       return [text];
     }
 
     const paragraphs = text.split('\n\n');
-    const charsPerToken = 3;
-    const maxChars = maxTokens * charsPerToken;
+    const maxChars = maxTokens * CHARS_PER_TOKEN_ESTIMATE;
     const chunks: string[] = [];
     let currentParagraphs: string[] = [];
     let currentTokens = 0;

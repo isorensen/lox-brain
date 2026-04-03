@@ -11,9 +11,14 @@ interface OldInstallation {
   dbUser: string;
 }
 
-export function detectOldInstallation(): OldInstallation | null {
+export function detectOldInstallation(explicitPath?: string): OldInstallation | null {
   const home = process.env.HOME || process.env.USERPROFILE || '';
   const candidates = [
+    // 1. Explicit path from CLI argument
+    ...(explicitPath ? [path.resolve(explicitPath)] : []),
+    // 2. Current working directory (if we're inside the project)
+    process.cwd(),
+    // 3. Common default locations
     path.join(home, 'obsidian_open_brain'),
     path.join(home, 'lox-brain'),
   ];
@@ -38,10 +43,10 @@ export function detectOldInstallation(): OldInstallation | null {
   return null;
 }
 
-export async function runMigration(): Promise<void> {
+export async function runMigration(explicitPath?: string): Promise<void> {
   console.log(renderBox(['Lox Migration', '', 'Migrating from obsidian_open_brain to Lox...']));
 
-  const old = detectOldInstallation();
+  const old = detectOldInstallation(explicitPath);
   if (!old) {
     console.log('\n  No obsidian_open_brain installation found.\n');
     return;

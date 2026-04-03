@@ -22,7 +22,7 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   if (args[0] === 'migrate') {
     const { runMigration } = await import('./migrate.js');
-    await runMigration();
+    await runMigration(args[1]); // optional: explicit path to old installation
     return;
   }
   if (args[0] === 'status') {

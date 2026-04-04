@@ -6,13 +6,14 @@
   "workspaces": [
     "packages/shared",
     "packages/core",
-    "packages/installer"
+    "packages/installer",
+    "packages/team"
   ],
   "scripts": {
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces --if-present",
     "test:coverage": "npm run test:coverage --workspaces --if-present",
-    "lint": "tsc --noEmit --project packages/shared/tsconfig.json && tsc --noEmit --project packages/core/tsconfig.json && tsc --noEmit --project packages/installer/tsconfig.json"
+    "lint": "tsc --noEmit --project packages/shared/tsconfig.json && tsc --noEmit --project packages/core/tsconfig.json && tsc --noEmit --project packages/installer/tsconfig.json && tsc --noEmit --project packages/team/tsconfig.json"
   },
   "repository": {
     "type": "git",

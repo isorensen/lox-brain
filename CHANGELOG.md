@@ -14,6 +14,18 @@ All notable changes to this project will be documented in this file.
 - Update README with badges, improved splash, and public install instructions
 - Add CONTRIBUTING.md, CODE_OF_CONDUCT.md, and GitHub issue/PR templates
 
+## [0.1.5] — 2026-04-04
+
+### Fixed
+- `gcloud services enable` timeout on new GCP projects (#21). Default 30s was too short — APIs now enabled one at a time with 120s timeout and per-API spinner feedback
+- Raw stack traces on API enable failures — all errors now caught and shown as clean messages
+- `install.ps1` temp directory cleanup failing on Windows due to file handle contention — added retry with delay
+- `install.ps1` silently continuing after `npm ci` or `npm run build` failures — added exit guards
+
+### Changed
+- `shell()` now accepts optional `{ timeout }` parameter (default 30s) for long-running commands
+- Timeout errors now produce clean `Command timed out after Xms: <cmd>` messages
+
 ## [0.1.4] — 2026-04-04
 
 ### Added

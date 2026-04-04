@@ -31,11 +31,18 @@ git clone --depth 1 https://github.com/isorensen/lox-brain.git "$tempDir\lox-bra
 Set-Location "$tempDir\lox-brain"
 Write-Host "Installing dependencies..."
 npm ci --silent
+if ($LASTEXITCODE -ne 0) { Write-Host "npm ci failed"; exit 1 }
 Write-Host "Building..."
 npm run build --workspaces --silent
+if ($LASTEXITCODE -ne 0) { Write-Host "Build failed"; exit 1 }
 Write-Host ""
 node packages\installer\dist\index.js
 
-# Cleanup
+# Cleanup — retry with delay to allow processes to release file handles
 Set-Location $HOME
-Remove-Item -Recurse -Force $tempDir
+Start-Sleep -Seconds 2
+Remove-Item -Recurse -Force $tempDir -ErrorAction SilentlyContinue
+if (Test-Path $tempDir) {
+    Start-Sleep -Seconds 3
+    Remove-Item -Recurse -Force $tempDir -ErrorAction SilentlyContinue
+}

@@ -226,22 +226,23 @@ export async function stepGcpProject(ctx: InstallerContext): Promise<StepResult>
     return billingResult;
   }
 
-  // Enable required APIs
-  try {
-    await withSpinner(
-      `Enabling APIs (${REQUIRED_APIS.length})...`,
-      async () => {
-        await shell('gcloud', ['services', 'enable', ...REQUIRED_APIS, '--project', projectId]);
-      },
-    );
-  } catch (err: unknown) {
-    if (isBillingError(err)) {
-      return {
-        success: false,
-        message: strings.billing_required_for_apis,
-      };
+  // Enable required APIs one at a time (each can take 1-2 min on new projects)
+  for (const api of REQUIRED_APIS) {
+    const apiName = api.replace('.googleapis.com', '');
+    try {
+      await withSpinner(
+        `Enabling API: ${apiName}...`,
+        async () => {
+          await shell('gcloud', ['services', 'enable', api, '--project', projectId], { timeout: 120_000 });
+        },
+      );
+    } catch (err: unknown) {
+      if (isBillingError(err)) {
+        return { success: false, message: strings.billing_required_for_apis };
+      }
+      const msg = err instanceof Error ? err.message.split('\n')[0] : 'Unknown error';
+      return { success: false, message: `Failed to enable API: ${apiName}. ${msg}` };
     }
-    throw err;
   }
 
   // Set default region and zone

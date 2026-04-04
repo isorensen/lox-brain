@@ -1,17 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Track calls to execFile so we can assert cmd/args without ESM spy issues
-const execFileCalls: Array<{ cmd: string; args: string[] }> = [];
+// Track calls to execFile so we can assert cmd/args/opts without ESM spy issues
+const execFileCalls: Array<{ cmd: string; args: string[]; opts: Record<string, unknown> }> = [];
 
 // Allows individual tests to override the default success behaviour
 type ExecFileCallback = (err: unknown, result?: { stdout: string; stderr: string }) => void;
 let execFileImpl: ((cmd: string, args: string[], _opts: unknown, cb: ExecFileCallback) => void) | null = null;
 
 vi.mock('node:child_process', () => ({
-  execFile: (cmd: string, args: string[], _opts: unknown, cb: ExecFileCallback) => {
-    execFileCalls.push({ cmd, args });
+  execFile: (cmd: string, args: string[], opts: Record<string, unknown>, cb: ExecFileCallback) => {
+    execFileCalls.push({ cmd, args, opts });
     if (execFileImpl) {
-      execFileImpl(cmd, args, _opts, cb);
+      execFileImpl(cmd, args, opts, cb);
     } else {
       cb(null, { stdout: 'mocked output', stderr: '' });
     }
@@ -131,5 +131,25 @@ describe('shell() Windows cmd.exe wrapping', () => {
 
     const { shell } = await import('../../src/utils/shell.js');
     await expect(shell('missingcmd')).rejects.toThrow('Command not found: missingcmd');
+  });
+
+  it('uses default 30s timeout when no options provided', async () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+
+    const { shell } = await import('../../src/utils/shell.js');
+    await shell('gcloud', ['--version']);
+
+    expect(execFileCalls).toHaveLength(1);
+    expect(execFileCalls[0].opts).toMatchObject({ timeout: 30_000 });
+  });
+
+  it('uses custom timeout when provided via options', async () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+
+    const { shell } = await import('../../src/utils/shell.js');
+    await shell('gcloud', ['services', 'enable', 'compute.googleapis.com'], { timeout: 120_000 });
+
+    expect(execFileCalls).toHaveLength(1);
+    expect(execFileCalls[0].opts).toMatchObject({ timeout: 120_000 });
   });
 });

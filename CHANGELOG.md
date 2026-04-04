@@ -14,6 +14,13 @@ All notable changes to this project will be documented in this file.
 - Update README with badges, improved splash, and public install instructions
 - Add CONTRIBUTING.md, CODE_OF_CONDUCT.md, and GitHub issue/PR templates
 
+## [0.3.3] — 2026-04-04
+
+### Fixed
+- Installer VM Setup step now idempotent — re-running no longer fails with `role "lox" already exists` (#50)
+- pgvector compilation phase handles interrupted previous runs by cleaning `/tmp/pgvector` before clone (#50)
+- `createdb` errors are now propagated correctly instead of being silenced
+
 ## [0.3.2] — 2026-04-04
 
 ### Fixed

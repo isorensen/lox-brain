@@ -56,4 +56,4 @@ eduardo@isorensen.dev before opening a pull request.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the MIT License.
+By contributing to MIT-licensed packages, you agree that your contributions will be licensed under the MIT License. Contributions to `packages/team/` are governed by the CLA described above.

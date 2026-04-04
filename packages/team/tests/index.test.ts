@@ -139,4 +139,26 @@ describe('registerTeamFeatures', () => {
     const calledArgs = mockHandler.mock.calls[0][0];
     expect(calledArgs._created_by).toBe('eduardo');
   });
+
+  it('should not inject _created_by when getClientIp returns null', async () => {
+    const token = jwt.sign(
+      { org: 'credifit', max_peers: 10, expires: '2027-04-03', issued_by: 'isorensen' },
+      privateKey,
+      { algorithm: 'RS256', expiresIn: '365d' },
+    );
+    const config = makeConfig();
+    config.license_key = token;
+
+    const innerHandler = vi.fn().mockResolvedValue({ written: true });
+    const mockTool = { name: 'write_note', description: 'Write', inputSchema: {}, handler: innerHandler };
+
+    const result = await registerTeamFeatures({} as any, config, [mockTool], publicKey, {
+      getClientIp: () => null,
+    });
+
+    expect(result.success).toBe(true);
+    const wrappedTool = result.tools!.find(t => t.name === 'write_note')!;
+    await wrappedTool.handler({ file_path: 'test.md', content: 'hello' });
+    expect(innerHandler).toHaveBeenCalledWith({ file_path: 'test.md', content: 'hello' });
+  });
 });

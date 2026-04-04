@@ -1,5 +1,7 @@
+import { createServer } from 'node:http';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -10,6 +12,7 @@ import { EmbeddingService } from '../lib/embedding-service.js';
 import { DbClient } from '../lib/db-client.js';
 import { createPool } from '../lib/create-pool.js';
 import { createTools } from './tools.js';
+import { getTransportConfig } from './transports.js';
 
 const VAULT_PATH = process.env.VAULT_PATH;
 if (!VAULT_PATH) {
@@ -69,9 +72,28 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 });
 
 async function main(): Promise<void> {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  console.error('Lox Brain MCP Server running on stdio');
+  const transportConfig = getTransportConfig();
+
+  if (transportConfig.type === 'stdio') {
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+    console.error('Lox Brain MCP Server running on stdio');
+  } else {
+    const httpServer = createServer(async (req, res) => {
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+      });
+      (transport as any).clientIp = req.socket.remoteAddress ?? null;
+      await server.connect(transport);
+      await transport.handleRequest(req, res);
+    });
+
+    httpServer.listen(transportConfig.port, transportConfig.host, () => {
+      console.error(
+        `Lox Brain MCP Server running on http://${transportConfig.host}:${transportConfig.port}`,
+      );
+    });
+  }
 }
 
 main().catch((err: unknown) => {

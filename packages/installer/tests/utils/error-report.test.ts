@@ -76,7 +76,7 @@ describe('offerErrorReport', () => {
   const baseCtx: ErrorReportContext = {
     stepName: 'VM Setup',
     errorMessage: 'SSH connection failed --project my-proj',
-    loxVersion: '0.2.2',
+    loxVersion: '0.2.3',
     os: 'darwin arm64',
     nodeVersion: 'v22.0.0',
   };

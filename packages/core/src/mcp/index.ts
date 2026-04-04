@@ -69,6 +69,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 });
 
 async function main(): Promise<void> {
+  try {
+    await dbClient.reindexEmbeddings();
+    console.error('Reindexed ivfflat embedding index');
+  } catch (err) {
+    console.error('Warning: failed to reindex embedding index:', err instanceof Error ? err.message : err);
+  }
+
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error('Lox Brain MCP Server running on stdio');

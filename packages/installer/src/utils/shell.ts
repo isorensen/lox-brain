@@ -12,7 +12,7 @@ export interface ShellResult {
  * Execute a command safely using execFile (no shell interpolation).
  * SECURITY: Uses execFile instead of exec to prevent shell injection.
  */
-export async function shell(cmd: string, args: string[] = []): Promise<ShellResult> {
+export async function shell(cmd: string, args: string[] = [], options?: { timeout?: number }): Promise<ShellResult> {
   // On Windows, .cmd/.bat files cannot be executed directly by execFile().
   // Delegate to cmd.exe which resolves them automatically.
   const actualCmd = process.platform === 'win32' ? 'cmd.exe' : cmd;
@@ -20,7 +20,7 @@ export async function shell(cmd: string, args: string[] = []): Promise<ShellResu
 
   try {
     const { stdout, stderr } = await execFileAsync(actualCmd, actualArgs, {
-      timeout: 30_000,
+      timeout: options?.timeout ?? 30_000,
       maxBuffer: 1024 * 1024,
     });
     return { stdout: stdout.trim(), stderr: stderr.trim() };
@@ -32,6 +32,9 @@ export async function shell(cmd: string, args: string[] = []): Promise<ShellResu
       // On Windows, cmd.exe /c reports missing commands via stderr
       if ('stderr' in err && typeof err.stderr === 'string' && err.stderr.includes('is not recognized')) {
         throw new Error(`Command not found: ${cmd}`);
+      }
+      if ('killed' in err && err.killed === true) {
+        throw new Error(`Command timed out after ${options?.timeout ?? 30_000}ms: ${cmd}`);
       }
     }
     throw err;

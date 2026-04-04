@@ -287,12 +287,8 @@ describe('ensureBilling', () => {
   });
 });
 
-describe('stepGcpProject — API enable billing error handling', () => {
+describe('stepGcpProject — API enable error handling', () => {
   it('returns clean error when gcloud services enable fails with billing error', async () => {
-    // We test the isBillingError logic indirectly by importing stepGcpProject
-    // and checking that a billing-related error from API enable returns a clean message.
-    // This is covered by the ensureBilling guard, but we also verify the try/catch.
-
     const { stepGcpProject } = await import('../../src/steps/step-gcp-project.js');
     const { input } = await import('@inquirer/prompts');
     const inputMock = input as Mock;
@@ -305,7 +301,7 @@ describe('stepGcpProject — API enable billing error handling', () => {
     shellMock.mockResolvedValueOnce({ stdout: '', stderr: '' });
     // checkBillingEnabled — billing is linked (pass the billing check)
     shellMock.mockResolvedValueOnce({ stdout: 'billingAccounts/XXX', stderr: '' });
-    // gcloud services enable — fails with billing error
+    // gcloud services enable (first API) — fails with billing error
     const billingErr = new Error('FAILED_PRECONDITION: Billing account not found');
     shellMock.mockRejectedValueOnce(billingErr);
 
@@ -319,5 +315,86 @@ describe('stepGcpProject — API enable billing error handling', () => {
 
     expect(result.success).toBe(false);
     expect(result.message).toContain('Billing is required');
+  });
+
+  it('returns clean error (not stack trace) when API enable fails with non-billing error', async () => {
+    const { stepGcpProject } = await import('../../src/steps/step-gcp-project.js');
+    const { input } = await import('@inquirer/prompts');
+    const inputMock = input as Mock;
+
+    inputMock.mockResolvedValueOnce('test-project-id');
+
+    // projectExists — project exists
+    shellMock.mockResolvedValueOnce({ stdout: 'test-project-id', stderr: '' });
+    // config set project
+    shellMock.mockResolvedValueOnce({ stdout: '', stderr: '' });
+    // checkBillingEnabled — billing is linked
+    shellMock.mockResolvedValueOnce({ stdout: 'billingAccounts/XXX', stderr: '' });
+    // gcloud services enable (first API) — fails with timeout/generic error
+    const timeoutErr = new Error('Command timed out after 120000ms');
+    shellMock.mockRejectedValueOnce(timeoutErr);
+
+    const ctx = {
+      config: {},
+      locale: 'en' as const,
+      gcpUsername: 'test',
+    };
+
+    const result = await stepGcpProject(ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('Failed to enable API: compute');
+    expect(result.message).toContain('Command timed out');
+  });
+
+  it('enables APIs one at a time with 120s timeout', async () => {
+    const { stepGcpProject } = await import('../../src/steps/step-gcp-project.js');
+    const { input } = await import('@inquirer/prompts');
+    const inputMock = input as Mock;
+
+    inputMock.mockResolvedValueOnce('test-project-id');
+
+    // projectExists — project exists
+    shellMock.mockResolvedValueOnce({ stdout: 'test-project-id', stderr: '' });
+    // config set project
+    shellMock.mockResolvedValueOnce({ stdout: '', stderr: '' });
+    // checkBillingEnabled — billing is linked
+    shellMock.mockResolvedValueOnce({ stdout: 'billingAccounts/XXX', stderr: '' });
+    // 3 individual API enable calls
+    shellMock.mockResolvedValueOnce({ stdout: '', stderr: '' });
+    shellMock.mockResolvedValueOnce({ stdout: '', stderr: '' });
+    shellMock.mockResolvedValueOnce({ stdout: '', stderr: '' });
+    // config set region
+    shellMock.mockResolvedValueOnce({ stdout: '', stderr: '' });
+    // config set zone
+    shellMock.mockResolvedValueOnce({ stdout: '', stderr: '' });
+
+    const ctx = {
+      config: {},
+      locale: 'en' as const,
+      gcpUsername: 'test',
+    };
+
+    const result = await stepGcpProject(ctx);
+
+    expect(result.success).toBe(true);
+
+    // Verify each API was enabled individually with 120s timeout
+    const apiCalls = shellMock.mock.calls.filter(
+      (call: unknown[]) => Array.isArray(call[1]) && (call[1] as string[])[0] === 'services',
+    );
+    expect(apiCalls).toHaveLength(3);
+
+    for (const call of apiCalls) {
+      expect(call[1][0]).toBe('services');
+      expect(call[1][1]).toBe('enable');
+      // Each call should have a single API: ['services', 'enable', 'x.googleapis.com', '--project', 'id']
+      expect(call[1]).toHaveLength(5);
+    }
+
+    // Verify timeout option was passed
+    for (const call of apiCalls) {
+      expect(call[2]).toMatchObject({ timeout: 120_000 });
+    }
   });
 });

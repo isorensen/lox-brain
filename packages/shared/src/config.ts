@@ -1,3 +1,5 @@
+import { LOX_VERSION } from './constants.js';
+
 export interface VpnPeer {
   name: string;
   ip: string;
@@ -37,7 +39,7 @@ export interface LoxConfig {
 }
 
 export const DEFAULT_CONFIG: Partial<LoxConfig> = {
-  version: '0.1.0',
+  version: LOX_VERSION,
   mode: 'personal',
   database: {
     host: '127.0.0.1',

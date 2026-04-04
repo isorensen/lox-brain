@@ -1,4 +1,11 @@
-export const LOX_VERSION = '0.1.0';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+// __dirname at runtime is dist/ (compiled output), so go up one level to package root
+const pkgPath = resolve(__dirname, '..', 'package.json');
+const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8')) as { version: string };
+
+export const LOX_VERSION = pkg.version;
 
 export const LOX_ASCII_LOGO = `  _        ___   __  __
  | |      / _ \\  \\ \\/ /

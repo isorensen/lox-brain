@@ -14,6 +14,19 @@ All notable changes to this project will be documented in this file.
 - Update README with badges, improved splash, and public install instructions
 - Add CONTRIBUTING.md, CODE_OF_CONDUCT.md, and GitHub issue/PR templates
 
+## [0.1.3] — 2026-04-04
+
+### Fixed
+- Systemic fix: `shell()` utility now wraps all commands with `cmd.exe /c` on Windows, resolving `.cmd`/`.bat` execution for all 43+ `gcloud` call sites (#17, #21)
+- GCP authentication verification failing on Windows (#21) — `getActiveAccount()` used `execFile('gcloud', ...)` which couldn't resolve `gcloud.cmd`
+- `LOX_VERSION` and `DEFAULT_CONFIG.version` were hardcoded at `0.1.0` while `package.json` was at `0.1.2` — splash screen showed wrong version
+- Windows "command not found" errors now produce clean `Command not found: <cmd>` messages instead of raw `cmd.exe` error output
+
+### Changed
+- `LOX_VERSION` now reads dynamically from `package.json` — version can never desync again
+- `DEFAULT_CONFIG.version` imports `LOX_VERSION` from constants instead of hardcoding
+- Removed per-caller `.cmd` fallback in `checkGcloud()` — handled systemically by `shell()`
+
 ## [0.1.2] — 2026-04-04
 
 ### Fixed

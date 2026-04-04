@@ -169,6 +169,21 @@ describe('DbClient', () => {
       await expect(() => client.searchSemantic([], 0)).rejects.toThrow(RangeError);
       await expect(() => client.searchSemantic([], -1)).rejects.toThrow(RangeError);
     });
+
+    it('should SELECT created_by in semantic search results', async () => {
+      const fakeRows = [
+        {
+          id: 'id1', file_path: 'notes/a.md', title: 'Note A', content: null,
+          tags: ['tag1'], similarity: 0.92, updated_at: new Date('2026-03-07'),
+          created_by: 'eduardo', total_count: '1',
+        },
+      ];
+      mockPool.query.mockResolvedValue({ rows: fakeRows });
+      const result = await client.searchSemantic([0.1], { limit: 5 });
+      const [sql] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('created_by');
+      expect(result.results[0].created_by).toBe('eduardo');
+    });
   });
 
   describe('searchSemantic with SearchOptions', () => {
@@ -325,6 +340,20 @@ describe('DbClient', () => {
       await expect(() => client.listRecent(0)).rejects.toThrow(RangeError);
       await expect(() => client.listRecent(-5)).rejects.toThrow(RangeError);
     });
+
+    it('should SELECT created_by in recent notes', async () => {
+      const fakeRows = [
+        {
+          id: 'id1', file_path: 'notes/c.md', title: 'Note C', content: null,
+          tags: [], updated_at: new Date(), created_by: 'igor', total_count: '1',
+        },
+      ];
+      mockPool.query.mockResolvedValue({ rows: fakeRows });
+      const result = await client.listRecent(5);
+      const [sql] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('created_by');
+      expect(result.results[0].created_by).toBe('igor');
+    });
   });
 
   describe('listRecent with SearchOptions', () => {
@@ -384,6 +413,20 @@ describe('DbClient', () => {
       expect(sql).toContain('ILIKE');
       expect(sql).not.toContain('tags @>');
       expect(params[0]).toBe('%query%');
+    });
+
+    it('should SELECT created_by in text search results', async () => {
+      const fakeRows = [
+        {
+          id: 'id1', file_path: 'notes/b.md', title: 'Note B', content: null,
+          tags: [], updated_at: new Date(), created_by: 'matheus', total_count: '1',
+        },
+      ];
+      mockPool.query.mockResolvedValue({ rows: fakeRows });
+      const result = await client.searchText('query');
+      const [sql] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('created_by');
+      expect(result.results[0].created_by).toBe('matheus');
     });
 
     it('should default limit to 20', async () => {

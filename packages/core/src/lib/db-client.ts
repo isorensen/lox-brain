@@ -119,7 +119,7 @@ export class DbClient {
     const sql = `
       SELECT id, file_path, title, ${contentCol.sql}, tags,
              1 - (embedding <=> $1::vector) AS similarity,
-             updated_at,
+             updated_at, created_by,
              COUNT(*) OVER() AS total_count
       FROM vault_embeddings
       ORDER BY embedding <=> $1::vector
@@ -168,7 +168,7 @@ export class DbClient {
     const offsetIdx = paramIdx++;
 
     const sql = `
-      SELECT id, file_path, title, ${contentCol.sql}, tags, updated_at,
+      SELECT id, file_path, title, ${contentCol.sql}, tags, updated_at, created_by,
              COUNT(*) OVER() AS total_count
       FROM vault_embeddings
       ORDER BY updated_at DESC
@@ -208,7 +208,7 @@ export class DbClient {
     const offsetIdx = paramIdx++;
 
     const sql = `
-      SELECT id, file_path, title, ${contentCol.sql}, tags, updated_at,
+      SELECT id, file_path, title, ${contentCol.sql}, tags, updated_at, created_by,
              COUNT(*) OVER() AS total_count
       FROM vault_embeddings
       WHERE content ILIKE $${queryParamIdx}${tagsClause}

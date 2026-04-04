@@ -182,6 +182,47 @@ export class DbClient {
     return this.buildPaginatedResult(result.rows, opts);
   }
 
+  async searchByAuthor(
+    author: string,
+    query?: string,
+    options?: Partial<SearchOptions>,
+  ): Promise<PaginatedResult<RecentNote>> {
+    const opts = this.buildSearchOptions(options, TEXT_DEFAULTS);
+
+    let paramIdx = 1;
+    const authorParamIdx = paramIdx++;
+
+    let queryClause = '';
+    let queryParamIdx = 0;
+    if (query) {
+      queryParamIdx = paramIdx++;
+      queryClause = ` AND content ILIKE $${queryParamIdx}`;
+    }
+
+    const contentCol = this.buildContentColumn(opts, paramIdx);
+    paramIdx = contentCol.nextParamIndex;
+
+    const limitIdx = paramIdx++;
+    const offsetIdx = paramIdx++;
+
+    const sql = `
+      SELECT id, file_path, title, ${contentCol.sql}, tags, updated_at, created_by,
+             COUNT(*) OVER() AS total_count
+      FROM vault_embeddings
+      WHERE created_by = $${authorParamIdx}${queryClause}
+      ORDER BY updated_at DESC
+      LIMIT $${limitIdx}
+      OFFSET $${offsetIdx}
+    `;
+
+    const params: unknown[] = [author];
+    if (query) params.push(`%${query}%`);
+    params.push(...contentCol.params, opts.limit, opts.offset);
+
+    const result = await this.pool.query(sql, params);
+    return this.buildPaginatedResult(result.rows, opts);
+  }
+
   async searchText(
     query: string,
     tags?: string[],

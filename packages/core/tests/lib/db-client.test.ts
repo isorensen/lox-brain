@@ -443,6 +443,41 @@ describe('DbClient', () => {
     });
   });
 
+  describe('searchByAuthor', () => {
+    it('should filter by created_by with parameterized query', async () => {
+      const fakeRows = [{
+        id: 'id1', file_path: 'notes/team.md', title: 'Team Note',
+        content: null, tags: ['meeting'], updated_at: new Date(),
+        created_by: 'eduardo', total_count: '1',
+      }];
+      mockPool.query.mockResolvedValue({ rows: fakeRows });
+      const result = await client.searchByAuthor('eduardo');
+      const [sql, params] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('created_by = ');
+      expect(params).toContain('eduardo');
+      expect(result.results[0].created_by).toBe('eduardo');
+    });
+
+    it('should support text query combined with author filter', async () => {
+      mockPool.query.mockResolvedValue({ rows: [] });
+      await client.searchByAuthor('eduardo', 'meeting');
+      const [sql, params] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('created_by = ');
+      expect(sql).toContain('ILIKE');
+      expect(params).toContain('eduardo');
+      expect(params).toContain('%meeting%');
+    });
+
+    it('should return PaginatedResult', async () => {
+      mockPool.query.mockResolvedValue({ rows: [] });
+      const result = await client.searchByAuthor('eduardo');
+      expect(result).toHaveProperty('results');
+      expect(result).toHaveProperty('total');
+      expect(result).toHaveProperty('limit');
+      expect(result).toHaveProperty('offset');
+    });
+  });
+
   describe('searchText with SearchOptions', () => {
     it('should accept SearchOptions as third parameter', async () => {
       mockPool.query.mockResolvedValue({ rows: [] });

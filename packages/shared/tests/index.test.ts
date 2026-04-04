@@ -112,8 +112,9 @@ describe('config', () => {
     expect(DEFAULT_CONFIG.vpn!.peers).toEqual([]);
   });
 
-  it('DEFAULT_CONFIG should have version 1.0.0 and mode personal', () => {
-    expect(DEFAULT_CONFIG.version).toBe('0.1.0');
+  it('DEFAULT_CONFIG should have a valid semver version and mode personal', () => {
+    expect(DEFAULT_CONFIG.version).toMatch(/^\d+\.\d+\.\d+/);
+    expect(DEFAULT_CONFIG.version).toBe(LOX_VERSION);
     expect(DEFAULT_CONFIG.mode).toBe('personal');
   });
 
@@ -160,8 +161,11 @@ describe('config', () => {
 });
 
 describe('constants', () => {
-  it('LOX_VERSION should be 1.0.0', () => {
-    expect(LOX_VERSION).toBe('0.1.0');
+  it('LOX_VERSION should match package.json version', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const pkg = require('../package.json') as { version: string };
+    expect(LOX_VERSION).toBe(pkg.version);
+    expect(LOX_VERSION).toMatch(/^\d+\.\d+\.\d+/);
   });
 
   it('LOX_ASCII_LOGO should contain LOX letter patterns', () => {

@@ -213,6 +213,28 @@ describe('sourceFileForStep', () => {
     expect(sourceFileForStep('NonExistent')).toBeUndefined();
     expect(sourceFileForStep('')).toBeUndefined();
   });
+
+  it('covers every step name used in index.ts handleStepFailure calls', () => {
+    // These must match the stepName strings in packages/installer/src/index.ts.
+    // If a step is renamed or added, update this list AND STEP_SOURCE_FILES.
+    const EXPECTED_STEPS = [
+      'Prerequisites',
+      'GCP Auth',
+      'GCP Project',
+      'Billing',
+      'VPC Network',
+      'VM Instance',
+      'VM Setup',
+      'WireGuard VPN',
+      'Vault Setup',
+      'Obsidian',
+      'Deploy',
+      'MCP Server',
+    ];
+    for (const step of EXPECTED_STEPS) {
+      expect(sourceFileForStep(step), `missing mapping for "${step}"`).toBeDefined();
+    }
+  });
 });
 
 describe('buildIssueBody', () => {

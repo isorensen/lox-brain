@@ -14,6 +14,12 @@ All notable changes to this project will be documented in this file.
 - Update README with badges, improved splash, and public install instructions
 - Add CONTRIBUTING.md, CODE_OF_CONDUCT.md, and GitHub issue/PR templates
 
+## [0.2.5] — 2026-04-04
+
+### Fixed
+- SSH warmup `--command=echo ok` fails on Windows: gcloud parses the space as a separate argument (#38). Changed warmup to `--command=true` and added double-quote wrapping to all `--command` values in sshExec/sshExecScript.
+- Auto-report missing actual gcloud error (#38). SSH warmup now captures stderr via `stdio: ['inherit','inherit','pipe']` and the error handler extracts gcloud `ERROR:` lines instead of the generic Node.js wrapper message.
+
 ## [0.2.4] — 2026-04-04
 
 ### Fixed

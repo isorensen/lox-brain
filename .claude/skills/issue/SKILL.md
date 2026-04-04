@@ -65,6 +65,36 @@ Skip this phase if you already have this context loaded from earlier in the conv
 3. **Read related code**: Explore the files involved before proposing changes. Never modify code you haven't read.
 4. **Check for related issues**: `gh issue list --state open` — are there duplicates or related issues?
 
+### Phase 1.5 — Enrich (only when it adds value)
+
+Terse issues — especially auto-reported ones that arrive with just a stack trace and environment block — become permanent knowledge after you've read the code and identified the root cause. Capturing that diagnosis in a public comment turns the issue into documentation that anyone (future you, other contributors, people Googling the error) can learn from.
+
+**When to enrich:**
+- Auto-reported failures that arrived with only stack trace + env (e.g., issues titled `[Auto-report]`).
+- User-filed issues that are short, vague, or missing reproduction details.
+- Any issue where your investigation uncovered a non-obvious root cause.
+
+**When to skip (adds noise, not value):**
+- The issue already has Summary / Current behavior / Expected behavior sections filled in.
+- Typo fixes, one-liner changes, or mechanical renames.
+- The root cause is already stated in the issue body.
+
+**How:**
+
+Post a **new comment** with `gh issue comment <N> --body "..."`. **Never edit the original issue body** — the reporter's words stay intact. Use this structure:
+
+```
+**Root cause** (found during investigation): <1-2 lines of technical explanation>
+
+**Fix approach**: <high-level plan in 1-3 lines>
+
+**Files touched**: `path/one.ts`, `path/two.ts`
+```
+
+**Before posting — scan for sensitive data** (same rules as scanning incoming comments): no user paths (`C:\Users\<name>`, `/Users/<name>`), no GCP project IDs, no tokens, no service account emails, no IPs. If the root cause requires referencing a path, genericize it (`packages/installer/src/steps/step-vault.ts`, not the user's absolute path).
+
+The comment is public and permanent — write it like you're documenting the bug for a stranger six months from now.
+
 ### Phase 2 — Branch
 
 4. **Create branch** from `main` with naming convention:
@@ -121,6 +151,7 @@ Skip this phase if you already have this context loaded from earlier in the conv
 ```
 [ ] (If fresh context) Read CLAUDE.md, scan packages/
 [ ] Read issue on GitHub
+[ ] Enrich issue with root cause comment (if terse/auto-reported; skip if well-described)
 [ ] Create branch (fix/, feat/, etc.)
 [ ] Write tests first (TDD)
 [ ] Implement fix

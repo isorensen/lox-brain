@@ -143,6 +143,36 @@ function baseSshArgs(project: string, zone: string): string[] {
   ];
 }
 
+// --------------------------------------------------------------------------
+// Command builders — pure functions, exported for cross-platform safety tests
+// --------------------------------------------------------------------------
+
+/** Build the gcloud SSH warmup command string. */
+export function buildWarmupCommand(project: string, zone: string): string {
+  const args = baseSshArgs(project, zone);
+  args.push('--command=true');
+  return `gcloud ${args.join(' ')}`;
+}
+
+/** Build the gcloud SSH exec command string. */
+export function buildSshExecCommand(project: string, zone: string, command: string): string {
+  const args = baseSshArgs(project, zone);
+  args.push(`--command="${command}"`);
+  return `gcloud ${args.join(' ')}`;
+}
+
+/** Build the gcloud SCP upload command string. */
+export function buildScpCommand(project: string, zone: string, localPath: string, remotePath: string): string {
+  return `gcloud compute scp "${localPath}" ${VM_NAME}:${remotePath} --zone=${zone} --project=${project} --tunnel-through-iap --quiet`;
+}
+
+/** Build the gcloud SSH script execution command string. */
+export function buildSshExecScriptCommand(project: string, zone: string, remotePath: string): string {
+  const args = baseSshArgs(project, zone);
+  args.push(`--command="bash ${remotePath}"`);
+  return `gcloud ${args.join(' ')}`;
+}
+
 /**
  * Warm-up the SSH connection with stdio inherited so the user can
  * answer interactive prompts (SSH key passphrase, host key verification).
@@ -152,12 +182,10 @@ function baseSshArgs(project: string, zone: string): string[] {
  * string. project/zone originate from gcloud config, not user input.
  */
 function sshWarmup(project: string, zone: string): void {
-  const args = baseSshArgs(project, zone);
-  args.push('--command=true');
   // execSync is required here (not execFile) because stdio: 'inherit'
   // must pass through interactive SSH key generation prompts to the user.
   // stdin/stdout inherited for interactive prompts; stderr piped to capture gcloud errors.
-  execSync(`gcloud ${args.join(' ')}`, {
+  execSync(buildWarmupCommand(project, zone), {
     timeout: SSH_TIMEOUT,
     stdio: ['inherit', 'inherit', 'pipe'],
   });
@@ -180,11 +208,9 @@ async function sshExec(
   command: string,
   timeout?: number,
 ): Promise<string> {
-  const args = baseSshArgs(project, zone);
-  args.push(`--command="${command}"`);
   // execSync is required here (not execFile) to avoid cmd.exe argument
   // parsing issues on Windows — see issue #31.
-  const result = execSync(`gcloud ${args.join(' ')}`, {
+  const result = execSync(buildSshExecCommand(project, zone, command), {
     timeout: timeout ?? SSH_TIMEOUT,
     stdio: 'pipe',
     encoding: 'utf-8',
@@ -219,16 +245,14 @@ async function sshExecScript(
     // Upload script to VM via SCP through IAP tunnel
     // execSync required for same Windows cmd.exe reasons as sshExec.
     execSync(
-      `gcloud compute scp "${localTmp}" ${VM_NAME}:${remotePath} --zone=${zone} --project=${project} --tunnel-through-iap --quiet`,
+      buildScpCommand(project, zone, localTmp, remotePath),
       { timeout: 30_000, stdio: 'pipe' },
     );
 
     // Execute on the remote side. No inline cleanup — && is interpreted
     // as a command separator by cmd.exe on Windows even inside quotes.
     // The temp script in /tmp is cleaned on next VM reboot.
-    const args = baseSshArgs(project, zone);
-    args.push(`--command="bash ${remotePath}"`);
-    const result = execSync(`gcloud ${args.join(' ')}`, {
+    const result = execSync(buildSshExecScriptCommand(project, zone, remotePath), {
       timeout: timeout ?? SSH_TIMEOUT,
       stdio: 'pipe',
       encoding: 'utf-8',

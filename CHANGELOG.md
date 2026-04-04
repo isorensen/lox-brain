@@ -14,6 +14,13 @@ All notable changes to this project will be documented in this file.
 - Update README with badges, improved splash, and public install instructions
 - Add CONTRIBUTING.md, CODE_OF_CONDUCT.md, and GitHub issue/PR templates
 
+## [0.3.2] — 2026-04-04
+
+### Fixed
+- WireGuard client key generation fails on Windows — `wg` and `bash` not available locally (#48). Keys are now generated on the VM where `wg` is installed.
+- `sshExec` in step-vpn.ts used `shell()` with `&&` chains — same cmd.exe splitting bug as #40. Replaced with `execSync` + builders from step-vm-setup.ts.
+- `process.env.HOME` doesn't exist on Windows — now falls back to `USERPROFILE`.
+
 ## [0.3.1] — 2026-04-04
 
 ### Fixed

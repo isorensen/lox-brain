@@ -118,7 +118,7 @@ function baseSshArgs(project: string, zone: string): string[] {
     `--project=${project}`,
     '--tunnel-through-iap',
     '--quiet',
-    '--ssh-flag=-o StrictHostKeyChecking=accept-new',
+    '--strict-host-key-checking=accept_new',
   ];
 }
 

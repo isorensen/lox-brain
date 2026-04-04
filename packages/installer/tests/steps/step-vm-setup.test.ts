@@ -194,7 +194,7 @@ describe('stepVmSetup -- SSH warm-up', () => {
     const cmd = firstCall[0] as string;
     expect(isWarmupCall(cmd)).toBe(true);
     expect(cmd).toContain('--quiet');
-    expect(cmd).toContain('StrictHostKeyChecking=accept-new');
+    expect(cmd).toContain('strict-host-key-checking=accept_new');
 
     // Warm-up uses stdio: 'inherit' for interactive prompts
     const opts = firstCall[1] as Record<string, unknown>;
@@ -264,7 +264,7 @@ describe('stepVmSetup -- phased execution via SCP', () => {
     for (const call of sshCalls) {
       const cmd = call[0] as string;
       expect(cmd).toContain('--quiet');
-      expect(cmd).toContain('StrictHostKeyChecking=accept-new');
+      expect(cmd).toContain('strict-host-key-checking=accept_new');
     }
   });
 

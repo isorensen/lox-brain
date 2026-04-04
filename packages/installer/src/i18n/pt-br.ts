@@ -102,4 +102,11 @@ export const ptBr: I18nStrings = {
   vm_phase_wireguard: 'Instalando WireGuard',
   vm_phase_fetching_logs: 'Buscando logs da VM para diagnostico',
   vm_ssh_warmup: 'Estabelecendo conexao SSH com a VM',
+
+  // Error reporting
+  error_report_prompt: 'Would you like to report this issue on GitHub?',
+  error_report_creating: 'Creating issue report...',
+  error_report_created: 'Issue created:',
+  error_report_failed: 'Could not create issue report',
+  error_report_note: 'Personal data has been redacted from the report',
 };

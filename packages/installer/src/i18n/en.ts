@@ -100,6 +100,13 @@ export interface I18nStrings {
   vm_phase_wireguard: string;
   vm_phase_fetching_logs: string;
   vm_ssh_warmup: string;
+
+  // Error reporting
+  error_report_prompt: string;
+  error_report_creating: string;
+  error_report_created: string;
+  error_report_failed: string;
+  error_report_note: string;
 }
 
 export const en: I18nStrings = {
@@ -204,4 +211,11 @@ export const en: I18nStrings = {
   vm_phase_wireguard: 'Installing WireGuard',
   vm_phase_fetching_logs: 'Fetching VM logs for diagnosis',
   vm_ssh_warmup: 'Establishing SSH connection to VM',
+
+  // Error reporting
+  error_report_prompt: 'Would you like to report this issue on GitHub?',
+  error_report_creating: 'Creating issue report...',
+  error_report_created: 'Issue created:',
+  error_report_failed: 'Could not create issue report',
+  error_report_note: 'Personal data has been redacted from the report',
 };

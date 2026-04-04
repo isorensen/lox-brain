@@ -14,6 +14,12 @@ All notable changes to this project will be documented in this file.
 - Update README with badges, improved splash, and public install instructions
 - Add CONTRIBUTING.md, CODE_OF_CONDUCT.md, and GitHub issue/PR templates
 
+## [0.2.4] — 2026-04-04
+
+### Fixed
+- `--strict-host-key-checking=accept_new` is not a valid gcloud value (#35). Changed to `--strict-host-key-checking=no` (valid choices: ask, no, yes).
+- Auto-report issue body truncated on Windows (#35). Multiline `--body` argument was mangled by `cmd.exe /c`. Now uses `--body-file` with a temp file for reliable cross-platform behavior.
+
 ## [0.2.3] — 2026-04-04
 
 ### Fixed

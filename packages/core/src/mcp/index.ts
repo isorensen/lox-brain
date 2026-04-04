@@ -40,8 +40,10 @@ const server = new Server(
   { capabilities: { tools: {} } },
 );
 
+let activeTools = tools;
+
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: tools.map((t) => ({
+  tools: activeTools.map((t) => ({
     name: t.name,
     description: t.description,
     inputSchema: t.inputSchema,
@@ -49,7 +51,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 }));
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const tool = tools.find((t) => t.name === request.params.name);
+  const tool = activeTools.find((t) => t.name === request.params.name);
   if (!tool) {
     return {
       content: [{ type: 'text' as const, text: `Unknown tool: ${request.params.name}` }],
@@ -71,7 +73,46 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 
+async function loadTeamFeatures(): Promise<void> {
+  const LOX_MODE = process.env.LOX_MODE ?? 'personal';
+  if (LOX_MODE !== 'team') return;
+
+  try {
+    const { registerTeamFeatures } = await import('@lox-brain/team');
+    const { readFileSync } = await import('node:fs');
+    const { getConfigPath } = await import('@lox-brain/shared');
+
+    const configPath = getConfigPath();
+    const configRaw = readFileSync(configPath, 'utf-8');
+    const config = JSON.parse(configRaw);
+
+    const PUBLIC_KEY = process.env.LOX_LICENSE_PUBLIC_KEY ?? '';
+
+    const transportConfig = getTransportConfig();
+    let clientIpGetter: (() => string | null) | undefined;
+    if (transportConfig.type === 'http') {
+      clientIpGetter = () => (globalThis as any).__lox_current_client_ip ?? null;
+    }
+
+    const result = await registerTeamFeatures(server, config, tools, PUBLIC_KEY, {
+      getClientIp: clientIpGetter,
+      dbClient,
+    });
+
+    if (result.success && result.tools) {
+      activeTools = result.tools;
+      console.error(`Lox Team Mode active: org=${result.org}, peers=${result.peersRegistered}`);
+    } else {
+      console.error(`Lox Team Mode not loaded: ${result.error}`);
+    }
+  } catch (err: unknown) {
+    console.error('Failed to load team features:', err);
+  }
+}
+
 async function main(): Promise<void> {
+  await loadTeamFeatures();
+
   const transportConfig = getTransportConfig();
 
   if (transportConfig.type === 'stdio') {

@@ -38,6 +38,21 @@ Keep the title concise (<70 chars). Use the description body to include context,
 
 ## Working on an issue (`/issue <number>`)
 
+### Phase 0 — Orient (if context is fresh)
+
+If you're starting with a clean conversation and don't yet know this codebase, do this FIRST before reading the issue:
+
+1. **Read `CLAUDE.md`** — project overview, architecture (Obsidian vault <-> VM via WireGuard <-> MCP server), monorepo layout, tech stack (TypeScript + Node 22 + PostgreSQL 16 + pgvector + vitest), security constraints (Zero Trust, no public IPs, no hardcoded secrets).
+2. **Scan `packages/`** — `ls packages/` shows which packages exist. Key packages:
+   - `installer/` — cross-platform setup wizard (user flow, runs locally on user machine)
+   - `core/` — MCP server, vault watcher, embedding service (runs on GCP VM)
+   - `shared/` — constants, types shared across packages
+   - `cli/` — `lox` command-line tool (lox status, lox migrate)
+3. **Know where fixes live**: installer bugs -> `packages/installer/src/steps/step-*.ts`; MCP/DB bugs -> `packages/core/src/`; version/constants -> `packages/shared/`.
+4. **Know the cross-platform pitfalls**: `shell()` in `packages/installer/src/utils/shell.ts` wraps commands with `cmd.exe /c` on Windows. `execFile` with arrays does NOT resolve `.cmd`/`.bat` — always use `shell()` or `execSync` with a string for Windows compatibility.
+
+Skip this phase if you already have this context loaded from earlier in the conversation.
+
 ### Phase 1 — Understand
 
 1. **Read the issue**: `gh issue view <number> --comments` — understand the bug/feature, environment, steps to reproduce. **Always include `--comments`** to see the full conversation.
@@ -104,6 +119,7 @@ Keep the title concise (<70 chars). Use the description body to include context,
 ## Checklist summary (quick reference)
 
 ```
+[ ] (If fresh context) Read CLAUDE.md, scan packages/
 [ ] Read issue on GitHub
 [ ] Create branch (fix/, feat/, etc.)
 [ ] Write tests first (TDD)

@@ -32,8 +32,9 @@ Thumbs.db
 *.swp
 *.swo
 
-# Claude Code local config
-.claude/
+# Claude Code local config (keep skills versionable)
+.claude/*
+!.claude/skills/
 
 # Coverage & logs
 coverage/

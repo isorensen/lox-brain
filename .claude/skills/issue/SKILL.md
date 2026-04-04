@@ -1,0 +1,115 @@
+---
+name: issue
+description: Handle GitHub issues end-to-end for the lox-brain project. Use this skill whenever the user mentions an issue number, asks to fix a bug, wants to work on a GitHub issue, says "issue", "#17", "#21", or refers to any open issue. Also trigger when the user asks to check open issues, triage bugs, or work on reported problems. This skill ensures nothing is missed — version bumps, changelog, tests, code review, PR, release, and cleanup.
+---
+
+# /issue — GitHub Issue Handler
+
+End-to-end workflow for resolving GitHub issues in the lox-brain monorepo. Covers everything from reading the issue to creating the GitHub Release.
+
+## Why this skill exists
+
+Handling issues in this project requires a specific checklist that is easy to forget partially. Past incidents:
+- Version hardcoded in `LOX_VERSION` and `DEFAULT_CONFIG.version` was not updated alongside `package.json`, causing the splash screen to show the wrong version for multiple releases.
+- Windows `.cmd` fix was shipped but didn't actually work because `execFile()` can't run `.cmd` files — unit tests with mocks passed but real execution failed.
+- Code review findings were not addressed before merge.
+
+This skill encodes the full checklist so nothing slips through.
+
+## Workflow
+
+### Phase 1 — Understand
+
+1. **Read the issue**: `gh issue view <number>` — understand the bug/feature, environment, steps to reproduce.
+2. **Read related code**: Explore the files involved before proposing changes. Never modify code you haven't read.
+3. **Check for related issues**: `gh issue list --state open` — are there duplicates or related issues?
+
+### Phase 2 — Branch
+
+4. **Create branch** from `main` with naming convention:
+   - `fix/<description>` for bugs
+   - `feat/<description>` for features
+   - `refactor/<description>` for refactoring
+   - `chore/<description>` for maintenance
+
+### Phase 3 — Implement (TDD)
+
+5. **Write tests first** — cover the bug scenario or new feature behavior.
+6. **Implement the fix** — delegate to `coder-opus` for complex changes, `coder-sonnet` for simple edits.
+7. **Run tests**: `npm run test --workspaces` — all must pass.
+8. **Run type check**: `npx tsc --noEmit --project packages/shared/tsconfig.json && npx tsc --noEmit --project packages/core/tsconfig.json && npx tsc --noEmit --project packages/installer/tsconfig.json`
+
+### Phase 4 — Version & Docs
+
+9. **Bump version** in ALL `package.json` files (SemVer: patch for fixes, minor for features, major for breaking):
+   - `package.json` (root)
+   - `packages/core/package.json`
+   - `packages/shared/package.json`
+   - `packages/installer/package.json`
+
+   `LOX_VERSION` reads from `packages/shared/package.json` dynamically — no manual update needed. But **verify** it's still dynamic (not hardcoded) with: `grep -n 'LOX_VERSION' packages/shared/src/constants.ts`
+
+10. **Update CHANGELOG.md** — add entry under new version heading with `### Fixed`, `### Changed`, `### Added` as appropriate. Reference issue numbers.
+
+11. **Grep for stale version references** — this is critical:
+    ```
+    grep -r "OLD_VERSION" packages/ --include="*.ts" --include="*.json" -l
+    ```
+    Check for hardcoded version strings in source code, tests, and config files. Fix any that still reference the old version.
+
+### Phase 5 — Review
+
+12. **Run tests again** after version bump to confirm nothing broke.
+13. **Code review** — delegate to `code-reviewer` agent (model: sonnet). The goal is **no remaining comments**. If there are findings:
+    - Fix all real issues (not just nits)
+    - Re-run tests after fixes
+    - Only proceed when review is clean
+
+### Phase 6 — Ship
+
+14. **Ask user for commit confirmation** — NEVER auto-commit.
+15. **Commit** with descriptive message referencing issue number(s): `Closes #N`
+16. **Push** and **create PR** via `gh pr create`.
+17. **Watch CI**: `gh pr checks <number> --watch` — wait for `validate` to pass.
+18. **Merge** when CI passes: `gh pr merge <number> --merge`
+19. **Create GitHub Release**: `gh release create vX.Y.Z` with CHANGELOG entry as notes.
+20. **Cleanup**: switch to main, pull, delete local and remote branch.
+
+## Checklist summary (quick reference)
+
+```
+[ ] Read issue on GitHub
+[ ] Create branch (fix/, feat/, etc.)
+[ ] Write tests first (TDD)
+[ ] Implement fix
+[ ] All tests pass
+[ ] Type check clean
+[ ] Version bump (all 4 package.json files)
+[ ] Verify LOX_VERSION is dynamic (not hardcoded)
+[ ] Grep for stale version references
+[ ] Update CHANGELOG.md
+[ ] Code review (code-reviewer agent) — no comments
+[ ] User confirms commit
+[ ] Push + PR
+[ ] CI passes
+[ ] Merge
+[ ] GitHub Release (vX.Y.Z)
+[ ] Delete branch (local + remote)
+```
+
+## Windows-specific awareness
+
+Many issues in this project stem from Windows compatibility. When fixing installer bugs:
+- Remember that `shell()` in `utils/shell.ts` wraps commands with `cmd.exe /c` on Windows
+- `execSync` with string commands uses the system shell (works on Windows)
+- `execFile` with arrays does NOT resolve `.cmd`/`.bat` — that's why `shell()` has the wrapper
+- Always consider: "would this work on Windows?" when touching installer code
+- The reporter (Lara) tests on Windows 11 — she is the primary Windows validation path
+
+## Anti-patterns to avoid
+
+- **Never ship a fix without verifying it works end-to-end** — mocked unit tests can pass while the real execution fails (learned from the `gcloud.cmd` incident).
+- **Never assume version is updated everywhere** — always grep for the old version string.
+- **Never skip code review** — it catches real issues (ENOENT masking, import ordering, missing test paths).
+- **Never commit without user confirmation**.
+- **Never force-push to main**.

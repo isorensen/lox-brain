@@ -79,12 +79,19 @@ async function main(): Promise<void> {
     await server.connect(transport);
     console.error('Lox Brain MCP Server running on stdio');
   } else {
+    // Single stateless transport -- server.connect() once to avoid
+    // handler conflicts and listener leaks from multiple connect() calls.
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+    });
+    await server.connect(transport);
+
     const httpServer = createServer(async (req, res) => {
-      const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: undefined,
-      });
-      (transport as any).clientIp = req.socket.remoteAddress ?? null;
-      await server.connect(transport);
+      // Inject the caller's IP as a request header so that MCP tool
+      // handlers can read it via extra.requestInfo.headers['x-real-ip'].
+      const clientIp = req.socket.remoteAddress ?? '';
+      req.headers['x-real-ip'] = clientIp;
+
       await transport.handleRequest(req, res);
     });
 

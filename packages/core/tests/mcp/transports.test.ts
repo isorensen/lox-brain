@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { TransportConfig } from '../../src/mcp/transports.js';
 
 describe('selectTransport', () => {
   const originalEnv = process.env;
@@ -29,8 +30,10 @@ describe('selectTransport', () => {
   it('should select http when MCP_TRANSPORT=http', async () => {
     process.env.MCP_TRANSPORT = 'http';
     const { getTransportConfig } = await import('../../src/mcp/transports.js');
-    const config = getTransportConfig();
+    const config: TransportConfig = getTransportConfig();
     expect(config.type).toBe('http');
+
+    if (config.type !== 'http') throw new Error('Expected http config');
     expect(config.port).toBe(3100);
     expect(config.host).toBe('127.0.0.1');
   });
@@ -39,7 +42,9 @@ describe('selectTransport', () => {
     process.env.MCP_TRANSPORT = 'http';
     process.env.MCP_PORT = '4200';
     const { getTransportConfig } = await import('../../src/mcp/transports.js');
-    const config = getTransportConfig();
+    const config: TransportConfig = getTransportConfig();
+
+    if (config.type !== 'http') throw new Error('Expected http config');
     expect(config.port).toBe(4200);
   });
 
@@ -47,5 +52,26 @@ describe('selectTransport', () => {
     process.env.MCP_TRANSPORT = 'websocket';
     const { getTransportConfig } = await import('../../src/mcp/transports.js');
     expect(() => getTransportConfig()).toThrow('Invalid MCP_TRANSPORT');
+  });
+
+  it('should throw on non-numeric MCP_PORT', async () => {
+    process.env.MCP_TRANSPORT = 'http';
+    process.env.MCP_PORT = 'abc';
+    const { getTransportConfig } = await import('../../src/mcp/transports.js');
+    expect(() => getTransportConfig()).toThrow('Invalid MCP_PORT');
+  });
+
+  it('should throw on MCP_PORT out of range (0)', async () => {
+    process.env.MCP_TRANSPORT = 'http';
+    process.env.MCP_PORT = '0';
+    const { getTransportConfig } = await import('../../src/mcp/transports.js');
+    expect(() => getTransportConfig()).toThrow('Invalid MCP_PORT');
+  });
+
+  it('should throw on MCP_PORT out of range (65536)', async () => {
+    process.env.MCP_TRANSPORT = 'http';
+    process.env.MCP_PORT = '65536';
+    const { getTransportConfig } = await import('../../src/mcp/transports.js');
+    expect(() => getTransportConfig()).toThrow('Invalid MCP_PORT');
   });
 });

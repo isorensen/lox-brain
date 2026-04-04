@@ -18,7 +18,13 @@ export function getTransportConfig(): TransportConfig {
   }
 
   if (transport === 'http') {
-    const port = process.env.MCP_PORT ? parseInt(process.env.MCP_PORT, 10) : 3100;
+    const rawPort = process.env.MCP_PORT;
+    const port = rawPort !== undefined ? parseInt(rawPort, 10) : 3100;
+
+    if (rawPort !== undefined && (isNaN(port) || port < 1 || port > 65535)) {
+      throw new Error(`Invalid MCP_PORT value: "${rawPort}". Must be a number between 1 and 65535.`);
+    }
+
     return {
       type: 'http',
       host: '127.0.0.1',

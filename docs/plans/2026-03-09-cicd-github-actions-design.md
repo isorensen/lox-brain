@@ -29,11 +29,11 @@ Two GitHub Actions workflows for the Open Brain project:
 **Authentication:** `google-github-actions/auth` with SA key JSON as GitHub Secret.
 
 **Steps:**
-1. Authenticate with GCP via SA `github-actions-deploy`
+1. Authenticate with GCP via SA `<your-deploy-sa>`
 2. Setup `gcloud` CLI
 3. SSH via IAP tunnel to VM and execute:
    ```bash
-   cd ~/obsidian_open_brain
+   cd ~/lox-brain
    git pull origin main
    npm ci --production
    npm run build
@@ -44,8 +44,8 @@ Two GitHub Actions workflows for the Open Brain project:
 
 ## Service Account
 
-- **Name:** `github-actions-deploy`
-- **Project:** `obsidian-open-brain`
+- **Name:** `<your-deploy-sa>`
+- **Project:** `<your-gcp-project>`
 - **Roles (minimal):**
   - `roles/compute.instanceAdmin.v1` (SSH access to VM)
   - `roles/iap.tunnelResourceAccessor` (IAP tunnel access)
@@ -57,7 +57,7 @@ Two GitHub Actions workflows for the Open Brain project:
 | Secret | Value |
 |--------|-------|
 | `GCP_SA_KEY` | Service account key JSON |
-| `GCP_PROJECT_ID` | `obsidian-open-brain` |
+| `GCP_PROJECT_ID` | `<your-gcp-project>` |
 
 ## Security Considerations
 

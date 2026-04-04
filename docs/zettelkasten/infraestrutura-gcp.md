@@ -13,15 +13,15 @@ O Lox roda em uma unica VM GCP com todos os componentes co-locados. A infraestru
 
 | Recurso | Especificacao |
 |---------|--------------|
-| Projeto | `obsidian-open-brain` (ID: 334842260519) — rename to `lox-brain` pending |
-| VM | `obsidian-vm` (rename to `lox-vm` pending), e2-small (2 vCPU, 2GB RAM) |
+| Projeto | `<your-gcp-project>` |
+| VM | `lox-vm`, e2-small (2 vCPU, 2GB RAM) |
 | Regiao | `us-east1-b` (South Carolina -- menor latencia para Brasil) |
-| VPC | `obsidian-vpc`, subnet `10.0.0.0/24` |
+| VPC | `<your-vpc-name>`, subnet `10.0.0.0/24` |
 | IP interno | `10.0.0.2` |
 | IP publico | Nenhum (Zero Trust) |
 | Cloud NAT | Outbound-only (apt, npm, git) |
 | Secret Manager | 3 secrets (OpenAI key, PG password, Git token) |
-| Budget | R$240/mes com alertas em 50%, 90%, 100% |
+| Budget | ~US$18/month (GCE e2-small + storage) |
 
 ## Software na VM
 
@@ -33,15 +33,15 @@ O Lox roda em uma unica VM GCP com todos os componentes co-locados. A infraestru
 
 ## Git sync
 
-O vault e sincronizado via git cron a cada 2 minutos (`git-sync.sh`). O repositorio privado `obsidian-git-sync` usa um fine-grained PAT com escopo minimo (Contents RW + Metadata R), armazenado no Secret Manager.
+O vault e sincronizado via git cron a cada 2 minutos (`git-sync.sh`). O repositorio privado `<your-vault-repo>` usa um fine-grained PAT com escopo minimo (Contents RW + Metadata R), armazenado no Secret Manager.
 
-O repositorio do codigo fonte (`lox-brain`) esta na VM em `~/lox-brain` (symlink from `~/obsidian_open_brain` durante transicao), atualizado automaticamente via [[Lox - CI CD GitHub Actions]].
+O repositorio do codigo fonte (`lox-brain`) esta na VM em `~/lox-brain`, atualizado automaticamente via [[Lox - CI CD GitHub Actions]].
 
 ## Service accounts
 
 Duas service accounts com principio de least privilege:
-- `obsidian-vm-sa` (rename to `lox-vm-sa` pending): acesso a secrets + logging
-- `github-actions-deploy`: deploy via IAP tunnel SSH
+- `lox-vm-sa`: acesso a secrets + logging
+- `<your-deploy-sa>`: deploy via IAP tunnel SSH
 
 Ambas com rotacao de chaves a cada 90 dias (ver [[Lox - Seguranca Zero Trust]]).
 

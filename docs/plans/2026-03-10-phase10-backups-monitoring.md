@@ -12,19 +12,19 @@
 
 ### Task 1: Create GCS Backup Bucket
 
-**Context:** We need a private bucket for off-site pg_dump storage. Project: `obsidian-open-brain`, region: `us-east1`, SA: `obsidian-vm-sa`.
+**Context:** We need a private bucket for off-site pg_dump storage. Project: `<your-gcp-project>`, region: `us-east1`, SA: `lox-vm-sa`.
 
 **Step 1: SSH into context and create bucket**
 
 Run from local machine:
 ```bash
-ssh obsidian-vm
+ssh lox-vm
 ```
 
 Then on the VM, verify gcloud is authenticated:
 ```bash
 gcloud config get-value project
-# Expected: obsidian-open-brain
+# Expected: <your-gcp-project>
 ```
 
 **Step 2: Create the GCS bucket**
@@ -78,7 +78,7 @@ rm /tmp/lifecycle.json
 
 ```bash
 gcloud storage buckets add-iam-policy-binding gs://obsidian-brain-backups \
-  --member="serviceAccount:obsidian-vm-sa@obsidian-open-brain.iam.gserviceaccount.com" \
+  --member="serviceAccount:<your-vm-sa>@<your-project>.iam.gserviceaccount.com" \
   --role="roles/storage.objectCreator"
 ```
 
@@ -107,7 +107,7 @@ Confirm: versioning enabled, lifecycle 30-day delete, uniform bucket-level acces
 
 ### Task 2: Store Google Chat Webhook URL in Secret Manager
 
-**Context:** The webhook URL must never be hardcoded in scripts. Store in GCP Secret Manager. The VM SA `obsidian-vm-sa` already has `secretmanager.secretAccessor` role.
+**Context:** The webhook URL must never be hardcoded in scripts. Store in GCP Secret Manager. The VM SA `lox-vm-sa` already has `secretmanager.secretAccessor` role.
 
 **Step 1: Create the secret**
 
@@ -134,7 +134,7 @@ gcloud secrets versions access latest --secret=gchat-webhook-url
 WEBHOOK_URL=$(gcloud secrets versions access latest --secret=gchat-webhook-url)
 curl -s -X POST "$WEBHOOK_URL" \
   -H "Content-Type: application/json" \
-  -d '{"text": "🧪 Test alert from obsidian-vm — Secret Manager + webhook working!"}'
+  -d '{"text": "🧪 Test alert from lox-vm — Secret Manager + webhook working!"}'
 ```
 
 Expected: JSON response with message details. Check Google Chat Space for the message.
@@ -148,19 +148,19 @@ Expected: JSON response with message details. Check Google Chat Space for the me
 **Step 1: Create backup directory on VM**
 
 ```bash
-ssh obsidian-vm "mkdir -p /home/sorensen/backups && chmod 700 /home/sorensen/backups"
+ssh lox-vm "mkdir -p /home/<user>/backups && chmod 700 /home/<user>/backups"
 ```
 
 **Step 2: Create the backup script**
 
-Create file on VM at `/home/sorensen/scripts/pg-backup.sh`:
+Create file on VM at `/home/<user>/scripts/pg-backup.sh`:
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
 
 # --- Config ---
-BACKUP_DIR="/home/sorensen/backups"
+BACKUP_DIR="/home/<user>/backups"
 BUCKET="gs://obsidian-brain-backups/pg"
 DB_NAME="open_brain"
 RETENTION_DAYS=30
@@ -179,7 +179,7 @@ send_alert() {
   if [ -n "$WEBHOOK_URL" ]; then
     curl -s -X POST "$WEBHOOK_URL" \
       -H "Content-Type: application/json" \
-      -d "{\"text\": \"${emoji} *pg_dump backup — ${status}*\n${message}\nVM: obsidian-vm | DB: ${DB_NAME} | Date: ${DATE}\"}" \
+      -d "{\"text\": \"${emoji} *pg_dump backup — ${status}*\n${message}\nVM: lox-vm | DB: ${DB_NAME} | Date: ${DATE}\"}" \
       > /dev/null 2>&1 || true
   fi
 }
@@ -219,17 +219,17 @@ echo "[$(date -Iseconds)] Backup complete." | tee -a "$LOG_FILE"
 **Step 3: Make executable**
 
 ```bash
-ssh obsidian-vm "chmod +x /home/sorensen/scripts/pg-backup.sh"
+ssh lox-vm "chmod +x /home/<user>/scripts/pg-backup.sh"
 ```
 
 **Step 4: Test the script manually**
 
 ```bash
-ssh obsidian-vm "/home/sorensen/scripts/pg-backup.sh"
+ssh lox-vm "/home/<user>/scripts/pg-backup.sh"
 ```
 
 Expected:
-- Local file created in `/home/sorensen/backups/`
+- Local file created in `/home/<user>/backups/`
 - File uploaded to GCS
 - Google Chat notification received
 - No errors
@@ -237,20 +237,20 @@ Expected:
 **Step 5: Verify GCS upload**
 
 ```bash
-ssh obsidian-vm "gsutil ls gs://obsidian-brain-backups/pg/"
+ssh lox-vm "gsutil ls gs://obsidian-brain-backups/pg/"
 # Expected: gs://obsidian-brain-backups/pg/open_brain_2026-03-10.sql.gz
 ```
 
 **Step 6: Set up cron job (22h BRT = 01:00 UTC)**
 
 ```bash
-ssh obsidian-vm 'echo "0 1 * * * /home/sorensen/scripts/pg-backup.sh >> /home/sorensen/backups/cron.log 2>&1" | crontab -'
+ssh lox-vm 'echo "0 1 * * * /home/<user>/scripts/pg-backup.sh >> /home/<user>/backups/cron.log 2>&1" | crontab -'
 ```
 
 Verify:
 ```bash
-ssh obsidian-vm "crontab -l"
-# Expected: 0 1 * * * /home/sorensen/scripts/pg-backup.sh >> /home/sorensen/backups/cron.log 2>&1
+ssh lox-vm "crontab -l"
+# Expected: 0 1 * * * /home/<user>/scripts/pg-backup.sh >> /home/<user>/backups/cron.log 2>&1
 ```
 
 **Step 7: Commit script to repo**
@@ -271,8 +271,8 @@ git commit -m "feat: add PostgreSQL backup script with GCS upload and Chat alert
 
 From local machine (or VM):
 ```bash
-gcloud compute resource-policies create snapshot-schedule obsidian-vm-daily-snapshot \
-  --project=obsidian-open-brain \
+gcloud compute resource-policies create snapshot-schedule lox-vm-daily-snapshot \
+  --project=<your-gcp-project> \
   --region=us-east1 \
   --max-retention-days=7 \
   --on-source-disk-delete=keep-auto-snapshots \
@@ -281,24 +281,24 @@ gcloud compute resource-policies create snapshot-schedule obsidian-vm-daily-snap
   --storage-location=us-east1
 ```
 
-Expected: `Created [obsidian-vm-daily-snapshot].`
+Expected: `Created [lox-vm-daily-snapshot].`
 
 **Step 2: Attach policy to VM disk**
 
 ```bash
-gcloud compute disks add-resource-policies obsidian-vm \
-  --project=obsidian-open-brain \
+gcloud compute disks add-resource-policies lox-vm \
+  --project=<your-gcp-project> \
   --zone=us-east1-b \
-  --resource-policies=obsidian-vm-daily-snapshot
+  --resource-policies=lox-vm-daily-snapshot
 ```
 
-Expected: `Updated [obsidian-vm].`
+Expected: `Updated [lox-vm].`
 
 **Step 3: Verify policy**
 
 ```bash
-gcloud compute resource-policies describe obsidian-vm-daily-snapshot \
-  --project=obsidian-open-brain \
+gcloud compute resource-policies describe lox-vm-daily-snapshot \
+  --project=<your-gcp-project> \
   --region=us-east1
 ```
 
@@ -313,23 +313,23 @@ Confirm: daily schedule, start 02:00, retention 7 days.
 **Step 1: Create instance schedule resource policy**
 
 ```bash
-gcloud compute resource-policies create vm-maintenance obsidian-vm-schedule \
-  --project=obsidian-open-brain \
+gcloud compute resource-policies create vm-maintenance lox-vm-schedule \
+  --project=<your-gcp-project> \
   --region=us-east1 \
   --vm-start-schedule="0 10 * * *" \
   --vm-stop-schedule="0 2 * * *" \
   --timezone="America/Sao_Paulo"
 ```
 
-Expected: `Created [obsidian-vm-schedule].`
+Expected: `Created [lox-vm-schedule].`
 
 **Step 2: Add IAM binding for Compute Engine service agent**
 
 The instance schedule needs the Compute Engine Service Agent to start/stop VMs:
 ```bash
-PROJECT_NUMBER=$(gcloud projects describe obsidian-open-brain --format="value(projectNumber)")
+PROJECT_NUMBER=$(gcloud projects describe <your-gcp-project> --format="value(projectNumber)")
 
-gcloud projects add-iam-policy-binding obsidian-open-brain \
+gcloud projects add-iam-policy-binding <your-gcp-project> \
   --member="serviceAccount:service-${PROJECT_NUMBER}@compute-system.iam.gserviceaccount.com" \
   --role="roles/compute.instanceAdmin.v1"
 ```
@@ -337,19 +337,19 @@ gcloud projects add-iam-policy-binding obsidian-open-brain \
 **Step 3: Attach schedule to VM**
 
 ```bash
-gcloud compute instances add-resource-policies obsidian-vm \
-  --project=obsidian-open-brain \
+gcloud compute instances add-resource-policies lox-vm \
+  --project=<your-gcp-project> \
   --zone=us-east1-b \
-  --resource-policies=obsidian-vm-schedule
+  --resource-policies=lox-vm-schedule
 ```
 
-Expected: `Updated [obsidian-vm].`
+Expected: `Updated [lox-vm].`
 
 **Step 4: Verify**
 
 ```bash
-gcloud compute resource-policies describe obsidian-vm-schedule \
-  --project=obsidian-open-brain \
+gcloud compute resource-policies describe lox-vm-schedule \
+  --project=<your-gcp-project> \
   --region=us-east1
 ```
 
@@ -358,13 +358,13 @@ Confirm: start 10:00 UTC, stop 02:00 UTC, timezone America/Sao_Paulo.
 **Step 5: Test by checking instance schedule status**
 
 ```bash
-gcloud compute instances describe obsidian-vm \
-  --project=obsidian-open-brain \
+gcloud compute instances describe lox-vm \
+  --project=<your-gcp-project> \
   --zone=us-east1-b \
   --format="yaml(resourcePolicies)"
 ```
 
-Expected: both `obsidian-vm-daily-snapshot` and `obsidian-vm-schedule` listed.
+Expected: both `lox-vm-daily-snapshot` and `lox-vm-schedule` listed.
 
 ---
 
@@ -375,14 +375,14 @@ Expected: both `obsidian-vm-daily-snapshot` and `obsidian-vm-schedule` listed.
 **Step 1: Check current git-sync.sh on VM**
 
 ```bash
-ssh obsidian-vm "cat /home/sorensen/scripts/git-sync.sh"
+ssh lox-vm "cat /home/<user>/scripts/git-sync.sh"
 ```
 
 Note the structure — we'll add error notification at the end.
 
 **Step 2: Add webhook notification to git-sync.sh**
 
-SSH into VM and edit `/home/sorensen/scripts/git-sync.sh`. Add at the top (after shebang):
+SSH into VM and edit `/home/<user>/scripts/git-sync.sh`. Add at the top (after shebang):
 ```bash
 send_alert() {
   local message="$1"
@@ -390,7 +390,7 @@ send_alert() {
   if [ -n "$WEBHOOK_URL" ]; then
     curl -s -X POST "$WEBHOOK_URL" \
       -H "Content-Type: application/json" \
-      -d "{\"text\": \"🚨 *Git Sync FAILURE*\n${message}\nVM: obsidian-vm\"}" \
+      -d "{\"text\": \"🚨 *Git Sync FAILURE*\n${message}\nVM: lox-vm\"}" \
       > /dev/null 2>&1 || true
   fi
 }
@@ -420,7 +420,7 @@ send_alert() {
   if [ -n "$WEBHOOK_URL" ]; then
     curl -s -X POST "$WEBHOOK_URL" \
       -H "Content-Type: application/json" \
-      -d "{\"text\": \"${emoji} *Deploy — ${status}*\n${message}\nVM: obsidian-vm\"}" \
+      -d "{\"text\": \"${emoji} *Deploy — ${status}*\n${message}\nVM: lox-vm\"}" \
       > /dev/null 2>&1 || true
   fi
 }
@@ -446,7 +446,7 @@ git commit -m "feat: add Google Chat webhook notifications to deploy script"
 
 **Step 1: Create health check script on VM**
 
-Create `/home/sorensen/scripts/health-check.sh`:
+Create `/home/<user>/scripts/health-check.sh`:
 
 ```bash
 #!/usr/bin/env bash
@@ -458,7 +458,7 @@ send_alert() {
   if [ -n "$WEBHOOK_URL" ]; then
     curl -s -X POST "$WEBHOOK_URL" \
       -H "Content-Type: application/json" \
-      -d "{\"text\": \"🚨 *Health Check ALERT*\n${message}\nVM: obsidian-vm | Time: $(date -Iseconds)\"}" \
+      -d "{\"text\": \"🚨 *Health Check ALERT*\n${message}\nVM: lox-vm | Time: $(date -Iseconds)\"}" \
       > /dev/null 2>&1 || true
   fi
 }
@@ -485,25 +485,25 @@ fi
 **Step 2: Make executable**
 
 ```bash
-ssh obsidian-vm "chmod +x /home/sorensen/scripts/health-check.sh"
+ssh lox-vm "chmod +x /home/<user>/scripts/health-check.sh"
 ```
 
 **Step 3: Test manually**
 
 ```bash
-ssh obsidian-vm "/home/sorensen/scripts/health-check.sh"
+ssh lox-vm "/home/<user>/scripts/health-check.sh"
 # Expected: no output if everything is healthy (no alert sent)
 ```
 
 **Step 4: Add to cron (every 5 minutes)**
 
 ```bash
-ssh obsidian-vm 'crontab -l | { cat; echo "*/5 * * * * /home/sorensen/scripts/health-check.sh >> /home/sorensen/backups/health.log 2>&1"; } | crontab -'
+ssh lox-vm 'crontab -l | { cat; echo "*/5 * * * * /home/<user>/scripts/health-check.sh >> /home/<user>/backups/health.log 2>&1"; } | crontab -'
 ```
 
 Verify:
 ```bash
-ssh obsidian-vm "crontab -l"
+ssh lox-vm "crontab -l"
 # Expected: both pg-backup and health-check entries
 ```
 
@@ -600,7 +600,7 @@ git commit -m "docs: update documentation for Phase 10 completion"
 ## Important Notes
 
 - **VM must be running** for Tasks 1-3, 6-7 (SSH access needed)
-- **VPN must be active** for SSH via `ssh obsidian-vm`
+- **VPN must be active** for SSH via `ssh lox-vm`
 - **Task order matters:** Task 2 (webhook secret) must be done before Task 3 (backup script uses it)
 - **crontab warning:** Task 6 Step 4 appends to crontab — verify existing entries aren't duplicated
 - **Instance schedule timing:** After Task 5, the VM will auto-stop at 02:00 UTC. Plan work accordingly.

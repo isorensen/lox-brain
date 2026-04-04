@@ -44,10 +44,10 @@
 - Desvantagem: mais burocrático que Telegram, cards API limitada para formatting
 
 ### ~~Calendar → Obsidian Sync (Phase 1 — skill)~~ — DONE (2026-03-12)
-- **Skill:** `~/.claude/skills/sync-calendar/SKILL.md` — on-demand via MCPs existentes (Calendar + Gmail + Obsidian Brain)
+- **Skill:** `<your-skill-path>` — on-demand via MCPs existentes (Calendar + Gmail + Obsidian Brain)
 - **Battle-tested:** sync completo de março 2026 (67 eventos criados no vault)
 - **12 melhorias** aplicadas com base em uso real (filtros, formato, subagentes em batch, integração Gemini AI)
-- **Gemini AI meeting notes:** emails de `gemini-notes@google.com` capturados via Gmail MCP com conteúdo completo (summary, tópicos, next steps)
+- **Gemini AI meeting notes:** emails de `<meeting-notes-sender>` capturados via Gmail MCP com conteúdo completo (summary, tópicos, next steps)
 - **Subagent batch processing:** eventos processados em paralelo para syncs grandes
 - Branch: `feat/calendar-to-obsidian` (mergeado após docs)
 
@@ -81,14 +81,13 @@
 
 ### ~~CI/CD auto-deploy~~ — DONE (2026-03-10)
 - GitHub Actions: `ci.yml` (PR validation: build, test, coverage, audit) + `deploy.yml` (deploy on merge to main via IAP tunnel SSH)
-- GCP SA `github-actions-deploy` with least-privilege roles
+- GCP SA `<your-deploy-sa>` with least-privilege roles
 - Deploy: git pull, npm ci, build, restart watcher, kill MCP, health check
 
 ### SA key rotation schedule
 - **Priority:** High
-- `obsidian-vm-sa` key expires ~90 days from creation (2026-03-07) → **rotate by 2026-06-05**
-  - **Note:** This SA will be renamed to `lox-vm-sa` during VM cleanup (VM directory rename + DB migration pending)
-- `github-actions-deploy` key `c3044b0c` (created 2026-03-10, no auto-expiry) → **rotate by 2026-06-08**
+- `<your-vm-service-account>`: rotate every 90 days — set calendar reminders or automate via Cloud Scheduler
+- `<your-deploy-sa>` (key `<key-id>`, no auto-expiry): rotate every 90 days
 - Consider: automate rotation via Cloud Scheduler + Cloud Function, or at minimum set calendar reminders
 - Long-term: migrate to Workload Identity Federation (keyless) for GitHub Actions
 

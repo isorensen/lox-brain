@@ -35,12 +35,12 @@ Nenhum segredo e hardcoded. Todos armazenados no GCP Secret Manager:
 - `pg-obsidian-password` (senha do PostgreSQL)
 - `git-vault-token` (PAT do GitHub com escopo minimo)
 
-Na VM, os secrets sao carregados de `/etc/lox/secrets.env` (chmod 640, root:sorensen — nao mais `.env` no repo).
+Na VM, os secrets sao carregados de `/etc/lox/secrets.env` (chmod 640, root:<user> — nao mais `.env` no repo).
 
 ### Service accounts com least privilege
 
-- `obsidian-vm-sa` (rename to `lox-vm-sa` pending): apenas `secretmanager.secretAccessor` + `logging.logWriter`
-- `github-actions-deploy`: apenas roles IAP tunnel + compute instance admin + OS login
+- `<your-vm-sa>`: apenas `secretmanager.secretAccessor` + `logging.logWriter`
+- `<your-deploy-sa>`: apenas roles IAP tunnel + compute instance admin + OS login
 
 ### Path traversal prevention
 
@@ -48,7 +48,7 @@ O [[Lox - MCP Server]] usa `safePath()` para prevenir path traversal em todas as
 
 ## Rotacao de chaves
 
-- SA keys devem ser rotacionadas a cada 90 dias (proximo: 2026-06-05)
+- SA keys devem ser rotacionadas a cada 90 dias (proximo: <your-rotation-date>)
 - Meta de longo prazo: migrar para Workload Identity Federation (keyless)
 
 ## Relacoes

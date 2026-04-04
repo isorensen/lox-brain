@@ -39,7 +39,7 @@
 **Type:** Manual
 
 **Steps:**
-1. Create GCP project `obsidian-open-brain` (or use existing project)
+1. Create GCP project `<your-gcp-project>` (or use existing project)
 2. Enable APIs:
    ```bash
    gcloud services enable compute.googleapis.com
@@ -123,29 +123,29 @@
 **Steps:**
 1. Create service account:
    ```bash
-   gcloud iam service-accounts create obsidian-vm-sa \
+   gcloud iam service-accounts create lox-vm-sa \
      --display-name="Obsidian VM Service Account"
    ```
 2. Grant minimal roles:
    ```bash
    gcloud projects add-iam-policy-binding PROJECT_ID \
-     --member="serviceAccount:obsidian-vm-sa@PROJECT_ID.iam.gserviceaccount.com" \
+     --member="serviceAccount:lox-vm-sa@PROJECT_ID.iam.gserviceaccount.com" \
      --role="roles/secretmanager.secretAccessor"
 
    gcloud projects add-iam-policy-binding PROJECT_ID \
-     --member="serviceAccount:obsidian-vm-sa@PROJECT_ID.iam.gserviceaccount.com" \
+     --member="serviceAccount:lox-vm-sa@PROJECT_ID.iam.gserviceaccount.com" \
      --role="roles/logging.logWriter"
    ```
 3. Create VM:
    ```bash
-   gcloud compute instances create obsidian-vm \
+   gcloud compute instances create lox-vm \
      --zone=us-central1-a \
      --machine-type=e2-small \
      --network=obsidian-vpc \
      --subnet=obsidian-subnet \
      --no-address \
      --tags=vpn-server,allow-iap \
-     --service-account=obsidian-vm-sa@PROJECT_ID.iam.gserviceaccount.com \
+     --service-account=lox-vm-sa@PROJECT_ID.iam.gserviceaccount.com \
      --scopes=cloud-platform \
      --image-family=ubuntu-2404-lts-amd64 \
      --image-project=ubuntu-os-cloud \
@@ -154,9 +154,9 @@
    ```
 
 **Checkpoint:**
-- `gcloud compute instances describe obsidian-vm --zone=us-central1-a` shows status RUNNING
+- `gcloud compute instances describe lox-vm --zone=us-central1-a` shows status RUNNING
 - No external IP assigned
-- SSH via IAP: `gcloud compute ssh obsidian-vm --zone=us-central1-a --tunnel-through-iap`
+- SSH via IAP: `gcloud compute ssh lox-vm --zone=us-central1-a --tunnel-through-iap`
 
 ---
 
@@ -167,7 +167,7 @@
 **Steps:**
 ```bash
 # SSH in
-gcloud compute ssh obsidian-vm --zone=us-central1-a --tunnel-through-iap
+gcloud compute ssh lox-vm --zone=us-central1-a --tunnel-through-iap
 
 # Update system
 sudo apt update && sudo apt upgrade -y
@@ -270,7 +270,7 @@ sudo systemctl start wg-quick@wg0
    **Note:** The VM needs a static external IP for WireGuard only. Create one:
    ```bash
    gcloud compute addresses create obsidian-vpn-ip --region=us-central1
-   gcloud compute instances add-access-config obsidian-vm \
+   gcloud compute instances add-access-config lox-vm \
      --zone=us-central1-a \
      --access-config-name="vpn-only" \
      --address=STATIC_IP
@@ -326,7 +326,7 @@ git clone https://x-access-token:${GIT_TOKEN}@github.com/YOUR_USER/YOUR_VAULT_RE
 # Configure git
 cd vault
 git config user.name "Obsidian VM"
-git config user.email "obsidian-vm@noreply"
+git config user.email "lox-vm@noreply"
 ```
 
 **Checkpoint:** `ls /home/$USER/obsidian/vault/` shows your vault files.
@@ -484,7 +484,7 @@ PGPASSWORD=YOUR_PASSWORD psql -h localhost -U obsidian_brain -d open_brain -c "S
 
 **Steps:**
 ```bash
-# On your local machine, in the obsidian_open_brain project
+# On your local machine, in the lox-brain project
 mkdir -p src/lib src/mcp src/watcher tests
 npm init -y
 npm install typescript @types/node tsx vitest --save-dev
@@ -1416,7 +1416,7 @@ const dbClient = new DbClient(pool);
 const tools = createTools(dbClient, embeddingService, VAULT_PATH);
 
 const server = new Server(
-  { name: 'obsidian-open-brain', version: '1.0.0' },
+  { name: '<your-gcp-project>', version: '1.0.0' },
   { capabilities: { tools: {} } },
 );
 
@@ -1472,17 +1472,17 @@ git commit -m "feat: add MCP server entry point with stdio transport"
 **Type:** Manual
 
 **Steps:**
-1. Push obsidian_open_brain repo to GitHub (private)
+1. Push lox-brain repo to GitHub (private)
 2. Clone on VM:
    ```bash
    cd /home/$USER
-   git clone https://github.com/YOUR_USER/obsidian_open_brain.git
-   cd obsidian_open_brain
+   git clone https://github.com/YOUR_USER/lox-brain.git
+   cd lox-brain
    npm install
    ```
 3. Create `.env` file on VM (never committed):
    ```bash
-   cat > /home/$USER/obsidian_open_brain/.env << 'EOF'
+   cat > /home/$USER/lox-brain/.env << 'EOF'
    VAULT_PATH=/home/$USER/obsidian/vault
    PG_PASSWORD=YOUR_PG_PASSWORD
    OPENAI_API_KEY=YOUR_OPENAI_KEY
@@ -1673,7 +1673,7 @@ gcloud compute resource-policies create snapshot-schedule obsidian-daily-snapsho
   --daily-schedule \
   --start-time=04:00
 
-gcloud compute disks add-resource-policies obsidian-vm \
+gcloud compute disks add-resource-policies lox-vm \
   --zone=us-central1-a \
   --resource-policies=obsidian-daily-snapshot
 ```
@@ -1701,8 +1701,8 @@ After=postgresql.service
 
 [Service]
 User=$USER
-WorkingDirectory=/home/$USER/obsidian_open_brain
-EnvironmentFile=/home/$USER/obsidian_open_brain/.env
+WorkingDirectory=/home/$USER/lox-brain
+EnvironmentFile=/home/$USER/lox-brain/.env
 ExecStart=/usr/bin/npx tsx src/watcher/index.ts
 Restart=always
 RestartSec=5
@@ -1728,12 +1728,12 @@ Add to `~/.claude/claude_desktop_config.json` (or equivalent):
 ```json
 {
   "mcpServers": {
-    "obsidian-open-brain": {
+    "<your-gcp-project>": {
       "command": "ssh",
       "args": [
         "-o", "StrictHostKeyChecking=no",
         "USER@10.10.0.1",
-        "cd /home/USER/obsidian_open_brain && VAULT_PATH=/home/USER/obsidian/vault PG_PASSWORD=PW OPENAI_API_KEY=KEY npx tsx src/mcp/index.ts"
+        "cd /home/USER/lox-brain && VAULT_PATH=/home/USER/obsidian/vault PG_PASSWORD=PW OPENAI_API_KEY=KEY npx tsx src/mcp/index.ts"
       ]
     }
   }

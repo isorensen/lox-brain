@@ -32,6 +32,9 @@ Thumbs.db
 *.swp
 *.swo
 
+# Claude Code local config
+.claude/
+
 # Coverage & logs
 coverage/
 *.log

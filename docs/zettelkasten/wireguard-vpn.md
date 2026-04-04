@@ -13,11 +13,11 @@ O WireGuard e o unico ponto de acesso ao sistema Lox. Cria um tunnel criptografa
 
 ```
 VM (server):     10.10.0.1/24  (wg0, porta UDP 51820)
-Arch Linux:      10.10.0.2/24  (client 1)
-Mac:             10.10.0.3/24  (client 2)
+Client 1:        10.10.0.2/24
+Client 2:        10.10.0.3/24
 ```
 
-O IP estatico da VM (`34.75.93.58`) e o unico ponto exposto, e somente na porta UDP 51820 -- controlado pela regra de firewall do GCP.
+O IP estatico da VM (`<your-vm-public-ip>`) e o unico ponto exposto, e somente na porta UDP 51820 -- controlado pela regra de firewall do GCP.
 
 ## Split tunnel
 
@@ -32,7 +32,7 @@ Configurado como split tunnel: somente trafego destinado a `10.10.0.0/24` passa 
 O Claude Code acessa o [[Lox - MCP Server]] via SSH pela VPN:
 
 ```
-Host obsidian-vm
+Host lox-vm
   HostName 10.10.0.1
   IdentityFile ~/.ssh/google_compute_engine
 ```

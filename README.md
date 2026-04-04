@@ -1,14 +1,24 @@
+<div align="center">
+
 ```
-  _        ___   __  __
- | |      / _ \  \ \/ /
- | |     | | | |  \  /
- | |___  | |_| |  /  \
- |_____|  \___/  /_/\_\
+ ██╗      ██████╗ ██╗  ██╗
+ ██║     ██╔═══██╗╚██╗██╔╝
+ ██║     ██║   ██║ ╚███╔╝
+ ██║     ██║   ██║ ██╔██╗
+ ███████╗╚██████╔╝██╔╝ ██╗
+ ╚══════╝ ╚═════╝ ╚═╝  ╚═╝
 ```
+
+### Where knowledge lives.
+
+[![CI](https://github.com/isorensen/lox-brain/actions/workflows/ci.yml/badge.svg)](https://github.com/isorensen/lox-brain/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node.js](https://img.shields.io/badge/Node.js-22%20LTS-green.svg)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org/)
+
+</div>
 
 # Lox
-
-**Where knowledge lives.**
 
 Lox is a hybrid personal knowledge management system that connects a local [Obsidian](https://obsidian.md) vault with PostgreSQL+pgvector for semantic search, exposed via an MCP Server over WireGuard VPN. Claude Code is a first-class client -- reading, writing, and searching notes through natural language.
 
@@ -43,27 +53,27 @@ Claude Code --VPN--> MCP Server --> tools
 
 ## Quick Start
 
-The repository is currently private. Clone it first, then run the installer:
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) 22 LTS or later
+- [Git](https://git-scm.com/)
+- A GCP account (for VM infrastructure)
+- [Obsidian](https://obsidian.md) (for local vault editing)
+
+### Install
 
 ```bash
-git clone https://github.com/isorensen/lox-brain.git
-cd lox-brain
-
 # macOS / Linux
-bash scripts/install.sh
+curl -fsSL https://raw.githubusercontent.com/isorensen/lox-brain/main/scripts/install.sh | bash
 
 # Windows (PowerShell)
-.\scripts\install.ps1
-```
+irm https://raw.githubusercontent.com/isorensen/lox-brain/main/scripts/install.ps1 | iex
 
-> **Note:** When the repository is made public, a one-liner will be available:
-> ```bash
-> # macOS / Linux (when repo is public)
-> curl -fsSL https://raw.githubusercontent.com/isorensen/lox-brain/main/scripts/install.sh | bash
->
-> # Windows PowerShell (when repo is public)
-> irm https://raw.githubusercontent.com/isorensen/lox-brain/main/scripts/install.ps1 | iex
-> ```
+# Or clone and run manually
+git clone https://github.com/isorensen/lox-brain.git
+cd lox-brain
+bash scripts/install.sh
+```
 
 ## MCP Tools
 
@@ -131,6 +141,10 @@ npm run index-vault                      # One-time full vault indexing
 ## Cost
 
 Estimated monthly cost: **~US$18/month** (GCE e2-small + 30GB pd-ssd + Cloud NAT + minimal traffic).
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 

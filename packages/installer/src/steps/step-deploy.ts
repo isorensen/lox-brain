@@ -26,14 +26,19 @@ async function sshCommand(
   return stdout;
 }
 
-const WATCHER_SERVICE = `[Unit]
+/**
+ * Build the systemd unit file for the vault watcher service.
+ * Extracted to avoid hardcoding personal values.
+ */
+export function buildWatcherService(user: string, installDir: string): string {
+  return `[Unit]
 Description=Lox Vault Watcher
 After=network.target postgresql.service
 
 [Service]
 Type=simple
-User=sorensen
-WorkingDirectory=/home/sorensen/lox-brain
+User=${user}
+WorkingDirectory=${installDir}
 ExecStart=/usr/bin/node packages/core/dist/watcher/index.js
 EnvironmentFile=/etc/lox/secrets.env
 Restart=always
@@ -44,6 +49,7 @@ StandardError=journal
 [Install]
 WantedBy=multi-user.target
 `;
+}
 
 /**
  * Step 11: Deploy Lox Core to VM
@@ -58,13 +64,16 @@ export async function stepDeploy(ctx: InstallerContext): Promise<StepResult> {
   const projectId = ctx.gcpProjectId ?? 'lox-project';
   const vmName = ctx.config.gcp?.vm_name ?? 'lox-vm';
   const zone = ctx.config.gcp?.zone ?? 'us-east1-b';
+  const user = ctx.gcpUsername ?? 'lox';
+  const installDir = ctx.config.install_dir ?? `/home/${user}/lox-brain`;
+  const vaultPath = ctx.config.vault?.local_path ?? `/home/${user}/lox-vault`;
 
   // 1. Clone lox-brain repo on VM
   await withSpinner(
     'Cloning lox-brain repo on VM...',
     async () => {
       await sshCommand(vmName, projectId, zone,
-        'test -d ~/lox-brain && (cd ~/lox-brain && git pull) || gh repo clone lox-brain ~/lox-brain',
+        `test -d ${installDir} && (cd ${installDir} && git pull) || gh repo clone lox-brain ${installDir}`,
       );
     },
   );
@@ -74,7 +83,7 @@ export async function stepDeploy(ctx: InstallerContext): Promise<StepResult> {
     'Building lox-brain on VM (npm ci && npm run build)...',
     async () => {
       await sshCommand(vmName, projectId, zone,
-        'cd ~/lox-brain && npm ci && npm run build --workspaces',
+        `cd ${installDir} && npm ci && npm run build --workspaces`,
       );
     },
   );
@@ -91,14 +100,14 @@ export async function stepDeploy(ctx: InstallerContext): Promise<StepResult> {
       const envContent = [
         `DATABASE_URL=postgresql://${dbUser}@${dbHost}:${dbPort}/${dbName}?sslmode=require`,
         'OPENAI_API_KEY=__REPLACE_FROM_SECRET_MANAGER__',
-        `VAULT_PATH=/home/sorensen/lox-vault`,
+        `VAULT_PATH=${vaultPath}`,
         'NODE_ENV=production',
         'LOG_LEVEL=info',
       ].join('\n');
 
       // Create /etc/lox directory and write secrets.env (requires sudo)
       await sshCommand(vmName, projectId, zone,
-        `sudo mkdir -p /etc/lox && echo '${envContent}' | sudo tee /etc/lox/secrets.env > /dev/null && sudo chmod 600 /etc/lox/secrets.env && sudo chown sorensen:sorensen /etc/lox/secrets.env`,
+        `sudo mkdir -p /etc/lox && cat > /tmp/lox-env <<'ENVEOF'\n${envContent}\nENVEOF\nsudo mv /tmp/lox-env /etc/lox/secrets.env && sudo chmod 600 /etc/lox/secrets.env && sudo chown ${user}:${user} /etc/lox/secrets.env`,
       );
     },
   );
@@ -110,8 +119,9 @@ export async function stepDeploy(ctx: InstallerContext): Promise<StepResult> {
   await withSpinner(
     'Installing lox-watcher systemd service...',
     async () => {
+      const watcherService = buildWatcherService(user, installDir);
       await sshCommand(vmName, projectId, zone,
-        `echo '${WATCHER_SERVICE}' | sudo tee /etc/systemd/system/lox-watcher.service > /dev/null`,
+        `echo '${watcherService}' | sudo tee /etc/systemd/system/lox-watcher.service > /dev/null`,
       );
     },
   );
@@ -132,7 +142,7 @@ export async function stepDeploy(ctx: InstallerContext): Promise<StepResult> {
     async () => {
       try {
         const result = await sshCommand(vmName, projectId, zone,
-          'echo \'{"jsonrpc":"2.0","method":"tools/list","id":1}\' | timeout 10 node ~/lox-brain/packages/core/dist/mcp/index.js 2>/dev/null | head -1',
+          `echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | timeout 10 node ${installDir}/packages/core/dist/mcp/index.js 2>/dev/null | head -1`,
         );
         return result.includes('"jsonrpc"');
       } catch {

@@ -14,6 +14,14 @@ All notable changes to this project will be documented in this file.
 - Update README with badges, improved splash, and public install instructions
 - Add CONTRIBUTING.md, CODE_OF_CONDUCT.md, and GitHub issue/PR templates
 
+## [0.3.0] — 2026-04-04
+
+### Added
+- Command string safety tests for Windows cmd.exe compatibility (#43). Validates all `execSync` command strings for unquoted shell operators (`&&`, `||`, `|`, `>`, `<`, `^`), unquoted `--command` values with spaces, and operators inside `--command="..."`.
+- Exported pure builder functions (`buildWarmupCommand`, `buildSshExecCommand`, `buildScpCommand`, `buildSshExecScriptCommand`) for testable command construction.
+- `assertCmdExeSafe()` utility in `cmd-safety.ts` for reusable cmd.exe safety validation.
+- Regression guards that would have caught issues #38 and #40 before shipping.
+
 ## [0.2.6] — 2026-04-04
 
 ### Fixed

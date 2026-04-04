@@ -48,6 +48,8 @@ export interface ErrorReportContext {
   loxVersion: string;
   os: string;
   nodeVersion: string;
+  subPhase?: string;
+  sourceFile?: string;
 }
 
 /**
@@ -89,13 +91,16 @@ export function sanitize(text: string): string {
   return result;
 }
 
-function buildIssueBody(ctx: ErrorReportContext): string {
+export function buildIssueBody(ctx: ErrorReportContext): string {
   const sanitizedError = sanitize(ctx.errorMessage);
+
+  const subPhaseLine = ctx.subPhase ? `**Sub-phase:** ${ctx.subPhase}\n` : '';
+  const sourceLine = ctx.sourceFile ? `**Source:** \`${ctx.sourceFile}\`\n` : '';
 
   return `## Auto-reported installer failure
 
 **Step:** ${ctx.stepName}
-
+${subPhaseLine}${sourceLine}
 ### Error
 \`\`\`
 ${sanitizedError}

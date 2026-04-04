@@ -174,7 +174,7 @@ describe('offerErrorReport', () => {
   });
 });
 
-import { extractSubPhase, sourceFileForStep } from '../../src/utils/error-report.js';
+import { extractSubPhase, sourceFileForStep, buildIssueBody } from '../../src/utils/error-report.js';
 
 describe('extractSubPhase', () => {
   it('extracts sub-phase from "<phase> failed: <error>" format', () => {
@@ -212,5 +212,50 @@ describe('sourceFileForStep', () => {
   it('returns undefined for unknown step names', () => {
     expect(sourceFileForStep('NonExistent')).toBeUndefined();
     expect(sourceFileForStep('')).toBeUndefined();
+  });
+});
+
+describe('buildIssueBody', () => {
+  const baseCtx = {
+    stepName: 'VM Setup',
+    errorMessage: 'Creating database and schema failed: ERROR: role lox already exists',
+    loxVersion: '0.3.4',
+    os: 'darwin arm64',
+    nodeVersion: 'v22.16.0',
+  };
+
+  it('includes sub-phase line when subPhase is provided', () => {
+    const body = buildIssueBody({ ...baseCtx, subPhase: 'Creating database and schema' });
+    expect(body).toContain('**Sub-phase:** Creating database and schema');
+  });
+
+  it('includes source file line when sourceFile is provided', () => {
+    const body = buildIssueBody({
+      ...baseCtx,
+      sourceFile: 'packages/installer/src/steps/step-vm-setup.ts',
+    });
+    expect(body).toContain('**Source:** `packages/installer/src/steps/step-vm-setup.ts`');
+  });
+
+  it('omits sub-phase line when subPhase is undefined', () => {
+    const body = buildIssueBody(baseCtx);
+    expect(body).not.toContain('**Sub-phase:**');
+  });
+
+  it('omits source file line when sourceFile is undefined', () => {
+    const body = buildIssueBody(baseCtx);
+    expect(body).not.toContain('**Source:**');
+  });
+
+  it('still includes all original fields', () => {
+    const body = buildIssueBody({
+      ...baseCtx,
+      subPhase: 'x',
+      sourceFile: 'y',
+    });
+    expect(body).toContain('**Step:** VM Setup');
+    expect(body).toContain('**OS:** darwin arm64');
+    expect(body).toContain('**Node.js:** v22.16.0');
+    expect(body).toContain('**Lox version:** 0.3.4');
   });
 });

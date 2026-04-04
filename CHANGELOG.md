@@ -14,6 +14,11 @@ All notable changes to this project will be documented in this file.
 - Update README with badges, improved splash, and public install instructions
 - Add CONTRIBUTING.md, CODE_OF_CONDUCT.md, and GitHub issue/PR templates
 
+## [0.2.3] — 2026-04-04
+
+### Fixed
+- Semantic search returning empty results after VM/PostgreSQL restart (#34). The ivfflat index becomes inconsistent on restart — now automatically reindexed on MCP server startup.
+
 ## [0.2.2] — 2026-04-04
 
 ### Fixed

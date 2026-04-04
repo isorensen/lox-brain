@@ -99,6 +99,19 @@ export class DbClient {
     await this.pool.query(sql, [filePath]);
   }
 
+  async reindexEmbeddings(): Promise<void> {
+    const result = await this.pool.query(`
+      SELECT indexname FROM pg_indexes
+      WHERE tablename = 'vault_embeddings'
+        AND indexdef LIKE '%ivfflat%'
+      LIMIT 1
+    `);
+    if (result.rows.length > 0) {
+      const indexName = result.rows[0].indexname;
+      await this.pool.query(`REINDEX INDEX ${indexName}`);
+    }
+  }
+
   async searchSemantic(
     embedding: number[],
     limitOrOptions: number | Partial<SearchOptions> = {},

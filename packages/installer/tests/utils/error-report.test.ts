@@ -40,6 +40,27 @@ describe('sanitize', () => {
     expect(result).not.toContain('Lara');
   });
 
+  it('redacts macOS user paths', () => {
+    const input = 'at /Users/eduardo/projects/lox-brain/packages/installer/src/index.ts:42';
+    const result = sanitize(input);
+    expect(result).toContain('/Users/<REDACTED>/');
+    expect(result).not.toContain('eduardo');
+  });
+
+  it('redacts Linux home paths', () => {
+    const input = 'at /home/lara/lox-install/node_modules/lib.js:10';
+    const result = sanitize(input);
+    expect(result).toContain('/home/<REDACTED>/');
+    expect(result).not.toContain('lara');
+  });
+
+  it('does not redact system paths like /usr/local/bin', () => {
+    // /Users and /home are home dirs; /usr/local is a system path
+    const input = '/usr/local/bin/node';
+    const result = sanitize(input);
+    expect(result).toBe('/usr/local/bin/node');
+  });
+
   it('redacts billing account IDs', () => {
     const input = 'Billing account AB12CD-EF34GH-IJ56KL not found';
     const result = sanitize(input);

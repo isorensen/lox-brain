@@ -16,6 +16,7 @@ import { stepDeploy } from './steps/step-deploy.js';
 import { stepMcp } from './steps/step-mcp.js';
 import { runPostInstall } from './steps/step-post-install.js';
 import { offerErrorReport, extractSubPhase, sourceFileForStep } from './utils/error-report.js';
+import { formatFatalError } from './utils/format-error.js';
 import { LOX_VERSION } from '@lox-brain/shared';
 import type { InstallerContext } from './steps/types.js';
 
@@ -106,7 +107,17 @@ async function main(): Promise<void> {
   await runPostInstall(ctx);
 }
 
-main().catch((err) => {
-  console.error('Fatal error:', err);
+main().catch(async (err) => {
+  const message = formatFatalError(err);
+  console.error('Fatal error:', message);
+  // Offer to auto-report the crash so users don't have to hand-copy stack traces.
+  // offerErrorReport is best-effort and never throws.
+  await offerErrorReport({
+    stepName: 'Unhandled exception',
+    errorMessage: message,
+    loxVersion: LOX_VERSION,
+    os: `${process.platform} ${process.arch}`,
+    nodeVersion: process.version,
+  });
   process.exit(1);
 });

@@ -55,8 +55,8 @@ export interface ErrorReportContext {
 /**
  * Sanitize private data from error messages before reporting.
  *
- * Redacts: GCP project IDs, service account emails, Windows user paths,
- * billing account IDs, and GCP project numbers.
+ * Redacts: GCP project IDs, service account emails, Windows/macOS/Linux
+ * user paths, billing account IDs, and GCP project numbers.
  */
 export function sanitize(text: string): string {
   let result = text;
@@ -74,6 +74,12 @@ export function sanitize(text: string): string {
   result = result.replace(
     /C:\\Users\\[^\\]+\\/gi,
     'C:\\Users\\<REDACTED>\\',
+  );
+
+  // macOS/Linux home paths: /Users/<name>/ or /home/<name>/
+  result = result.replace(
+    /\/(Users|home)\/[^/\s]+\//g,
+    '/$1/<REDACTED>/',
   );
 
   // Billing account IDs: XXXXXX-YYYYYY-ZZZZZZ (6 alphanum groups separated by dashes)

@@ -75,6 +75,16 @@ export interface I18nStrings {
   preset_para: string;
   preset_para_desc: string;
 
+  // Billing
+  billing_checking: string;
+  billing_not_linked: string;
+  billing_select_account: string;
+  billing_no_accounts: string;
+  billing_press_enter: string;
+  billing_linked_success: string;
+  billing_required_for_apis: string;
+  billing_linking: string;
+
   // Modes
   mode_personal: string;
   mode_team: string;
@@ -156,6 +166,16 @@ export const en: I18nStrings = {
   preset_zettelkasten_desc: 'Atomic notes with unique IDs, interlinked for emergent thinking.',
   preset_para: 'PARA',
   preset_para_desc: 'Projects, Areas, Resources, Archives — action-oriented organization.',
+
+  // Billing
+  billing_checking: 'Checking billing account...',
+  billing_not_linked: 'No billing account linked to project',
+  billing_select_account: 'Select a billing account:',
+  billing_no_accounts: 'No billing accounts found. Create one at:',
+  billing_press_enter: 'Press Enter after creating a billing account',
+  billing_linked_success: 'Billing account linked successfully',
+  billing_required_for_apis: 'Billing is required to enable GCP APIs. Please link a billing account and try again.',
+  billing_linking: 'Linking billing account...',
 
   // Modes
   mode_personal: 'Personal',

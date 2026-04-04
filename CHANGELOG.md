@@ -14,6 +14,19 @@ All notable changes to this project will be documented in this file.
 - Update README with badges, improved splash, and public install instructions
 - Add CONTRIBUTING.md, CODE_OF_CONDUCT.md, and GitHub issue/PR templates
 
+## [0.1.4] — 2026-04-04
+
+### Added
+- Billing account detection and linking in GCP project setup step (#21). The installer now:
+  - Checks if the project has a billing account linked before enabling APIs
+  - Lists available billing accounts and lets the user select one
+  - Links the selected billing account automatically via `gcloud billing projects link`
+  - If no billing accounts exist, guides the user to create one at the GCP Console and waits
+- i18n: 8 new billing-related strings in en and pt-BR
+
+### Fixed
+- `gcloud services enable` no longer crashes with raw stack trace when billing is missing (#21). Now shows a clear error message.
+
 ## [0.1.3] — 2026-04-04
 
 ### Fixed

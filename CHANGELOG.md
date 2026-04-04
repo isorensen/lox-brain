@@ -14,6 +14,11 @@ All notable changes to this project will be documented in this file.
 - Update README with badges, improved splash, and public install instructions
 - Add CONTRIBUTING.md, CODE_OF_CONDUCT.md, and GitHub issue/PR templates
 
+## [0.4.0] — 2026-04-04
+
+### Added
+- Vault Setup now captures the GitHub Fine-Grained PAT via a masked prompt and stores it directly in GCP Secret Manager (secret `lox-github-pat`). The flow validates format locally, is idempotent on re-runs (adds a new version if the secret already exists), and falls back to a printed manual command if the store call fails (#63)
+
 ## [0.3.8] — 2026-04-04
 
 ### Fixed

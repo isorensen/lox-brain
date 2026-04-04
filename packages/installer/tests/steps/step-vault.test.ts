@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { isProPlanGate, isRepoNotFoundError, repoExists, buildVmSetupScript } from '../../src/steps/step-vault.js';
+import { isProPlanGate, isRepoNotFoundError, repoExists, buildVmSetupScript, isValidPatFormat, gcpSecretExists } from '../../src/steps/step-vault.js';
 import { shell } from '../../src/utils/shell.js';
 
 vi.mock('../../src/utils/shell.js', () => ({
@@ -179,5 +179,103 @@ describe('buildVmSetupScript', () => {
     // trailing newline is conventional and ensures POSIX tools treat the
     // last line as a complete line.
     expect(script.endsWith('\n')).toBe(true);
+  });
+});
+
+describe('isValidPatFormat', () => {
+  it('accepts fine-grained PATs (github_pat_ prefix)', () => {
+    // Fine-grained PATs are the recommended format — the installer's UI
+    // points users at the fine-grained token flow specifically.
+    expect(isValidPatFormat('github_pat_' + 'A'.repeat(82))).toBe(true);
+    expect(isValidPatFormat('github_pat_11ABCDE_0123456789abcdefghij_ABCDEFGHIJKLMNOP' + 'q'.repeat(30))).toBe(true);
+  });
+
+  it('accepts classic PATs (ghp_ prefix) as a fallback', () => {
+    // Some users may paste a classic PAT — accept it rather than rejecting
+    // a working token over a prefix mismatch.
+    expect(isValidPatFormat('ghp_' + 'A'.repeat(36))).toBe(true);
+  });
+
+  it('trims surrounding whitespace before validating', () => {
+    // Copy-paste from browsers often includes a trailing newline
+    expect(isValidPatFormat('  ghp_' + 'A'.repeat(36) + '\n')).toBe(true);
+  });
+
+  it('rejects empty or whitespace-only input', () => {
+    expect(isValidPatFormat('')).toBe(false);
+    expect(isValidPatFormat('   ')).toBe(false);
+    expect(isValidPatFormat('\n\t')).toBe(false);
+  });
+
+  it('rejects tokens without a recognized prefix', () => {
+    // A bare hex/base64 string is almost certainly not a GitHub PAT
+    expect(isValidPatFormat('A'.repeat(40))).toBe(false);
+    expect(isValidPatFormat('sk-live-abcdef1234567890')).toBe(false);
+    expect(isValidPatFormat('Bearer ghp_' + 'A'.repeat(36))).toBe(false);
+  });
+
+  it('rejects tokens that are too short', () => {
+    // GitHub PATs are substantially longer than the prefix — a short suffix
+    // is a clear typo/truncation signal.
+    expect(isValidPatFormat('ghp_short')).toBe(false);
+    expect(isValidPatFormat('github_pat_short')).toBe(false);
+  });
+
+  it('rejects tokens containing invalid characters', () => {
+    // PATs use [A-Za-z0-9_] only; spaces/quotes/special chars mean paste corruption
+    expect(isValidPatFormat('ghp_' + 'A'.repeat(20) + ' ' + 'A'.repeat(15))).toBe(false);
+    expect(isValidPatFormat('ghp_' + 'A'.repeat(20) + '"' + 'A'.repeat(15))).toBe(false);
+  });
+
+  it('rejects non-string input gracefully', () => {
+    expect(isValidPatFormat(null as unknown as string)).toBe(false);
+    expect(isValidPatFormat(undefined as unknown as string)).toBe(false);
+    expect(isValidPatFormat(123 as unknown as string)).toBe(false);
+  });
+});
+
+describe('gcpSecretExists', () => {
+  beforeEach(() => {
+    vi.mocked(shell).mockReset();
+  });
+
+  it('returns true when gcloud secrets describe succeeds', async () => {
+    vi.mocked(shell).mockResolvedValueOnce({ stdout: 'name: projects/x/secrets/lox-github-pat', stderr: '' });
+    await expect(gcpSecretExists('lox-github-pat', 'my-project')).resolves.toBe(true);
+    expect(vi.mocked(shell)).toHaveBeenCalledWith('gcloud', [
+      'secrets', 'describe', 'lox-github-pat', '--project', 'my-project',
+    ]);
+  });
+
+  it('returns false when the secret is NOT_FOUND', async () => {
+    vi.mocked(shell).mockRejectedValueOnce(
+      Object.assign(new Error('Command failed'), {
+        stderr: 'ERROR: (gcloud.secrets.describe) NOT_FOUND: Secret [lox-github-pat] was not found',
+      }),
+    );
+    await expect(gcpSecretExists('lox-github-pat', 'my-project')).resolves.toBe(false);
+  });
+
+  it('returns false on the alternate "was not found" phrasing', async () => {
+    vi.mocked(shell).mockRejectedValueOnce(
+      Object.assign(new Error('Command failed'), {
+        stderr: 'Secret [x] was not found in project [y]',
+      }),
+    );
+    await expect(gcpSecretExists('x', 'y')).resolves.toBe(false);
+  });
+
+  it('rethrows unrelated errors (auth, API disabled, billing)', async () => {
+    vi.mocked(shell).mockRejectedValueOnce(
+      Object.assign(new Error('Command failed'), {
+        stderr: 'PERMISSION_DENIED: Secret Manager API has not been used',
+      }),
+    );
+    await expect(gcpSecretExists('x', 'y')).rejects.toThrow('Command failed');
+  });
+
+  it('rethrows "Command not found" for missing gcloud', async () => {
+    vi.mocked(shell).mockRejectedValueOnce(new Error('Command not found: gcloud'));
+    await expect(gcpSecretExists('x', 'y')).rejects.toThrow('Command not found: gcloud');
   });
 });

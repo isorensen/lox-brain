@@ -91,7 +91,7 @@ const SETUP_PHASES: SetupPhase[] = [
       'sudo sed -i "s/PasswordAuthentication yes/PasswordAuthentication no/" /etc/ssh/sshd_config',
       'sudo sed -i "s/#PermitRootLogin prohibit-password/PermitRootLogin no/" /etc/ssh/sshd_config',
       'sudo sed -i "s/PermitRootLogin yes/PermitRootLogin no/" /etc/ssh/sshd_config',
-      'sudo systemctl restart sshd',
+      'sudo systemctl restart ssh',
     ],
     timeout: 60_000, // 1 min
   },

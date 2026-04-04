@@ -14,6 +14,11 @@ All notable changes to this project will be documented in this file.
 - Update README with badges, improved splash, and public install instructions
 - Add CONTRIBUTING.md, CODE_OF_CONDUCT.md, and GitHub issue/PR templates
 
+## [0.3.1] — 2026-04-04
+
+### Fixed
+- SSH hardening phase fails with `Unit sshd.service not found` (#44). On Debian/Ubuntu the service is `ssh`, not `sshd`. Changed `systemctl restart sshd` → `systemctl restart ssh`.
+
 ## [0.3.0] — 2026-04-04
 
 ### Added

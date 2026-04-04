@@ -14,6 +14,12 @@ All notable changes to this project will be documented in this file.
 - Update README with badges, improved splash, and public install instructions
 - Add CONTRIBUTING.md, CODE_OF_CONDUCT.md, and GitHub issue/PR templates
 
+## [0.2.1] — 2026-04-04
+
+### Fixed
+- SSH command parsing on Windows (#31). `cmd.exe` was interpreting `&&` and double quotes in SSH commands. Replaced with SCP-based approach: script written to temp file, uploaded to VM, then executed — completely avoids shell quoting issues.
+- First SSH connection hanging forever (#31). `gcloud compute ssh` on first connect asks for passphrase and host key interactively. Added `sshWarmup()` with `stdio: 'inherit'` before phase loop, plus `--quiet` and `StrictHostKeyChecking=accept-new` for subsequent calls.
+
 ## [0.2.0] — 2026-04-04
 
 ### Added

@@ -101,4 +101,5 @@ export const ptBr: I18nStrings = {
   vm_phase_ssh_hardening: 'Fortalecendo configuracao SSH',
   vm_phase_wireguard: 'Instalando WireGuard',
   vm_phase_fetching_logs: 'Buscando logs da VM para diagnostico',
+  vm_ssh_warmup: 'Estabelecendo conexao SSH com a VM',
 };

@@ -19,7 +19,7 @@ export class VaultWatcher {
   }
 
   private relativePath(filePath: string): string {
-    return path.relative(this.vaultPath, filePath);
+    return path.relative(this.vaultPath, filePath).replace(/\\/g, '/');
   }
 
   async handleFileChange(filePath: string, content: string): Promise<void> {

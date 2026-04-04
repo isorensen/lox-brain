@@ -410,6 +410,23 @@ describe('stepVmSetup -- DB setup phase', () => {
   });
 });
 
+describe('stepVmSetup -- pgvector phase idempotency', () => {
+  it('cleans up /tmp/pgvector before git clone to handle interrupted previous runs', async () => {
+    mockAllPhasesSuccess();
+
+    await stepVmSetup(makeCtx());
+
+    // pgvector is the 4th phase script (index 3)
+    const pgvectorScript = writeFileSyncMock.mock.calls[3][1] as string;
+    // rm -rf /tmp/pgvector must appear BEFORE git clone
+    const rmIndex = pgvectorScript.indexOf('rm -rf /tmp/pgvector');
+    const cloneIndex = pgvectorScript.indexOf('git clone');
+    expect(rmIndex).toBeGreaterThan(-1);
+    expect(cloneIndex).toBeGreaterThan(-1);
+    expect(rmIndex).toBeLessThan(cloneIndex);
+  });
+});
+
 describe('stepVmSetup -- per-phase timeout retry', () => {
   it('prompts user on timeout, retries with doubled timeout, and succeeds', async () => {
     // Warm-up

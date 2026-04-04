@@ -78,6 +78,7 @@ const SETUP_PHASES: SetupPhase[] = [
     name: 'vm_phase_pgvector',
     commands: [
       'sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq build-essential git',
+      'rm -rf /tmp/pgvector',
       'cd /tmp && git clone --branch v0.8.0 https://github.com/pgvector/pgvector.git',
       'cd /tmp/pgvector && make && sudo make install',
       'rm -rf /tmp/pgvector',

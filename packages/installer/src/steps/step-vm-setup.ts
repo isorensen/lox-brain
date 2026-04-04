@@ -132,12 +132,13 @@ function baseSshArgs(project: string, zone: string): string[] {
  */
 function sshWarmup(project: string, zone: string): void {
   const args = baseSshArgs(project, zone);
-  args.push('--command=echo ok');
+  args.push('--command=true');
   // execSync is required here (not execFile) because stdio: 'inherit'
   // must pass through interactive SSH key generation prompts to the user.
+  // stdin/stdout inherited for interactive prompts; stderr piped to capture gcloud errors.
   execSync(`gcloud ${args.join(' ')}`, {
     timeout: SSH_TIMEOUT,
-    stdio: 'inherit',
+    stdio: ['inherit', 'inherit', 'pipe'],
   });
 }
 
@@ -159,7 +160,7 @@ async function sshExec(
   timeout?: number,
 ): Promise<string> {
   const args = baseSshArgs(project, zone);
-  args.push(`--command=${command}`);
+  args.push(`--command="${command}"`);
   // execSync is required here (not execFile) to avoid cmd.exe argument
   // parsing issues on Windows — see issue #31.
   const result = execSync(`gcloud ${args.join(' ')}`, {
@@ -197,13 +198,13 @@ async function sshExecScript(
     // Upload script to VM via SCP through IAP tunnel
     // execSync required for same Windows cmd.exe reasons as sshExec.
     execSync(
-      `gcloud compute scp ${localTmp} ${VM_NAME}:${remotePath} --zone=${zone} --project=${project} --tunnel-through-iap --quiet`,
+      `gcloud compute scp "${localTmp}" ${VM_NAME}:${remotePath} --zone=${zone} --project=${project} --tunnel-through-iap --quiet`,
       { timeout: 30_000, stdio: 'pipe' },
     );
 
     // Execute and clean up on the remote side
     const args = baseSshArgs(project, zone);
-    args.push(`--command=bash ${remotePath} && rm -f ${remotePath}`);
+    args.push(`--command="bash ${remotePath} && rm -f ${remotePath}"`);
     const result = execSync(`gcloud ${args.join(' ')}`, {
       timeout: timeout ?? SSH_TIMEOUT,
       stdio: 'pipe',
@@ -229,7 +230,9 @@ function generatePassword(length = 32): string {
  */
 async function fetchVmLogs(project: string, zone: string): Promise<string | null> {
   try {
-    const output = await sshExec(
+    // Uses sshExecScript (not sshExec) because the command contains
+    // double quotes and || chains that break cmd.exe parsing on Windows.
+    const output = await sshExecScript(
       project,
       zone,
       'tail -20 /var/log/apt/term.log 2>/dev/null || journalctl -n 20 --no-pager 2>/dev/null || echo "No logs available"',
@@ -307,7 +310,19 @@ export async function stepVmSetup(ctx: InstallerContext): Promise<StepResult> {
     sshWarmup(project, zone);
     console.log(chalk.green(`  ✓ ${warmupLabel}`));
   } catch (err) {
-    const msg = err instanceof Error ? err.message.split('\n')[0] : String(err);
+    let msg = err instanceof Error ? err.message.split('\n')[0] : String(err);
+    // execSync errors include stderr as a Buffer when stdio is piped
+    if (err && typeof err === 'object' && 'stderr' in err) {
+      const stderr = Buffer.isBuffer((err as { stderr: unknown }).stderr)
+        ? ((err as { stderr: Buffer }).stderr).toString('utf-8').trim()
+        : String((err as { stderr: unknown }).stderr).trim();
+      if (stderr) {
+        const errorLines = stderr.split('\n').filter(l => l.startsWith('ERROR:'));
+        msg = errorLines.length > 0
+          ? errorLines.join(' ')
+          : (stderr.split('\n')[0] || msg);
+      }
+    }
     return { success: false, message: `SSH warm-up failed: ${msg}` };
   }
 

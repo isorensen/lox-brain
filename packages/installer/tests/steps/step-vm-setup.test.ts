@@ -97,7 +97,7 @@ function makeCtx(overrides: Partial<InstallerContext> = {}): InstallerContext {
 
 /** Check if an execSync call is the SSH warm-up. */
 function isWarmupCall(cmd: string): boolean {
-  return cmd.includes('compute ssh') && cmd.includes('--command=echo ok');
+  return cmd.includes('compute ssh') && cmd.includes('--command=true');
 }
 
 /** Check if an execSync call is an SCP upload. */
@@ -196,9 +196,9 @@ describe('stepVmSetup -- SSH warm-up', () => {
     expect(cmd).toContain('--quiet');
     expect(cmd).toContain('strict-host-key-checking=no');
 
-    // Warm-up uses stdio: 'inherit' for interactive prompts
+    // Warm-up uses inherited stdin/stdout + piped stderr for error capture
     const opts = firstCall[1] as Record<string, unknown>;
-    expect(opts.stdio).toBe('inherit');
+    expect(opts.stdio).toEqual(['inherit', 'inherit', 'pipe']);
   });
 
   it('returns failure when warm-up fails', async () => {
@@ -210,6 +210,43 @@ describe('stepVmSetup -- SSH warm-up', () => {
     expect(result.success).toBe(false);
     expect(result.message).toContain('SSH warm-up failed');
     expect(result.message).toContain('SSH key generation failed');
+  });
+
+  it('extracts gcloud stderr from warm-up error when available', async () => {
+    const err = Object.assign(new Error('Command failed'), {
+      stderr: Buffer.from('ERROR: (gcloud.compute.ssh) unrecognized arguments: ok\n'),
+    });
+    execSyncMock.mockImplementationOnce(() => { throw err; });
+
+    const result = await stepVmSetup(makeCtx());
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('SSH warm-up failed');
+    expect(result.message).toContain('ERROR: (gcloud.compute.ssh) unrecognized arguments: ok');
+    // Should NOT contain the generic Node wrapper
+    expect(result.message).not.toContain('Command failed');
+  });
+
+  it('falls back to err.message when stderr is empty', async () => {
+    const err = Object.assign(new Error('Connection reset by peer'), {
+      stderr: Buffer.from(''),
+    });
+    execSyncMock.mockImplementationOnce(() => { throw err; });
+
+    const result = await stepVmSetup(makeCtx());
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('Connection reset by peer');
+  });
+
+  it('falls back to first stderr line when no ERROR: prefix', async () => {
+    const err = Object.assign(new Error('Command failed'), {
+      stderr: Buffer.from('WARNING: something went wrong\ndetail line'),
+    });
+    execSyncMock.mockImplementationOnce(() => { throw err; });
+
+    const result = await stepVmSetup(makeCtx());
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('WARNING: something went wrong');
+    expect(result.message).not.toContain('detail line');
   });
 });
 
@@ -305,6 +342,19 @@ describe('stepVmSetup -- phased execution via SCP', () => {
     expect(result.message).toContain('Installing PostgreSQL 16');
     expect(result.message).toContain('failed');
     expect(result.message).toContain('apt-get failed');
+  });
+
+  it('wraps --command value in double quotes for shell safety', async () => {
+    mockAllPhasesSuccess();
+
+    await stepVmSetup(makeCtx());
+
+    const sshCalls = getSshExecCalls();
+    for (const call of sshCalls) {
+      const cmd = call[0] as string;
+      // --command value must be wrapped in double quotes to prevent shell splitting
+      expect(cmd).toMatch(/--command="[^"]+"/);
+    }
   });
 
   it('includes set -euo pipefail in each phase script', async () => {
@@ -446,24 +496,22 @@ describe('stepVmSetup -- fetchVmLogs on timeout', () => {
     execSyncMock.mockImplementationOnce(() => {
       throw Object.assign(new Error('timed out'), { killed: true });
     });
-    // fetchVmLogs succeeds (uses sshExec, not sshExecScript — no SCP)
-    execSyncMock.mockReturnValueOnce('apt log line 1\napt log line 2');
+    // fetchVmLogs succeeds (uses sshExecScript: SCP upload + SSH exec)
+    execSyncMock.mockReturnValueOnce(undefined); // SCP upload
+    execSyncMock.mockReturnValueOnce('apt log line 1\napt log line 2'); // SSH exec
 
     confirmMock.mockResolvedValueOnce(false);
 
     await stepVmSetup(makeCtx());
 
-    // Verify fetchVmLogs SSH call was made
+    // Verify fetchVmLogs used sshExecScript (SCP + SSH exec)
+    // The last two execSync calls should be from fetchVmLogs:
+    //   [n-2] SCP upload of the log script
+    //   [n-1] SSH exec with 15_000 timeout
     const allCalls = execSyncMock.mock.calls;
-    const logCall = allCalls.find(
-      (call: unknown[]) => {
-        const cmd = call[0] as string;
-        return cmd.includes('tail -20');
-      },
-    );
-    expect(logCall).toBeDefined();
-    // fetchVmLogs uses 15_000 timeout
-    const logOpts = logCall![1] as { timeout: number };
+    const lastSshCall = allCalls[allCalls.length - 1];
+    expect(lastSshCall).toBeDefined();
+    const logOpts = lastSshCall![1] as { timeout: number };
     expect(logOpts.timeout).toBe(15_000);
   });
 
@@ -475,10 +523,11 @@ describe('stepVmSetup -- fetchVmLogs on timeout', () => {
     execSyncMock.mockImplementationOnce(() => {
       throw Object.assign(new Error('timed out'), { killed: true });
     });
-    // fetchVmLogs also fails
+    // fetchVmLogs also fails (SCP upload fails)
     execSyncMock.mockImplementationOnce(() => {
       throw new Error('SSH connection lost');
     });
+    // Note: SSH exec won't be called since SCP failed
 
     confirmMock.mockResolvedValueOnce(false);
 

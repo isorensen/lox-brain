@@ -14,6 +14,13 @@ All notable changes to this project will be documented in this file.
 - Update README with badges, improved splash, and public install instructions
 - Add CONTRIBUTING.md, CODE_OF_CONDUCT.md, and GitHub issue/PR templates
 
+## [0.2.6] — 2026-04-04
+
+### Fixed
+- `&&` in `--command` interpreted by cmd.exe as command separator on Windows (#40). Removed inline `rm -f` cleanup from `sshExecScript` — temp scripts in `/tmp` are cleaned on VM reboot.
+- Phase and DB setup error handlers now extract gcloud stderr via `extractExecError()` helper, so auto-reports include the actual error instead of generic "Command failed" wrapper.
+- Deduplicated stderr extraction logic into shared `extractExecError()` function (was copy-pasted in 3 catch blocks).
+
 ## [0.2.5] — 2026-04-04
 
 ### Fixed

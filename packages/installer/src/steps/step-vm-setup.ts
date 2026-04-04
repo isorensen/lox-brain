@@ -109,6 +109,27 @@ const SETUP_PHASES: SetupPhase[] = [
 // --------------------------------------------------------------------------
 
 /**
+ * Extract the meaningful error message from an execSync failure.
+ * Prefers gcloud ERROR: lines from stderr, falls back to first stderr line,
+ * then to the generic err.message.
+ */
+function extractExecError(err: unknown): string {
+  let msg = err instanceof Error ? err.message.split('\n')[0] : String(err);
+  if (err && typeof err === 'object' && 'stderr' in err) {
+    const stderr = Buffer.isBuffer((err as { stderr: unknown }).stderr)
+      ? ((err as { stderr: Buffer }).stderr).toString('utf-8').trim()
+      : String((err as { stderr: unknown }).stderr).trim();
+    if (stderr) {
+      const errorLines = stderr.split('\n').filter(l => l.startsWith('ERROR:'));
+      msg = errorLines.length > 0
+        ? errorLines.join(' ')
+        : (stderr.split('\n')[0] || msg);
+    }
+  }
+  return msg;
+}
+
+/**
  * Base gcloud SSH args shared by all SSH helpers.
  */
 function baseSshArgs(project: string, zone: string): string[] {
@@ -202,9 +223,11 @@ async function sshExecScript(
       { timeout: 30_000, stdio: 'pipe' },
     );
 
-    // Execute and clean up on the remote side
+    // Execute on the remote side. No inline cleanup — && is interpreted
+    // as a command separator by cmd.exe on Windows even inside quotes.
+    // The temp script in /tmp is cleaned on next VM reboot.
     const args = baseSshArgs(project, zone);
-    args.push(`--command="bash ${remotePath} && rm -f ${remotePath}"`);
+    args.push(`--command="bash ${remotePath}"`);
     const result = execSync(`gcloud ${args.join(' ')}`, {
       timeout: timeout ?? SSH_TIMEOUT,
       stdio: 'pipe',
@@ -310,20 +333,7 @@ export async function stepVmSetup(ctx: InstallerContext): Promise<StepResult> {
     sshWarmup(project, zone);
     console.log(chalk.green(`  ✓ ${warmupLabel}`));
   } catch (err) {
-    let msg = err instanceof Error ? err.message.split('\n')[0] : String(err);
-    // execSync errors include stderr as a Buffer when stdio is piped
-    if (err && typeof err === 'object' && 'stderr' in err) {
-      const stderr = Buffer.isBuffer((err as { stderr: unknown }).stderr)
-        ? ((err as { stderr: Buffer }).stderr).toString('utf-8').trim()
-        : String((err as { stderr: unknown }).stderr).trim();
-      if (stderr) {
-        const errorLines = stderr.split('\n').filter(l => l.startsWith('ERROR:'));
-        msg = errorLines.length > 0
-          ? errorLines.join(' ')
-          : (stderr.split('\n')[0] || msg);
-      }
-    }
-    return { success: false, message: `SSH warm-up failed: ${msg}` };
+    return { success: false, message: `SSH warm-up failed: ${extractExecError(err)}` };
   }
 
   // Generate a secure DB password
@@ -371,8 +381,7 @@ export async function stepVmSetup(ctx: InstallerContext): Promise<StepResult> {
           const msg = `${phaseLabel} timed out after ${timeout / 1000}s`;
           return { success: false, message: msg };
         }
-        const msg = err instanceof Error ? err.message.split('\n')[0] : String(err);
-        return { success: false, message: `${phaseLabel} failed: ${msg}` };
+        return { success: false, message: `${phaseLabel} failed: ${extractExecError(err)}` };
       }
     }
   }
@@ -416,8 +425,7 @@ export async function stepVmSetup(ctx: InstallerContext): Promise<StepResult> {
           const msg = `${dbLabel} timed out after ${timeout / 1000}s`;
           return { success: false, message: msg };
         }
-        const msg = err instanceof Error ? err.message.split('\n')[0] : String(err);
-        return { success: false, message: `${dbLabel} failed: ${msg}` };
+        return { success: false, message: `${dbLabel} failed: ${extractExecError(err)}` };
       }
     }
   }

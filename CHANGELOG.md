@@ -14,6 +14,14 @@ All notable changes to this project will be documented in this file.
 - Update README with badges, improved splash, and public install instructions
 - Add CONTRIBUTING.md, CODE_OF_CONDUCT.md, and GitHub issue/PR templates
 
+## [0.1.6] — 2026-04-04
+
+### Fixed
+- IAM binding `--condition=None` flag causing parse error on gcloud (#21). Removed the flag entirely — no condition is the default behavior.
+- Service account "does not exist" error during IAM binding (#21). GCP propagation delay after SA creation now handled with 5s initial delay + retry (3 attempts, 5s between each).
+- Raw stack traces on IAM binding and VM creation failures — now caught with clean error messages.
+- VM creation timeout — increased to 120s (was 30s default, VM creation takes 30-60s).
+
 ## [0.1.5] — 2026-04-04
 
 ### Fixed

@@ -14,6 +14,16 @@ All notable changes to this project will be documented in this file.
 - Update README with badges, improved splash, and public install instructions
 - Add CONTRIBUTING.md, CODE_OF_CONDUCT.md, and GitHub issue/PR templates
 
+## [0.1.7] — 2026-04-04
+
+### Fixed
+- VM setup SSH command timing out at 30s (#27). `sshExec()` now uses the declared `SSH_TIMEOUT` constant (5 min default, 10 min for full setup script).
+- Secret Manager password storage using `bash -c` which doesn't exist on Windows. Replaced with cross-platform temp file approach.
+- No error handling in `stepVmSetup` — SSH and secret storage failures now return clean messages.
+
+### Added
+- Timeout retry prompt: when VM setup times out, user is asked "Continue waiting?" instead of failing immediately. Timeout doubles on each retry (max 20 min).
+
 ## [0.1.6] — 2026-04-04
 
 ### Fixed

@@ -20,9 +20,15 @@ This skill encodes the full checklist so nothing slips through.
 
 ### Phase 1 — Understand
 
-1. **Read the issue**: `gh issue view <number>` — understand the bug/feature, environment, steps to reproduce.
-2. **Read related code**: Explore the files involved before proposing changes. Never modify code you haven't read.
-3. **Check for related issues**: `gh issue list --state open` — are there duplicates or related issues?
+1. **Read the issue**: `gh issue view <number> --comments` — understand the bug/feature, environment, steps to reproduce. **Always include `--comments`** to see the full conversation.
+2. **Scan for private data in comments**: Check every comment for sensitive information:
+   - GCP project numbers, project IDs, billing account IDs
+   - Service account emails, API keys, tokens, Help Tokens
+   - Windows user paths (`C:\Users\<name>\...`)
+   - IP addresses, SSH keys, credentials of any kind
+   - If found: **delete the comment** (`gh api repos/OWNER/REPO/issues/comments/ID -X DELETE`) and **create a replacement comment** summarizing the content without the sensitive data. Only repo admins can delete others' comments.
+3. **Read related code**: Explore the files involved before proposing changes. Never modify code you haven't read.
+4. **Check for related issues**: `gh issue list --state open` — are there duplicates or related issues?
 
 ### Phase 2 — Branch
 

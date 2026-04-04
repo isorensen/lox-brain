@@ -1,4 +1,7 @@
 import crypto from 'node:crypto';
+import { writeFileSync, unlinkSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import chalk from 'chalk';
 import { shell } from '../utils/shell.js';
 import { t } from '../i18n/index.js';
@@ -6,11 +9,29 @@ import { renderStepHeader } from '../ui/box.js';
 import { withSpinner } from '../ui/spinner.js';
 import type { InstallerContext, StepResult } from './types.js';
 
+/**
+ * Returns true when an error is caused by a process timeout (SIGTERM / killed).
+ */
+function isTimeoutError(err: unknown): boolean {
+  if (err instanceof Error) {
+    return (
+      err.message.includes('timed out') ||
+      err.message.includes('SIGTERM') ||
+      ('killed' in err && (err as unknown as { killed: boolean }).killed === true)
+    );
+  }
+  if (err !== null && typeof err === 'object' && 'killed' in err) {
+    return (err as { killed: boolean }).killed === true;
+  }
+  return false;
+}
+
 const TOTAL_STEPS = 12;
 const VM_NAME = 'lox-vm';
 const DB_NAME = 'lox_brain';
 const DB_USER = 'lox';
-const SSH_TIMEOUT = 120_000; // 2 minutes per SSH command
+const SSH_TIMEOUT = 300_000; // 5 minutes — VM commands may install packages
+const VM_SETUP_TIMEOUT = 600_000; // 10 minutes — full setup compiles pgvector
 
 /**
  * Execute a command on the VM via IAP tunnel SSH.
@@ -20,6 +41,7 @@ async function sshExec(
   project: string,
   zone: string,
   command: string,
+  timeout?: number,
 ): Promise<string> {
   const { stdout } = await shell('gcloud', [
     'compute', 'ssh', VM_NAME,
@@ -27,7 +49,7 @@ async function sshExec(
     '--project', project,
     '--tunnel-through-iap',
     '--command', command,
-  ]);
+  ], { timeout: timeout ?? SSH_TIMEOUT });
   return stdout;
 }
 
@@ -122,41 +144,77 @@ export async function stepVmSetup(ctx: InstallerContext): Promise<StepResult> {
   // Generate a secure DB password
   const dbPassword = generatePassword();
 
-  // Run the setup script on the VM
-  await withSpinner(
-    `${strings.installing} Node.js 22, PostgreSQL 16, pgvector on VM...`,
-    async () => {
-      const script = buildSetupScript(dbPassword);
-      const output = await sshExec(project, zone, script);
-      if (!output.includes('VM_SETUP_COMPLETE')) {
-        throw new Error('VM setup script did not complete successfully');
+  // Run the setup script on the VM, with timeout-retry loop
+  const script = buildSetupScript(dbPassword);
+  let timeout = VM_SETUP_TIMEOUT;
+  const MAX_TIMEOUT = 1_200_000; // 20 minutes
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    try {
+      await withSpinner(
+        `${strings.installing} Node.js 22, PostgreSQL 16, pgvector on VM...`,
+        async () => {
+          const output = await sshExec(project, zone, script, timeout);
+          if (!output.includes('VM_SETUP_COMPLETE')) {
+            throw new Error('VM setup script did not complete successfully');
+          }
+        },
+      );
+      break; // success — exit loop
+    } catch (err) {
+      if (isTimeoutError(err) && timeout < MAX_TIMEOUT) {
+        const { confirm } = await import('@inquirer/prompts');
+        const shouldRetry = await confirm({
+          message: strings.vm_setup_timeout,
+          default: true,
+        });
+        if (shouldRetry) {
+          timeout = Math.min(timeout * 2, MAX_TIMEOUT);
+          continue;
+        }
       }
-    },
-  );
+      // Non-timeout error, user declined retry, or already at max timeout
+      const msg = err instanceof Error ? err.message.split('\n')[0] : String(err);
+      return { success: false, message: `VM setup failed: ${msg}` };
+    }
+  }
 
   // Store DB password in Secret Manager
-  await withSpinner(
-    'Storing database password in Secret Manager...',
-    async () => {
-      // Create the secret
-      try {
-        await shell('gcloud', [
-          'secrets', 'create', 'lox-db-password',
-          '--replication-policy=automatic',
-          '--project', project,
-        ]);
-      } catch {
-        // Secret may already exist — add a new version
-      }
+  try {
+    await withSpinner(
+      'Storing database password in Secret Manager...',
+      async () => {
+        // Create the secret (may already exist)
+        try {
+          await shell('gcloud', [
+            'secrets', 'create', 'lox-db-password',
+            '--replication-policy=automatic',
+            '--project', project,
+          ]);
+        } catch {
+          // Secret may already exist — add a new version
+        }
 
-      // Add the password as a secret version via stdin
-      // SECURITY: Password is piped, never appears in process args
-      await shell('bash', [
-        '-c',
-        `echo -n "${dbPassword}" | gcloud secrets versions add lox-db-password --data-file=- --project=${project}`,
-      ]);
-    },
-  );
+        // Write password to a temp file for cross-platform compatibility.
+        // SECURITY: File has restrictive permissions (0o600) and is always deleted.
+        const tmpFile = join(tmpdir(), `lox-db-pw-${crypto.randomBytes(8).toString('hex')}`);
+        writeFileSync(tmpFile, dbPassword, { mode: 0o600 });
+        try {
+          await shell('gcloud', [
+            'secrets', 'versions', 'add', 'lox-db-password',
+            `--data-file=${tmpFile}`,
+            '--project', project,
+          ]);
+        } finally {
+          unlinkSync(tmpFile);
+        }
+      },
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message.split('\n')[0] : String(err);
+    return { success: false, message: `Failed to store DB password in Secret Manager: ${msg}` };
+  }
 
   // Store database config
   ctx.config.database = {

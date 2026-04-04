@@ -14,6 +14,11 @@ All notable changes to this project will be documented in this file.
 - Update README with badges, improved splash, and public install instructions
 - Add CONTRIBUTING.md, CODE_OF_CONDUCT.md, and GitHub issue/PR templates
 
+## [0.3.4] — 2026-04-04
+
+### Changed
+- Auto-reported installer failures now include the sub-phase name and source file path, making issues easier to triage (#51)
+
 ## [0.3.3] — 2026-04-04
 
 ### Fixed

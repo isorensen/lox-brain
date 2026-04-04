@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { isProPlanGate, isRepoNotFoundError, repoExists, buildVmSetupScript, isValidPatFormat, gcpSecretExists } from '../../src/steps/step-vault.js';
+import { isProPlanGate, isRepoNotFoundError, repoExists, buildVmSetupScript, isValidPatFormat, gcpSecretExists, VM_SETUP_SCRIPT_REMOTE_PATH } from '../../src/steps/step-vault.js';
 import { shell } from '../../src/utils/shell.js';
 
 vi.mock('../../src/utils/shell.js', () => ({
@@ -172,6 +172,15 @@ describe('buildVmSetupScript', () => {
 
   it('removes itself after running (self-cleanup)', () => {
     expect(script).toContain('rm -- "$0"');
+  });
+
+  it('VM_SETUP_SCRIPT_REMOTE_PATH is an absolute POSIX path', () => {
+    // pscp.exe (Windows Cloud SDK) does not perform tilde expansion — a
+    // destination like lox-vm:~/file.sh lands in a literal "~" directory
+    // and fails. The remote path must start with "/" and contain no "~"
+    // (see #64).
+    expect(VM_SETUP_SCRIPT_REMOTE_PATH.startsWith('/')).toBe(true);
+    expect(VM_SETUP_SCRIPT_REMOTE_PATH).not.toContain('~');
   });
 
   it('ends with a trailing newline', () => {

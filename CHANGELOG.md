@@ -14,6 +14,11 @@ All notable changes to this project will be documented in this file.
 - Update README with badges, improved splash, and public install instructions
 - Add CONTRIBUTING.md, CODE_OF_CONDUCT.md, and GitHub issue/PR templates
 
+## [0.4.1] — 2026-04-04
+
+### Fixed
+- VM cron setup no longer fails on Windows at the SCP step. `pscp.exe` (bundled with the Cloud SDK on Windows) does not perform server-side tilde expansion, so `lox-vm:~/lox-setup-sync.sh` landed in a literal `~` directory and crashed. Uses `/tmp/lox-setup-sync.sh` as an absolute remote path now (#64)
+
 ## [0.4.0] — 2026-04-04
 
 ### Added

@@ -71,4 +71,8 @@ describe('validateLicense', () => {
     const token = jwt.sign({ org: 'credifit' }, privateKey, { algorithm: 'RS256', expiresIn: '365d' });
     expect(validateLicense(token, publicKey)).toBeNull();
   });
+
+  it('should return null for empty public key', () => {
+    expect(validateLicense('sometoken', '')).toBeNull();
+  });
 });

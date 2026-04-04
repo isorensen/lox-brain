@@ -7,6 +7,7 @@ export interface Tool {
   handler: (args: Record<string, unknown>) => Promise<unknown>;
 }
 
+/** Tools that mutate vault state and require authorship attribution. */
 const WRITE_TOOLS = new Set(['write_note']);
 
 export function wrapToolWithCreatedBy(

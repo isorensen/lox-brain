@@ -1,3 +1,7 @@
+import { randomBytes } from 'node:crypto';
+import { writeFileSync, unlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { shell } from './shell.js';
 import { t } from '../i18n/index.js';
 
@@ -96,18 +100,28 @@ export async function offerErrorReport(ctx: ErrorReportContext): Promise<void> {
     const title = `[Auto-report] ${ctx.stepName} failed`;
     const body = buildIssueBody(ctx);
 
-    const result = await shell('gh', [
-      'issue', 'create',
-      '--repo', 'isorensen/lox-brain',
-      '--title', title,
-      '--label', 'bug',
-      '--body', body,
-    ], { timeout: 30_000 });
+    // Write body to a temp file to avoid multiline string truncation
+    // on Windows (cmd.exe /c + execFile drops content after first newline).
+    const tempFilePath = join(tmpdir(), `lox-error-report-${randomBytes(4).toString('hex')}.md`);
+    try {
+      writeFileSync(tempFilePath, body, 'utf-8');
 
-    // gh issue create prints the URL to stdout
-    const issueUrl = result.stdout.trim();
-    if (issueUrl) {
-      console.log(`${strings.error_report_created} ${issueUrl}`);
+      const result = await shell('gh', [
+        'issue', 'create',
+        '--repo', 'isorensen/lox-brain',
+        '--title', title,
+        '--label', 'bug',
+        '--body-file', tempFilePath,
+      ], { timeout: 30_000 });
+
+      // gh issue create prints the URL to stdout
+      const issueUrl = result.stdout.trim();
+      if (issueUrl) {
+        console.log(`${strings.error_report_created} ${issueUrl}`);
+      }
+    } finally {
+      // Best-effort cleanup of temp file
+      try { unlinkSync(tempFilePath); } catch { /* ignore */ }
     }
   } catch {
     // Best-effort: never throw

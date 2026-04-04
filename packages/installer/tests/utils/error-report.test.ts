@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { sanitize, offerErrorReport, type ErrorReportContext } from '../../src/utils/error-report.js';
 
 describe('sanitize', () => {
@@ -72,6 +74,11 @@ describe('sanitize', () => {
   });
 });
 
+// Mock shell at module level so we can inspect calls
+vi.mock('../../src/utils/shell.js', () => ({
+  shell: vi.fn().mockResolvedValue({ stdout: 'https://github.com/isorensen/lox-brain/issues/99', stderr: '' }),
+}));
+
 describe('offerErrorReport', () => {
   const baseCtx: ErrorReportContext = {
     stepName: 'VM Setup',
@@ -86,13 +93,14 @@ describe('offerErrorReport', () => {
   });
 
   it('does not throw when gh is not available', async () => {
-    // Mock confirm to say yes
     vi.mock('@inquirer/prompts', () => ({
       confirm: vi.fn().mockResolvedValue(true),
     }));
 
-    // shell will fail because gh is not available in test env — that's fine
-    // The function should catch and not throw
+    // Re-mock shell to simulate gh not found
+    const { shell } = await import('../../src/utils/shell.js');
+    vi.mocked(shell).mockRejectedValueOnce(new Error('Command not found: gh'));
+
     await expect(offerErrorReport(baseCtx)).resolves.toBeUndefined();
   });
 
@@ -110,5 +118,58 @@ describe('offerErrorReport', () => {
     }));
 
     await expect(offerErrorReport(baseCtx)).resolves.toBeUndefined();
+  });
+
+  it('uses --body-file instead of --body to avoid Windows truncation', async () => {
+    vi.mock('@inquirer/prompts', () => ({
+      confirm: vi.fn().mockResolvedValue(true),
+    }));
+
+    const { shell } = await import('../../src/utils/shell.js');
+    vi.mocked(shell).mockResolvedValueOnce({ stdout: 'https://github.com/isorensen/lox-brain/issues/42', stderr: '' });
+
+    await offerErrorReport(baseCtx);
+
+    expect(shell).toHaveBeenCalledWith(
+      'gh',
+      expect.arrayContaining(['--body-file', expect.stringMatching(/lox-error-report-[0-9a-f]{8}\.md/)]),
+      expect.anything(),
+    );
+    // Must NOT contain --body (without -file)
+    const callArgs = vi.mocked(shell).mock.calls[0]?.[1] ?? [];
+    expect(callArgs).not.toContain('--body');
+  });
+
+  it('cleans up the temp file after creating the report', async () => {
+    vi.mock('@inquirer/prompts', () => ({
+      confirm: vi.fn().mockResolvedValue(true),
+    }));
+
+    const { shell } = await import('../../src/utils/shell.js');
+    vi.mocked(shell).mockResolvedValueOnce({ stdout: 'https://github.com/isorensen/lox-brain/issues/50', stderr: '' });
+
+    await offerErrorReport(baseCtx);
+
+    // Extract the temp file path from the shell call args
+    const callArgs = vi.mocked(shell).mock.calls[0]?.[1] ?? [];
+    const bodyFileIdx = callArgs.indexOf('--body-file');
+    const tempFile = callArgs[bodyFileIdx + 1] as string;
+    expect(existsSync(tempFile)).toBe(false);
+  });
+
+  it('cleans up the temp file even when shell() fails', async () => {
+    vi.mock('@inquirer/prompts', () => ({
+      confirm: vi.fn().mockResolvedValue(true),
+    }));
+
+    const { shell } = await import('../../src/utils/shell.js');
+    vi.mocked(shell).mockRejectedValueOnce(new Error('network error'));
+
+    await offerErrorReport(baseCtx);
+
+    // Verify no temp files with our prefix remain in tmpdir
+    const { readdirSync } = await import('node:fs');
+    const remaining = readdirSync(tmpdir()).filter(f => f.startsWith('lox-error-report-'));
+    expect(remaining).toHaveLength(0);
   });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { isProPlanGate, isRepoNotFoundError, repoExists } from '../../src/steps/step-vault.js';
+import { isProPlanGate, isRepoNotFoundError, repoExists, buildVmSetupScript } from '../../src/steps/step-vault.js';
 import { shell } from '../../src/utils/shell.js';
 
 vi.mock('../../src/utils/shell.js', () => ({
@@ -139,5 +139,45 @@ describe('repoExists', () => {
   it('rethrows "Command not found" errors', async () => {
     vi.mocked(shell).mockRejectedValueOnce(new Error('Command not found: gh'));
     await expect(repoExists('x/y')).rejects.toThrow('Command not found: gh');
+  });
+});
+
+describe('buildVmSetupScript', () => {
+  const script = buildVmSetupScript();
+
+  it('starts with a bash shebang and strict mode', () => {
+    expect(script.startsWith('#!/bin/bash\n')).toBe(true);
+    expect(script).toContain('set -euo pipefail');
+  });
+
+  it('writes ~/sync-vault.sh via heredoc and chmods it', () => {
+    expect(script).toContain("cat > ~/sync-vault.sh <<'LOX_SYNC_EOF'");
+    expect(script).toContain('LOX_SYNC_EOF');
+    expect(script).toContain('chmod +x ~/sync-vault.sh');
+  });
+
+  it('embeds the git sync commands in the heredoc body', () => {
+    expect(script).toContain('cd ~/lox-vault');
+    expect(script).toContain('git fetch origin main');
+    expect(script).toContain('git merge --ff-only origin/main || true');
+    expect(script).toContain('git push origin main');
+  });
+
+  it('installs a 2-minute cron entry for sync-vault.sh', () => {
+    expect(script).toContain('*/2 * * * * ~/sync-vault.sh >> ~/sync-vault.log 2>&1');
+    // Dedup: remove matching line first, then re-add — prevents duplicates on re-run
+    expect(script).toContain('crontab -l 2>/dev/null');
+    expect(script).toContain('crontab -');
+  });
+
+  it('removes itself after running (self-cleanup)', () => {
+    expect(script).toContain('rm -- "$0"');
+  });
+
+  it('ends with a trailing newline', () => {
+    // The script is written to a file and executed via `bash <path>`. A
+    // trailing newline is conventional and ensures POSIX tools treat the
+    // last line as a complete line.
+    expect(script.endsWith('\n')).toBe(true);
   });
 });

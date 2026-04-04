@@ -3,6 +3,8 @@
 import { renderSplash } from './ui/splash.js';
 import { stepLanguage } from './steps/step-language.js';
 import { stepMode } from './steps/step-mode.js';
+import { stepLicense } from './steps/step-license.js';
+import { stepPeers } from './steps/step-peers.js';
 import { stepPrerequisites } from './steps/step-prerequisites.js';
 import { stepGcpAuth } from './steps/step-gcp-auth.js';
 import { stepGcpProject } from './steps/step-gcp-project.js';
@@ -42,6 +44,21 @@ async function main(): Promise<void> {
   // Step 1: Mode Selection
   const modeResult = await stepMode(ctx);
   if (!modeResult.success) process.exit(1);
+
+  // Step 1.5: License Key (team mode only)
+  const LICENSE_PUBLIC_KEY = process.env.LOX_LICENSE_PUBLIC_KEY ?? '';
+  const licenseResult = await stepLicense(ctx, LICENSE_PUBLIC_KEY);
+  if (!licenseResult.success) {
+    console.error(`\n${licenseResult.message}`);
+    process.exit(1);
+  }
+
+  // Step 1.6: Team Peers (team mode only)
+  const peersResult = await stepPeers(ctx);
+  if (!peersResult.success) {
+    console.error(`\n${peersResult.message}`);
+    process.exit(1);
+  }
 
   // Step 2: Prerequisites
   const prereqResult = await stepPrerequisites(ctx);

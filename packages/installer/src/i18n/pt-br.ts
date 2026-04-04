@@ -84,4 +84,22 @@ export const ptBr: I18nStrings = {
   mode_personal_desc: 'Usuário único — seu Segundo Cérebro pessoal.',
   mode_team: 'Equipe',
   mode_team_desc: 'Multi-usuário — cérebro compartilhado para a equipe (requer chave de licença).',
+
+  // License
+  step_license: 'Chave de Licença',
+  license_prompt: 'Insira sua chave de licença Lox Team:',
+  license_valid: 'Licença validada com sucesso.',
+  license_invalid: 'Chave de licença inválida ou expirada. Tente novamente.',
+  license_org: 'Organização',
+  license_max_peers: 'Max peers',
+  license_expires: 'Expira em',
+
+  // Peers
+  step_peers: 'Peers da Equipe',
+  peers_count_prompt: 'Quantos membros na equipe (excluindo o servidor)?',
+  peers_name_prompt: 'Nome do peer',
+  peers_email_prompt: 'Email do peer',
+  peers_generating: 'Gerando pares de chaves WireGuard...',
+  peers_generated: 'Pares de chaves gerados para todos os peers.',
+  peers_conf_written: 'Arquivos de configuração WireGuard escritos em output/',
 };

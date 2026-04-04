@@ -379,9 +379,51 @@ describe('stepVmSetup -- DB setup phase', () => {
     // DB setup is the 7th phase script (index 6)
     const dbScriptContent = writeFileSyncMock.mock.calls[TOTAL_SSH_PHASES - 1][1] as string;
     expect(dbScriptContent).toContain('CREATE USER lox');
-    expect(dbScriptContent).toContain('CREATE DATABASE lox_brain');
+    expect(dbScriptContent).toContain('lox_brain');
     expect(dbScriptContent).toContain('CREATE EXTENSION IF NOT EXISTS vector');
     expect(dbScriptContent).toContain('vault_embeddings');
+  });
+
+  it('uses idempotent role creation (DO block with EXCEPTION)', async () => {
+    mockAllPhasesSuccess();
+
+    await stepVmSetup(makeCtx());
+
+    // DB setup is the 7th phase script (index 6)
+    const dbScriptContent = writeFileSyncMock.mock.calls[TOTAL_SSH_PHASES - 1][1] as string;
+    // Role creation must use DO $$ BEGIN ... EXCEPTION WHEN duplicate_object ... ALTER USER
+    // in that specific order, within a single dollar-quoted block
+    expect(dbScriptContent).toMatch(
+      /DO\s*\\?\$\\?\$.*BEGIN.*CREATE USER lox.*EXCEPTION WHEN duplicate_object.*ALTER USER lox/s
+    );
+  });
+
+  it('uses idempotent database creation (existence-check guard)', async () => {
+    mockAllPhasesSuccess();
+
+    await stepVmSetup(makeCtx());
+
+    const dbScriptContent = writeFileSyncMock.mock.calls[TOTAL_SSH_PHASES - 1][1] as string;
+    // Must check existence via psql first so real createdb errors propagate
+    // Pattern: psql SELECT 1 FROM pg_database ... | grep -q 1 || createdb
+    expect(dbScriptContent).toMatch(/pg_database.*grep -q 1.*\|\|.*createdb/s);
+  });
+});
+
+describe('stepVmSetup -- pgvector phase idempotency', () => {
+  it('cleans up /tmp/pgvector before git clone to handle interrupted previous runs', async () => {
+    mockAllPhasesSuccess();
+
+    await stepVmSetup(makeCtx());
+
+    // pgvector is the 4th phase script (index 3)
+    const pgvectorScript = writeFileSyncMock.mock.calls[3][1] as string;
+    // rm -rf /tmp/pgvector must appear BEFORE git clone
+    const rmIndex = pgvectorScript.indexOf('rm -rf /tmp/pgvector');
+    const cloneIndex = pgvectorScript.indexOf('git clone');
+    expect(rmIndex).toBeGreaterThan(-1);
+    expect(cloneIndex).toBeGreaterThan(-1);
+    expect(rmIndex).toBeLessThan(cloneIndex);
   });
 });
 

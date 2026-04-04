@@ -14,6 +14,11 @@ All notable changes to this project will be documented in this file.
 - Update README with badges, improved splash, and public install instructions
 - Add CONTRIBUTING.md, CODE_OF_CONDUCT.md, and GitHub issue/PR templates
 
+## [0.3.5] — 2026-04-04
+
+### Fixed
+- Installer no longer crashes when branch protection setup is blocked by GitHub Pro requirement on private repos. Emits a warning and continues installation (#55)
+
 ## [0.3.4] — 2026-04-04
 
 ### Changed

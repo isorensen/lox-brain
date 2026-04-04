@@ -93,4 +93,12 @@ export const ptBr: I18nStrings = {
 
   // VM setup
   vm_setup_timeout: 'A configuracao da VM esta demorando mais que o esperado. Continuar aguardando?',
+  vm_phase_system_update: 'Atualizando pacotes do sistema',
+  vm_phase_nodejs: 'Instalando Node.js 22',
+  vm_phase_postgresql: 'Instalando PostgreSQL 16',
+  vm_phase_pgvector: 'Compilando extensao pgvector',
+  vm_phase_db_setup: 'Criando banco de dados e schema',
+  vm_phase_ssh_hardening: 'Fortalecendo configuracao SSH',
+  vm_phase_wireguard: 'Instalando WireGuard',
+  vm_phase_fetching_logs: 'Buscando logs da VM para diagnostico',
 };

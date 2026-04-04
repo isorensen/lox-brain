@@ -14,6 +14,19 @@ All notable changes to this project will be documented in this file.
 - Update README with badges, improved splash, and public install instructions
 - Add CONTRIBUTING.md, CODE_OF_CONDUCT.md, and GitHub issue/PR templates
 
+## [0.2.0] — 2026-04-04
+
+### Added
+- VM setup progress feedback (#29): monolithic SSH script split into 7 individual phases (system update, Node.js, PostgreSQL, pgvector compile, DB setup, SSH hardening, WireGuard), each with its own spinner and timeout
+- VM log fetching on timeout: when a phase times out, installer attempts to fetch last 20 lines from the VM for diagnosis
+- Per-phase timeout retry: each phase can be retried individually with doubled timeout
+- `/issue new <desc>` mode in the `/issue` skill for creating new issues
+- Disclaimer section in README: data responsibility, GCP costs, no liability for breaches
+- i18n: 8 new VM phase strings in en and pt-BR
+
+### Changed
+- Version bump from 0.1.x to 0.2.0 (feature release)
+
 ## [0.1.7] — 2026-04-04
 
 ### Fixed

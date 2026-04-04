@@ -379,9 +379,32 @@ describe('stepVmSetup -- DB setup phase', () => {
     // DB setup is the 7th phase script (index 6)
     const dbScriptContent = writeFileSyncMock.mock.calls[TOTAL_SSH_PHASES - 1][1] as string;
     expect(dbScriptContent).toContain('CREATE USER lox');
-    expect(dbScriptContent).toContain('CREATE DATABASE lox_brain');
+    expect(dbScriptContent).toContain('lox_brain');
     expect(dbScriptContent).toContain('CREATE EXTENSION IF NOT EXISTS vector');
     expect(dbScriptContent).toContain('vault_embeddings');
+  });
+
+  it('uses idempotent role creation (DO block with EXCEPTION)', async () => {
+    mockAllPhasesSuccess();
+
+    await stepVmSetup(makeCtx());
+
+    // DB setup is the 7th phase script (index 6)
+    const dbScriptContent = writeFileSyncMock.mock.calls[TOTAL_SSH_PHASES - 1][1] as string;
+    // Must use DO $$ block with EXCEPTION for idempotent role creation
+    expect(dbScriptContent).toContain('DO');
+    expect(dbScriptContent).toContain('EXCEPTION WHEN duplicate_object');
+    expect(dbScriptContent).toContain('ALTER USER lox');
+  });
+
+  it('uses idempotent database creation (|| true guard)', async () => {
+    mockAllPhasesSuccess();
+
+    await stepVmSetup(makeCtx());
+
+    const dbScriptContent = writeFileSyncMock.mock.calls[TOTAL_SSH_PHASES - 1][1] as string;
+    // createdb with || true, OR a DO block / IF NOT EXISTS guard
+    expect(dbScriptContent).toMatch(/createdb.*\|\| true|CREATE DATABASE.*IF NOT EXISTS|DO.*CREATE DATABASE.*EXCEPTION/s);
   });
 });
 

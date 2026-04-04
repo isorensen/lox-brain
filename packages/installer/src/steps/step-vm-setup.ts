@@ -309,8 +309,8 @@ function buildDbSetupScript(dbPassword: string): string {
     // Create DB user (idempotent: update password if role already exists)
     `sudo -u postgres psql -c "DO \\$\\$ BEGIN CREATE USER ${DB_USER} WITH PASSWORD '${escapedPw}'; EXCEPTION WHEN duplicate_object THEN ALTER USER ${DB_USER} WITH PASSWORD '${escapedPw}'; END \\$\\$;"`,
 
-    // Create database (idempotent: suppress error if already exists)
-    `sudo -u postgres createdb --owner=${DB_USER} ${DB_NAME} 2>/dev/null || true`,
+    // Create database (idempotent: check existence first so real errors propagate)
+    `sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q 1 || sudo -u postgres createdb --owner=${DB_USER} ${DB_NAME}`,
 
     // Enable pgvector extension (already idempotent)
     `sudo -u postgres psql -d ${DB_NAME} -c "CREATE EXTENSION IF NOT EXISTS vector;"`,

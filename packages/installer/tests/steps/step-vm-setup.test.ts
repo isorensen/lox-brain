@@ -391,20 +391,22 @@ describe('stepVmSetup -- DB setup phase', () => {
 
     // DB setup is the 7th phase script (index 6)
     const dbScriptContent = writeFileSyncMock.mock.calls[TOTAL_SSH_PHASES - 1][1] as string;
-    // Must use DO $$ block with EXCEPTION for idempotent role creation
-    expect(dbScriptContent).toContain('DO');
-    expect(dbScriptContent).toContain('EXCEPTION WHEN duplicate_object');
-    expect(dbScriptContent).toContain('ALTER USER lox');
+    // Role creation must use DO $$ BEGIN ... EXCEPTION WHEN duplicate_object ... ALTER USER
+    // in that specific order, within a single dollar-quoted block
+    expect(dbScriptContent).toMatch(
+      /DO\s*\\?\$\\?\$.*BEGIN.*CREATE USER lox.*EXCEPTION WHEN duplicate_object.*ALTER USER lox/s
+    );
   });
 
-  it('uses idempotent database creation (|| true guard)', async () => {
+  it('uses idempotent database creation (existence-check guard)', async () => {
     mockAllPhasesSuccess();
 
     await stepVmSetup(makeCtx());
 
     const dbScriptContent = writeFileSyncMock.mock.calls[TOTAL_SSH_PHASES - 1][1] as string;
-    // createdb with || true, OR a DO block / IF NOT EXISTS guard
-    expect(dbScriptContent).toMatch(/createdb.*\|\| true|CREATE DATABASE.*IF NOT EXISTS|DO.*CREATE DATABASE.*EXCEPTION/s);
+    // Must check existence via psql first so real createdb errors propagate
+    // Pattern: psql SELECT 1 FROM pg_database ... | grep -q 1 || createdb
+    expect(dbScriptContent).toMatch(/pg_database.*grep -q 1.*\|\|.*createdb/s);
   });
 });
 

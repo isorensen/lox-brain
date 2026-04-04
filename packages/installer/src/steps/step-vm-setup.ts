@@ -296,6 +296,9 @@ async function fetchVmLogs(project: string, zone: string): Promise<string | null
  * Separated from other phases because it requires the generated password.
  */
 function buildDbSetupScript(dbPassword: string): string {
+  // Escape single quotes in password for SQL safety
+  const escapedPw = dbPassword.replace(/'/g, "''");
+
   return [
     'set -euo pipefail',
 
@@ -303,12 +306,16 @@ function buildDbSetupScript(dbPassword: string): string {
     "sudo sed -i \"s/#listen_addresses = 'localhost'/listen_addresses = 'localhost'/\" /etc/postgresql/16/main/postgresql.conf",
     'sudo systemctl restart postgresql',
 
-    // Create DB user and database
-    `sudo -u postgres psql -c "CREATE USER ${DB_USER} WITH PASSWORD '${dbPassword}';"`,
-    `sudo -u postgres psql -c "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};"`,
+    // Create DB user (idempotent: update password if role already exists)
+    `sudo -u postgres psql -c "DO \\$\\$ BEGIN CREATE USER ${DB_USER} WITH PASSWORD '${escapedPw}'; EXCEPTION WHEN duplicate_object THEN ALTER USER ${DB_USER} WITH PASSWORD '${escapedPw}'; END \\$\\$;"`,
+
+    // Create database (idempotent: suppress error if already exists)
+    `sudo -u postgres createdb --owner=${DB_USER} ${DB_NAME} 2>/dev/null || true`,
+
+    // Enable pgvector extension (already idempotent)
     `sudo -u postgres psql -d ${DB_NAME} -c "CREATE EXTENSION IF NOT EXISTS vector;"`,
 
-    // Apply schema
+    // Apply schema (already idempotent — all IF NOT EXISTS)
     `sudo -u postgres psql -d ${DB_NAME} -c "
       CREATE TABLE IF NOT EXISTS vault_embeddings (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

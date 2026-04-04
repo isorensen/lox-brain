@@ -47,6 +47,52 @@ describe('DbClient', () => {
       expect(embeddingParam).toBe(JSON.stringify(note.embedding));
     });
 
+    it('should include created_by in INSERT and preserve it on conflict', async () => {
+      mockPool.query.mockResolvedValue({ rowCount: 1 });
+
+      const note: NoteRow = {
+        id: '550e8400-e29b-41d4-a716-446655440000',
+        file_path: 'notes/team-note.md',
+        title: 'Team Note',
+        content: 'Written by eduardo',
+        tags: ['team'],
+        embedding: [0.1, 0.2],
+        file_hash: 'hash456',
+        chunk_index: 0,
+        created_by: 'eduardo',
+      };
+
+      await client.upsertNote(note);
+
+      expect(mockPool.query).toHaveBeenCalledTimes(1);
+      const [sql, params] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('created_by');
+      expect(params).toContain('eduardo');
+      // On conflict, created_by should NOT be overwritten (use COALESCE to preserve original)
+      expect(sql).toContain('COALESCE');
+    });
+
+    it('should pass null created_by when not provided', async () => {
+      mockPool.query.mockResolvedValue({ rowCount: 1 });
+
+      const note: NoteRow = {
+        id: '550e8400-e29b-41d4-a716-446655440000',
+        file_path: 'notes/personal.md',
+        title: 'Personal Note',
+        content: 'No author',
+        tags: [],
+        embedding: [0.1],
+        file_hash: 'hash789',
+        chunk_index: 0,
+      };
+
+      await client.upsertNote(note);
+
+      const [sql, params] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('created_by');
+      expect(params).toContain(null);
+    });
+
     it('should propagate pool.query rejection', async () => {
       mockPool.query.mockRejectedValue(new Error('connection refused'));
 

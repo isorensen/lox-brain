@@ -71,14 +71,15 @@ export class DbClient {
 
   async upsertNote(note: NoteRow): Promise<void> {
     const sql = `
-      INSERT INTO vault_embeddings (id, file_path, title, content, tags, embedding, file_hash, chunk_index, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+      INSERT INTO vault_embeddings (id, file_path, title, content, tags, embedding, file_hash, chunk_index, created_by, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
       ON CONFLICT (file_path, chunk_index) DO UPDATE SET
         title = EXCLUDED.title,
         content = EXCLUDED.content,
         tags = EXCLUDED.tags,
         embedding = EXCLUDED.embedding,
         file_hash = EXCLUDED.file_hash,
+        created_by = COALESCE(vault_embeddings.created_by, EXCLUDED.created_by),
         updated_at = NOW()
     `;
 
@@ -91,6 +92,7 @@ export class DbClient {
       JSON.stringify(note.embedding),
       note.file_hash,
       note.chunk_index,
+      note.created_by ?? null,
     ]);
   }
 

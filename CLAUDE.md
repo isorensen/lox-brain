@@ -124,6 +124,7 @@ Table `vault_embeddings`: `id` (UUID PK), `file_path` (TEXT UNIQUE), `title`, `c
 - TDD cycle: write test first, implement after
 - Update README.md, CHANGELOG.md, TODO.md after each delivery
 - **Versioning (SemVer):** Every PR must include a version bump in all `package.json` files (root + packages/*). Patch for fixes, minor for features, major for breaking changes. Update CHANGELOG.md with the new version entry.
+- **GitHub Releases:** After merging a PR, create a GitHub Release with tag `vX.Y.Z` (e.g., `v0.1.1`). Use the CHANGELOG entry as the release notes body.
 
 ## Contributing
 

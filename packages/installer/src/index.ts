@@ -15,7 +15,7 @@ import { stepObsidian } from './steps/step-obsidian.js';
 import { stepDeploy } from './steps/step-deploy.js';
 import { stepMcp } from './steps/step-mcp.js';
 import { runPostInstall } from './steps/step-post-install.js';
-import { offerErrorReport } from './utils/error-report.js';
+import { offerErrorReport, extractSubPhase, sourceFileForStep } from './utils/error-report.js';
 import { LOX_VERSION } from '@lox-brain/shared';
 import type { InstallerContext } from './steps/types.js';
 
@@ -24,6 +24,8 @@ async function handleStepFailure(stepName: string, message: string | undefined):
   await offerErrorReport({
     stepName,
     errorMessage: message ?? 'Unknown error',
+    subPhase: extractSubPhase(message ?? ''),
+    sourceFile: sourceFileForStep(stepName),
     loxVersion: LOX_VERSION,
     os: `${process.platform} ${process.arch}`,
     nodeVersion: process.version,

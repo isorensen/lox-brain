@@ -68,8 +68,8 @@ describe('DbClient', () => {
       const [sql, params] = mockPool.query.mock.calls[0];
       expect(sql).toContain('created_by');
       expect(params).toContain('eduardo');
-      // On conflict, created_by should NOT be overwritten (use COALESCE to preserve original)
-      expect(sql).toContain('COALESCE');
+      // On conflict, created_by should NOT be overwritten (preserve original over incoming)
+      expect(sql).toContain('COALESCE(vault_embeddings.created_by, EXCLUDED.created_by)');
     });
 
     it('should pass null created_by when not provided', async () => {

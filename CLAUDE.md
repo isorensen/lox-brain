@@ -123,6 +123,7 @@ Table `vault_embeddings`: `id` (UUID PK), `file_path` (TEXT UNIQUE), `title`, `c
 - Commit messages: imperative mood ("Add feature", not "Added feature")
 - TDD cycle: write test first, implement after
 - Update README.md, CHANGELOG.md, TODO.md after each delivery
+- **Versioning (SemVer):** Every PR must include a version bump in all `package.json` files (root + packages/*). Patch for fixes, minor for features, major for breaking changes. Update CHANGELOG.md with the new version entry.
 
 ## Contributing
 

@@ -7,6 +7,23 @@ import type { InstallerContext, StepResult } from './types.js';
 
 const TOTAL_STEPS = 12;
 
+/**
+ * Detect the GitHub Free plan "upgrade to Pro" gate when setting branch
+ * protection on a private repository. The error text may appear in either
+ * err.message or err.stderr depending on how the child process surfaces it.
+ */
+export function isProPlanGate(err: unknown): boolean {
+  const parts: string[] = [];
+  if (err instanceof Error) parts.push(err.message);
+  if (err && typeof err === 'object' && 'stderr' in err) {
+    const stderr = (err as { stderr: unknown }).stderr;
+    if (typeof stderr === 'string') parts.push(stderr);
+  }
+  // Check each surface independently — both signals must appear in the SAME string
+  // to avoid false positives from unrelated mentions across message and stderr.
+  return parts.some(p => p.includes('HTTP 403') && p.includes('Upgrade to GitHub Pro'));
+}
+
 const GITIGNORE_CONTENT = `# Security — NEVER commit secrets
 .env
 .env.*
@@ -141,22 +158,32 @@ export async function stepVault(ctx: InstallerContext): Promise<StepResult> {
     default: '',
   });
 
-  // 6. Set up branch protection
-  await withSpinner(
-    'Setting up branch protection...',
-    async () => {
-      await shell('gh', [
-        'api',
-        `repos/${fullRepo}/branches/main/protection`,
-        '-X', 'PUT',
-        '-H', 'Accept: application/vnd.github+json',
-        '-f', 'required_status_checks=null',
-        '-f', 'enforce_admins=true',
-        '-f', 'required_pull_request_reviews=null',
-        '-f', 'restrictions=null',
-      ]);
-    },
-  );
+  // 6. Set up branch protection (graceful degradation for GitHub Free + private repos)
+  try {
+    await withSpinner(
+      'Setting up branch protection...',
+      async () => {
+        await shell('gh', [
+          'api',
+          `repos/${fullRepo}/branches/main/protection`,
+          '-X', 'PUT',
+          '-H', 'Accept: application/vnd.github+json',
+          '-f', 'required_status_checks=null',
+          '-f', 'enforce_admins=true',
+          '-f', 'required_pull_request_reviews=null',
+          '-f', 'restrictions=null',
+        ]);
+      },
+    );
+  } catch (err) {
+    if (isProPlanGate(err)) {
+      console.log(chalk.yellow(
+        '  ⚠ Branch protection skipped — requires GitHub Pro for private repos. Installation will continue.',
+      ));
+    } else {
+      throw err;
+    }
+  }
 
   // 7. Configure git sync cron on VM (via SSH IAP)
   const projectId = ctx.gcpProjectId ?? 'lox-project';

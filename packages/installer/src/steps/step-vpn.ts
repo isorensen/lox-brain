@@ -1,11 +1,24 @@
 import crypto from 'node:crypto';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+// execSync is intentional here — the command strings are built by trusted
+// buildSshExecCommand / buildScpCommand helpers (no user input), and they
+// require shell interpretation for proper quoting. This mirrors the pattern
+// already established in step-vm-setup.ts.
+import { execSync } from 'node:child_process';
+import { writeFileSync, unlinkSync } from 'node:fs';
+import { writeFile, mkdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import path from 'node:path';
 import chalk from 'chalk';
 import { shell } from '../utils/shell.js';
 import { t } from '../i18n/index.js';
 import { renderStepHeader } from '../ui/box.js';
 import { withSpinner } from '../ui/spinner.js';
+import {
+  buildSshExecCommand,
+  buildScpCommand,
+  buildSshExecScriptCommand,
+} from './step-vm-setup.js';
 import type { InstallerContext, StepResult } from './types.js';
 
 const TOTAL_STEPS = 12;
@@ -17,21 +30,43 @@ const VPN_SUBNET = '10.10.0.0/24';
 const HOST_INTERFACE = 'ens4'; // GCP default NIC
 
 /**
- * Execute a command on the VM via IAP tunnel SSH.
+ * Execute a simple command on the VM via IAP tunnel SSH.
+ * Uses execSync with buildSshExecCommand for Windows compatibility
+ * (avoids cmd.exe interpreting && in shell() / execFile).
  */
-async function sshExec(
-  project: string,
-  zone: string,
-  command: string,
-): Promise<string> {
-  const { stdout } = await shell('gcloud', [
-    'compute', 'ssh', VM_NAME,
-    '--zone', zone,
-    '--project', project,
-    '--tunnel-through-iap',
-    '--command', command,
-  ]);
-  return stdout;
+function vpnSshExec(project: string, zone: string, command: string): string {
+  const result = execSync(buildSshExecCommand(project, zone, command), {
+    timeout: 30_000,
+    stdio: 'pipe',
+    encoding: 'utf-8',
+  });
+  return (result ?? '').trim();
+}
+
+/**
+ * Execute a multi-line script on the VM via SCP + SSH.
+ * Writes the script to a local temp file, SCPs it to the VM, then
+ * executes it remotely. Avoids && chains that break on Windows cmd.exe.
+ */
+async function vpnSshExecScript(project: string, zone: string, script: string): Promise<string> {
+  const suffix = crypto.randomBytes(4).toString('hex');
+  const localTmp = join(tmpdir(), `lox-vpn-${suffix}.sh`);
+  const remotePath = `/tmp/lox-vpn-${suffix}.sh`;
+  writeFileSync(localTmp, script, { mode: 0o700 });
+  try {
+    execSync(buildScpCommand(project, zone, localTmp, remotePath), {
+      timeout: 30_000,
+      stdio: 'pipe',
+    });
+    const result = execSync(buildSshExecScriptCommand(project, zone, remotePath), {
+      timeout: 30_000,
+      stdio: 'pipe',
+      encoding: 'utf-8',
+    });
+    return (result ?? '').trim();
+  } finally {
+    try { unlinkSync(localTmp); } catch { /* ignore */ }
+  }
 }
 
 /**
@@ -116,34 +151,35 @@ export async function stepVpn(ctx: InstallerContext): Promise<StepResult> {
     },
   );
 
-  // Generate WireGuard keys on the VM
+  // Generate WireGuard server keys on the VM
   let serverPublicKey: string;
   await withSpinner(
     'Generating WireGuard server keys on VM...',
     async () => {
-      await sshExec(project, zone, [
+      await vpnSshExecScript(project, zone, [
         'umask 077',
         'wg genkey | sudo tee /etc/wireguard/server_private.key | wg pubkey | sudo tee /etc/wireguard/server_public.key',
-      ].join(' && '));
+      ].join('\n'));
     },
   );
 
-  serverPublicKey = (await sshExec(project, zone, 'sudo cat /etc/wireguard/server_public.key')).trim();
+  serverPublicKey = vpnSshExec(project, zone, 'sudo cat /etc/wireguard/server_public.key');
 
-  // Generate client keys locally
+  // Generate client keys on the VM (Windows has no wg/bash locally)
   let clientPrivateKey: string;
   let clientPublicKey: string;
 
   await withSpinner(
-    'Generating WireGuard client keys locally...',
+    'Generating WireGuard client keys on VM...',
     async () => {
-      const { stdout: privKey } = await shell('wg', ['genkey']);
-      clientPrivateKey = privKey.trim();
-      // Pipe private key to wg pubkey via bash
-      const { stdout: pubKey } = await shell('bash', [
-        '-c', `echo "${clientPrivateKey}" | wg pubkey`,
-      ]);
-      clientPublicKey = pubKey.trim();
+      await vpnSshExecScript(project, zone, [
+        'umask 077',
+        'wg genkey | tee /tmp/lox-client-private.key | wg pubkey > /tmp/lox-client-public.key',
+      ].join('\n'));
+      clientPrivateKey = vpnSshExec(project, zone, 'cat /tmp/lox-client-private.key');
+      clientPublicKey = vpnSshExec(project, zone, 'cat /tmp/lox-client-public.key');
+      // Clean up keys from VM
+      vpnSshExec(project, zone, 'rm -f /tmp/lox-client-private.key /tmp/lox-client-public.key');
     },
   );
 
@@ -151,7 +187,7 @@ export async function stepVpn(ctx: InstallerContext): Promise<StepResult> {
   await withSpinner(
     `${strings.configuring} WireGuard server on VM...`,
     async () => {
-      const serverPrivateKey = (await sshExec(project, zone, 'sudo cat /etc/wireguard/server_private.key')).trim();
+      const serverPrivateKey = vpnSshExec(project, zone, 'sudo cat /etc/wireguard/server_private.key');
 
       const serverConf = [
         '[Interface]',
@@ -166,20 +202,22 @@ export async function stepVpn(ctx: InstallerContext): Promise<StepResult> {
         `AllowedIPs = ${VPN_CLIENT_IP}/32`,
       ].join('\n');
 
-      // Write config and enable the service
-      await sshExec(project, zone, [
+      // Write config and enable the service (script avoids && chains for Windows compat)
+      await vpnSshExecScript(project, zone, [
         `echo '${serverConf}' | sudo tee /etc/wireguard/wg0.conf > /dev/null`,
         'sudo chmod 600 /etc/wireguard/wg0.conf',
         'sudo sysctl -w net.ipv4.ip_forward=1',
         'echo "net.ipv4.ip_forward=1" | sudo tee -a /etc/sysctl.conf > /dev/null',
         'sudo systemctl enable wg-quick@wg0',
         'sudo systemctl start wg-quick@wg0',
-      ].join(' && '));
+      ].join('\n'));
     },
   );
 
   // Write client config locally
-  const clientConfDir = path.join(process.env.HOME ?? '/tmp', '.config', 'lox', 'wireguard');
+  // HOME doesn't exist on Windows — fall back to USERPROFILE
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? '/tmp';
+  const clientConfDir = path.join(home, '.config', 'lox', 'wireguard');
   const clientConfPath = path.join(clientConfDir, 'wg0.conf');
 
   await withSpinner(

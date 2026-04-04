@@ -1,11 +1,17 @@
 ---
 name: issue
-description: Handle GitHub issues end-to-end for the lox-brain project. Use this skill whenever the user mentions an issue number, asks to fix a bug, wants to work on a GitHub issue, says "issue", "#17", "#21", or refers to any open issue. Also trigger when the user asks to check open issues, triage bugs, or work on reported problems. This skill ensures nothing is missed — version bumps, changelog, tests, code review, PR, release, and cleanup.
+description: Handle GitHub issues end-to-end for the lox-brain project. Use this skill whenever the user mentions an issue number, asks to fix a bug, wants to work on a GitHub issue, says "issue", "#17", "#21", or refers to any open issue. Also trigger when the user asks to check open issues, triage bugs, or work on reported problems. Supports "issue new <description>" to create a new issue and start working on it. This skill ensures nothing is missed — version bumps, changelog, tests, code review, PR, release, and cleanup.
 ---
 
 # /issue — GitHub Issue Handler
 
 End-to-end workflow for resolving GitHub issues in the lox-brain monorepo. Covers everything from reading the issue to creating the GitHub Release.
+
+## Usage modes
+
+- `/issue <number>` — Work on an existing issue (full workflow below)
+- `/issue new <description>` — Create a new issue and optionally start working on it
+- `/issue` (no args) — List open issues and ask which to work on
 
 ## Why this skill exists
 
@@ -16,7 +22,21 @@ Handling issues in this project requires a specific checklist that is easy to fo
 
 This skill encodes the full checklist so nothing slips through.
 
-## Workflow
+## Creating a new issue (`/issue new`)
+
+When the user provides a description for a new issue:
+
+1. **Determine issue type**: bug, feature, or enhancement based on the description.
+2. **Draft the issue** using the repo's issue templates. Create via:
+   ```
+   gh issue create --title "<title>" --body "<body>" --label <bug|enhancement>
+   ```
+3. **Show the created issue URL** to the user.
+4. **Ask**: "Want to start working on this issue now?" If yes, proceed with the full workflow below using the new issue number.
+
+Keep the title concise (<70 chars). Use the description body to include context, expected behavior, and any relevant details the user provided.
+
+## Working on an issue (`/issue <number>`)
 
 ### Phase 1 — Understand
 

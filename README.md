@@ -142,6 +142,21 @@ npm run index-vault                      # One-time full vault indexing
 
 Estimated monthly cost: **~US$18/month** (GCE e2-small + 30GB pd-ssd + Cloud NAT + minimal traffic).
 
+## Status
+
+Lox is under active development. The installer and infrastructure setup are being tested and refined. Breaking changes may occur between minor versions. Check the [CHANGELOG](CHANGELOG.md) and [releases](https://github.com/isorensen/lox-brain/releases) for details.
+
+## Disclaimer
+
+This software is provided "as-is" without warranty of any kind. By using Lox, you acknowledge that:
+
+- **You are responsible for your own data.** Lox stores personal notes, credentials, and API keys on infrastructure you provision. The authors are not responsible for any data loss, unauthorized access, or security incidents arising from misconfiguration, vulnerabilities, or misuse.
+- **GCP costs are your responsibility.** The installer provisions cloud resources (VMs, storage, networking) on your GCP account. Monitor your billing to avoid unexpected charges.
+- **No liability for data breaches.** While Lox follows Zero Trust security principles (VPN-only access, encrypted connections, least-privilege IAM), no system is immune to vulnerabilities. The authors disclaim all liability for personal or corporate data exposure.
+- **Review before deploying in production.** This project is designed for personal use. If you use it in a corporate or team environment, conduct your own security review.
+
+See the [MIT License](LICENSE) for the full legal terms.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.

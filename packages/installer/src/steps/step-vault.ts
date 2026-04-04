@@ -98,6 +98,44 @@ export function isRepoNotFoundError(err: unknown): boolean {
 }
 
 /**
+ * Build the bash script that configures git sync on the VM. The script:
+ *   1. Writes ~/sync-vault.sh with the periodic git pull/commit/push logic.
+ *   2. Installs a crontab entry running every 2 minutes (idempotent — removes
+ *      any matching prior line before adding, so re-runs don't duplicate).
+ *   3. Removes itself after running.
+ *
+ * It is uploaded to the VM as a file and executed with a plain
+ * `bash ~/lox-setup-sync.sh` — this avoids passing shell metacharacters
+ * through `gcloud ... --command`, which fails on Windows cmd.exe (see #61).
+ */
+export function buildVmSetupScript(): string {
+  // cronLine must not contain single quotes — embedded in a single-quoted bash assignment below.
+  const cronLine = '*/2 * * * * ~/sync-vault.sh >> ~/sync-vault.log 2>&1';
+  return [
+    '#!/bin/bash',
+    'set -euo pipefail',
+    '',
+    "cat > ~/sync-vault.sh <<'LOX_SYNC_EOF'",
+    '#!/bin/bash',
+    'set -euo pipefail',
+    'cd ~/lox-vault',
+    'git fetch origin main',
+    'git merge --ff-only origin/main || true',
+    'git add -A',
+    'git diff --cached --quiet || git commit -m "auto-sync $(date -u +%Y-%m-%dT%H:%M:%SZ)"',
+    'git push origin main',
+    'LOX_SYNC_EOF',
+    'chmod +x ~/sync-vault.sh',
+    '',
+    `CRON_LINE='${cronLine}'`,
+    '(crontab -l 2>/dev/null | grep -v -F "$CRON_LINE" || true; echo "$CRON_LINE") | crontab -',
+    '',
+    'rm -- "$0"',
+    '',
+  ].join('\n');
+}
+
+/**
  * Check whether a GitHub repo exists and is accessible to the current user.
  * Returns false only for "not found" errors; rethrows other failures (auth,
  * network, missing `gh`) so they surface with the real cause.
@@ -124,7 +162,8 @@ export async function stepVault(ctx: InstallerContext): Promise<StepResult> {
 
   // 1. Ask vault preset
   const { select, input, confirm } = await import('@inquirer/prompts');
-  const { existsSync: fsExistsSync, rmSync } = await import('node:fs');
+  const { existsSync: fsExistsSync, rmSync, writeFileSync, mkdirSync } = await import('node:fs');
+  const { join } = await import('node:path');
   const preset = await select({
     message: strings.step_vault_preset,
     choices: [
@@ -234,8 +273,6 @@ export async function stepVault(ctx: InstallerContext): Promise<StepResult> {
   );
 
   // 4. Create .gitignore with security patterns
-  const { writeFileSync } = await import('node:fs');
-  const { join } = await import('node:path');
   writeFileSync(join(vaultDir, '.gitignore'), GITIGNORE_CONTENT);
   console.log(chalk.green('  ✓ .gitignore created with security patterns'));
 
@@ -294,41 +331,45 @@ export async function stepVault(ctx: InstallerContext): Promise<StepResult> {
   await withSpinner(
     'Configuring git sync cron on VM...',
     async () => {
-      const syncScript = [
-        '#!/bin/bash',
-        'set -euo pipefail',
-        'cd ~/lox-vault',
-        'git fetch origin main',
-        'git merge --ff-only origin/main || true',
-        'git add -A',
-        'git diff --cached --quiet || git commit -m "auto-sync $(date -u +%Y-%m-%dT%H:%M:%SZ)"',
-        'git push origin main',
-      ].join('\n');
+      // Write the full setup (create sync-vault.sh + install cron) into a
+      // local temp file, then SCP it to the VM and execute with a plain
+      // `bash <path>` command. This avoids passing `|`, `(`, `;`, `&&` etc.
+      // through gcloud's --command, which cmd.exe on Windows interprets as
+      // its own shell metacharacters and fragments the command (#61).
+      const { tmpdir } = await import('node:os');
+      const setupScript = buildVmSetupScript();
+      const localScriptPath = join(tmpdir(), `lox-setup-sync-${Date.now()}.sh`);
+      writeFileSync(localScriptPath, setupScript);
 
-      // Create sync script on VM
-      await shell('gcloud', [
-        'compute', 'ssh', vmName,
-        '--project', projectId,
-        '--zone', zone,
-        '--tunnel-through-iap',
-        '--command', `echo '${syncScript}' > ~/sync-vault.sh && chmod +x ~/sync-vault.sh`,
-      ]);
+      try {
+        // Upload the setup script to the VM via IAP-tunneled SCP
+        await shell('gcloud', [
+          'compute', 'scp',
+          '--project', projectId,
+          '--zone', zone,
+          '--tunnel-through-iap',
+          localScriptPath,
+          `${vmName}:~/lox-setup-sync.sh`,
+        ], { timeout: 120_000 });
 
-      // Add crontab entry (every 2 minutes)
-      await shell('gcloud', [
-        'compute', 'ssh', vmName,
-        '--project', projectId,
-        '--zone', zone,
-        '--tunnel-through-iap',
-        '--command', '(crontab -l 2>/dev/null; echo "*/2 * * * * ~/sync-vault.sh >> ~/sync-vault.log 2>&1") | sort -u | crontab -',
-      ]);
+        // Execute the script on the VM — the --command value has no shell
+        // metacharacters, so cmd.exe/bash quoting behaves identically.
+        await shell('gcloud', [
+          'compute', 'ssh', vmName,
+          '--project', projectId,
+          '--zone', zone,
+          '--tunnel-through-iap',
+          '--command', 'bash ~/lox-setup-sync.sh',
+        ], { timeout: 120_000 });
+      } finally {
+        try { rmSync(localScriptPath, { force: true }); } catch { /* best-effort cleanup */ }
+      }
     },
   );
 
   // 8. Install gitleaks pre-commit hook
-  const { existsSync, mkdirSync } = await import('node:fs');
   const hooksDir = join(vaultDir, '.git', 'hooks');
-  if (!existsSync(hooksDir)) {
+  if (!fsExistsSync(hooksDir)) {
     mkdirSync(hooksDir, { recursive: true });
   }
   const hookPath = join(hooksDir, 'pre-commit');

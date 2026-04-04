@@ -14,6 +14,11 @@ All notable changes to this project will be documented in this file.
 - Update README with badges, improved splash, and public install instructions
 - Add CONTRIBUTING.md, CODE_OF_CONDUCT.md, and GitHub issue/PR templates
 
+## [0.3.8] — 2026-04-04
+
+### Fixed
+- Git sync cron setup on VM no longer fails on Windows. The installer now uploads a setup script via `gcloud compute scp` and executes it with a plain `bash <path>`, avoiding `gcloud --command` arguments with `|`, `(`, `;` that Windows cmd.exe interpreted as its own shell metacharacters (#61)
+
 ## [0.3.7] — 2026-04-04
 
 ### Fixed

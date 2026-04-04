@@ -99,6 +99,7 @@ export interface I18nStrings {
   vm_phase_ssh_hardening: string;
   vm_phase_wireguard: string;
   vm_phase_fetching_logs: string;
+  vm_ssh_warmup: string;
 }
 
 export const en: I18nStrings = {
@@ -202,4 +203,5 @@ export const en: I18nStrings = {
   vm_phase_ssh_hardening: 'Hardening SSH configuration',
   vm_phase_wireguard: 'Installing WireGuard',
   vm_phase_fetching_logs: 'Fetching VM logs for diagnosis',
+  vm_ssh_warmup: 'Establishing SSH connection to VM',
 };

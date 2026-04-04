@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { execSync } from 'node:child_process';
 import { writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -108,8 +109,48 @@ const SETUP_PHASES: SetupPhase[] = [
 // --------------------------------------------------------------------------
 
 /**
- * Execute a command on the VM via IAP tunnel SSH.
- * SECURITY: Uses gcloud compute ssh with -- to separate SSH args.
+ * Base gcloud SSH args shared by all SSH helpers.
+ */
+function baseSshArgs(project: string, zone: string): string[] {
+  return [
+    'compute', 'ssh', VM_NAME,
+    `--zone=${zone}`,
+    `--project=${project}`,
+    '--tunnel-through-iap',
+    '--quiet',
+    '--ssh-flag=-o StrictHostKeyChecking=accept-new',
+  ];
+}
+
+/**
+ * Warm-up the SSH connection with stdio inherited so the user can
+ * answer interactive prompts (SSH key passphrase, host key verification).
+ * Must be called once before any piped SSH calls.
+ *
+ * SECURITY: No user-controlled values are interpolated into the command
+ * string. project/zone originate from gcloud config, not user input.
+ */
+function sshWarmup(project: string, zone: string): void {
+  const args = baseSshArgs(project, zone);
+  args.push('--command=echo ok');
+  // execSync is required here (not execFile) because stdio: 'inherit'
+  // must pass through interactive SSH key generation prompts to the user.
+  execSync(`gcloud ${args.join(' ')}`, {
+    timeout: SSH_TIMEOUT,
+    stdio: 'inherit',
+  });
+}
+
+/**
+ * Execute a short command on the VM via IAP tunnel SSH.
+ * Uses execSync with pipe to capture output.
+ *
+ * IMPORTANT: Only use for simple commands without complex quoting
+ * (e.g. tail, echo, journalctl). For multi-line scripts with sed,
+ * SQL, or && chains, use {@link sshExecScript} instead.
+ *
+ * SECURITY: No user-controlled values are interpolated into the command
+ * string. project/zone originate from gcloud config, not user input.
  */
 async function sshExec(
   project: string,
@@ -117,14 +158,62 @@ async function sshExec(
   command: string,
   timeout?: number,
 ): Promise<string> {
-  const { stdout } = await shell('gcloud', [
-    'compute', 'ssh', VM_NAME,
-    '--zone', zone,
-    '--project', project,
-    '--tunnel-through-iap',
-    '--command', command,
-  ], { timeout: timeout ?? SSH_TIMEOUT });
-  return stdout;
+  const args = baseSshArgs(project, zone);
+  args.push(`--command=${command}`);
+  // execSync is required here (not execFile) to avoid cmd.exe argument
+  // parsing issues on Windows — see issue #31.
+  const result = execSync(`gcloud ${args.join(' ')}`, {
+    timeout: timeout ?? SSH_TIMEOUT,
+    stdio: 'pipe',
+    encoding: 'utf-8',
+  });
+  return (result ?? '').trim();
+}
+
+/**
+ * Execute a multi-line script on the VM by uploading it via SCP first.
+ *
+ * This avoids shell quoting issues on Windows where cmd.exe interprets
+ * && and double quotes inside the --command argument. The script is
+ * written to a local temp file, SCP'd to the VM, then executed via SSH.
+ *
+ * SECURITY: No user-controlled values are interpolated into the command
+ * strings. project/zone originate from gcloud config. The script content
+ * is written to a file (not interpolated into a shell command).
+ */
+async function sshExecScript(
+  project: string,
+  zone: string,
+  script: string,
+  timeout?: number,
+): Promise<string> {
+  const suffix = crypto.randomBytes(4).toString('hex');
+  const localTmp = join(tmpdir(), `lox-ssh-${suffix}.sh`);
+  const remotePath = `/tmp/lox-setup-${suffix}.sh`;
+
+  writeFileSync(localTmp, script, { mode: 0o700 });
+
+  try {
+    // Upload script to VM via SCP through IAP tunnel
+    // execSync required for same Windows cmd.exe reasons as sshExec.
+    execSync(
+      `gcloud compute scp ${localTmp} ${VM_NAME}:${remotePath} --zone=${zone} --project=${project} --tunnel-through-iap --quiet`,
+      { timeout: 30_000, stdio: 'pipe' },
+    );
+
+    // Execute and clean up on the remote side
+    const args = baseSshArgs(project, zone);
+    args.push(`--command=bash ${remotePath} && rm -f ${remotePath}`);
+    const result = execSync(`gcloud ${args.join(' ')}`, {
+      timeout: timeout ?? SSH_TIMEOUT,
+      stdio: 'pipe',
+      encoding: 'utf-8',
+    });
+
+    return (result ?? '').trim();
+  } finally {
+    try { unlinkSync(localTmp); } catch { /* ignore */ }
+  }
 }
 
 /**
@@ -211,6 +300,17 @@ export async function stepVmSetup(ctx: InstallerContext): Promise<StepResult> {
 
   console.log(renderStepHeader(7, TOTAL_STEPS, strings.step_postgresql));
 
+  // --- SSH warm-up: handles first-connection key generation interactively ---
+  try {
+    const warmupLabel = strings.vm_ssh_warmup || 'Establishing SSH connection to VM';
+    console.log(chalk.cyan(`  ${warmupLabel}...`));
+    sshWarmup(project, zone);
+    console.log(chalk.green(`  ✓ ${warmupLabel}`));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message.split('\n')[0] : String(err);
+    return { success: false, message: `SSH warm-up failed: ${msg}` };
+  }
+
   // Generate a secure DB password
   const dbPassword = generatePassword();
 
@@ -227,8 +327,8 @@ export async function stepVmSetup(ctx: InstallerContext): Promise<StepResult> {
         await withSpinner(
           `${phaseLabel}...`,
           async () => {
-            const cmd = ['set -euo pipefail', ...phase.commands].join(' && ');
-            await sshExec(project, zone, cmd, timeout);
+            const script = ['set -euo pipefail', ...phase.commands].join(' && ');
+            await sshExecScript(project, zone, script, timeout);
           },
         );
         console.log(chalk.green(`  ✓ ${phaseLabel}`));
@@ -275,7 +375,7 @@ export async function stepVmSetup(ctx: InstallerContext): Promise<StepResult> {
           `${dbLabel}...`,
           async () => {
             const dbScript = buildDbSetupScript(dbPassword);
-            await sshExec(project, zone, dbScript, timeout);
+            await sshExecScript(project, zone, dbScript, timeout);
           },
         );
         console.log(chalk.green(`  ✓ ${dbLabel}`));

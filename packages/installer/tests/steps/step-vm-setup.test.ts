@@ -14,7 +14,17 @@ vi.mock('node:fs', async () => {
   };
 });
 
-// Mock shell utility
+// Mock execSync from node:child_process
+const execSyncMock = vi.fn();
+vi.mock('node:child_process', async () => {
+  const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
+  return {
+    ...actual,
+    execSync: (...args: unknown[]) => execSyncMock(...args),
+  };
+});
+
+// Mock shell utility (still used for Secret Manager calls)
 vi.mock('../../src/utils/shell.js', () => ({
   shell: vi.fn(),
 }));
@@ -52,6 +62,7 @@ vi.mock('../../src/i18n/index.js', () => ({
     vm_phase_ssh_hardening: 'Hardening SSH configuration',
     vm_phase_wireguard: 'Installing WireGuard',
     vm_phase_fetching_logs: 'Fetching VM logs for diagnosis',
+    vm_ssh_warmup: 'Establishing SSH connection to VM',
   }),
 }));
 
@@ -80,27 +91,75 @@ function makeCtx(overrides: Partial<InstallerContext> = {}): InstallerContext {
   } as InstallerContext;
 }
 
-/** Mock all SSH phase calls to succeed, plus Secret Manager calls. */
-function mockAllPhasesSuccess(): void {
-  // 7 SSH phase calls (6 SETUP_PHASES + 1 DB setup)
-  for (let i = 0; i < TOTAL_SSH_PHASES; i++) {
-    shellMock.mockResolvedValueOnce({ stdout: '', stderr: '' });
-  }
-  // Secret create
-  shellMock.mockResolvedValueOnce({ stdout: '', stderr: '' });
-  // Secret version add
-  shellMock.mockResolvedValueOnce({ stdout: '', stderr: '' });
+// --------------------------------------------------------------------------
+// Helpers to classify execSync calls
+// --------------------------------------------------------------------------
+
+/** Check if an execSync call is the SSH warm-up. */
+function isWarmupCall(cmd: string): boolean {
+  return cmd.includes('compute ssh') && cmd.includes('--command=echo ok');
 }
 
-/** Extract SSH calls (gcloud compute ssh) from shellMock history. */
-function getSshCalls(): unknown[][] {
-  return shellMock.mock.calls.filter(
-    (call: unknown[]) => {
-      if (call[0] !== 'gcloud') return false;
-      const args = call[1] as string[];
-      return args.includes('compute') && args.includes('ssh');
-    },
-  );
+/** Check if an execSync call is an SCP upload. */
+function isScpCall(cmd: string): boolean {
+  return cmd.includes('compute scp');
+}
+
+/** Check if an execSync call is an SSH execution (phase script or simple command). */
+function isSshExecCall(cmd: string): boolean {
+  return cmd.includes('compute ssh') && !isWarmupCall(cmd);
+}
+
+/** Check if an execSync call is a fetchVmLogs SSH call. */
+function isFetchLogsCall(cmd: string): boolean {
+  return isSshExecCall(cmd) && cmd.includes('tail -20');
+}
+
+/** Get all execSync calls that are SCP uploads. */
+function getScpCalls(): Array<[string, Record<string, unknown>]> {
+  return execSyncMock.mock.calls.filter(
+    (call: unknown[]) => isScpCall(call[0] as string),
+  ) as Array<[string, Record<string, unknown>]>;
+}
+
+/** Get all execSync calls that are SSH executions (excluding warm-up). */
+function getSshExecCalls(): Array<[string, Record<string, unknown>]> {
+  return execSyncMock.mock.calls.filter(
+    (call: unknown[]) => isSshExecCall(call[0] as string),
+  ) as Array<[string, Record<string, unknown>]>;
+}
+
+/**
+ * Mock all phases to succeed.
+ * Pattern per phase: SCP upload (returns undefined) + SSH exec (returns '').
+ * Plus warm-up at the start and Secret Manager at the end.
+ */
+function mockAllPhasesSuccess(): void {
+  // Warm-up call (stdio: inherit, returns undefined)
+  execSyncMock.mockReturnValueOnce(undefined);
+
+  // 7 phases: each needs SCP + SSH exec
+  for (let i = 0; i < TOTAL_SSH_PHASES; i++) {
+    execSyncMock.mockReturnValueOnce(undefined); // SCP upload
+    execSyncMock.mockReturnValueOnce('');         // SSH exec
+  }
+
+  // Secret Manager (still uses shell())
+  shellMock.mockResolvedValueOnce({ stdout: '', stderr: '' }); // create
+  shellMock.mockResolvedValueOnce({ stdout: '', stderr: '' }); // version add
+}
+
+/**
+ * Mock warm-up success + N phase successes.
+ */
+function mockWarmupAndPhases(n: number): void {
+  // Warm-up
+  execSyncMock.mockReturnValueOnce(undefined);
+  // N phases
+  for (let i = 0; i < n; i++) {
+    execSyncMock.mockReturnValueOnce(undefined); // SCP
+    execSyncMock.mockReturnValueOnce('');         // SSH exec
+  }
 }
 
 beforeEach(() => {
@@ -123,100 +182,178 @@ describe('stepVmSetup -- early exit', () => {
   });
 });
 
-describe('stepVmSetup -- phased execution', () => {
-  it('executes each phase as a separate SSH call', async () => {
+describe('stepVmSetup -- SSH warm-up', () => {
+  it('calls sshWarmup with stdio inherit before phases', async () => {
     mockAllPhasesSuccess();
 
     const result = await stepVmSetup(makeCtx());
     expect(result.success).toBe(true);
 
-    const sshCalls = getSshCalls();
+    // First execSync call should be the warm-up
+    const firstCall = execSyncMock.mock.calls[0];
+    const cmd = firstCall[0] as string;
+    expect(isWarmupCall(cmd)).toBe(true);
+    expect(cmd).toContain('--quiet');
+    expect(cmd).toContain('StrictHostKeyChecking=accept-new');
+
+    // Warm-up uses stdio: 'inherit' for interactive prompts
+    const opts = firstCall[1] as Record<string, unknown>;
+    expect(opts.stdio).toBe('inherit');
+  });
+
+  it('returns failure when warm-up fails', async () => {
+    execSyncMock.mockImplementationOnce(() => {
+      throw new Error('SSH key generation failed');
+    });
+
+    const result = await stepVmSetup(makeCtx());
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('SSH warm-up failed');
+    expect(result.message).toContain('SSH key generation failed');
+  });
+});
+
+describe('stepVmSetup -- phased execution via SCP', () => {
+  it('executes each phase as SCP upload + SSH exec', async () => {
+    mockAllPhasesSuccess();
+
+    const result = await stepVmSetup(makeCtx());
+    expect(result.success).toBe(true);
+
+    const scpCalls = getScpCalls();
+    const sshCalls = getSshExecCalls();
+    expect(scpCalls.length).toBe(TOTAL_SSH_PHASES);
     expect(sshCalls.length).toBe(TOTAL_SSH_PHASES);
   });
 
-  it('uses phase-specific timeouts for each SSH call', async () => {
+  it('writes script to temp file before SCP upload', async () => {
+    mockAllPhasesSuccess();
+
+    await stepVmSetup(makeCtx());
+
+    // writeFileSync is called for each phase script + 1 for Secret Manager temp file
+    // 7 phases + 1 secret = 8 calls
+    expect(writeFileSyncMock).toHaveBeenCalledTimes(TOTAL_SSH_PHASES + 1);
+
+    // First 7 calls are phase scripts with mode 0o700
+    for (let i = 0; i < TOTAL_SSH_PHASES; i++) {
+      const call = writeFileSyncMock.mock.calls[i];
+      const [path, content, opts] = call;
+      expect(path).toContain('lox-ssh-');
+      expect(typeof content).toBe('string');
+      expect(content).toContain('set -euo pipefail');
+      expect(opts).toMatchObject({ mode: 0o700 });
+    }
+  });
+
+  it('cleans up local temp files after each phase', async () => {
+    mockAllPhasesSuccess();
+
+    await stepVmSetup(makeCtx());
+
+    // unlinkSync called for each phase script (7) + 1 for Secret Manager temp file
+    expect(unlinkSyncMock).toHaveBeenCalledTimes(TOTAL_SSH_PHASES + 1);
+  });
+
+  it('includes --quiet and StrictHostKeyChecking in SSH args', async () => {
+    mockAllPhasesSuccess();
+
+    await stepVmSetup(makeCtx());
+
+    const sshCalls = getSshExecCalls();
+    for (const call of sshCalls) {
+      const cmd = call[0] as string;
+      expect(cmd).toContain('--quiet');
+      expect(cmd).toContain('StrictHostKeyChecking=accept-new');
+    }
+  });
+
+  it('uses phase-specific timeouts for SSH exec calls', async () => {
     mockAllPhasesSuccess();
 
     const result = await stepVmSetup(makeCtx());
     expect(result.success).toBe(true);
 
-    const sshCalls = getSshCalls();
+    const sshCalls = getSshExecCalls();
 
     // Expected timeouts: system_update=300k, nodejs=180k, postgresql=180k,
     // pgvector=300k, ssh_hardening=60k, wireguard=120k, db_setup=120k
     const expectedTimeouts = [300_000, 180_000, 180_000, 300_000, 60_000, 120_000, 120_000];
     for (let i = 0; i < TOTAL_SSH_PHASES; i++) {
-      const callOpts = sshCalls[i][2] as { timeout: number };
-      expect(callOpts.timeout).toBe(expectedTimeouts[i]);
+      const opts = sshCalls[i][1] as { timeout: number };
+      expect(opts.timeout).toBe(expectedTimeouts[i]);
     }
   });
 
   it('stops at the first failing phase and reports which phase failed', async () => {
-    // Phase 1 (system update) succeeds
-    shellMock.mockResolvedValueOnce({ stdout: '', stderr: '' });
-    // Phase 2 (nodejs) succeeds
-    shellMock.mockResolvedValueOnce({ stdout: '', stderr: '' });
-    // Phase 3 (postgresql) fails
-    shellMock.mockRejectedValueOnce(new Error('apt-get failed: unable to locate package'));
+    // Warm-up succeeds
+    execSyncMock.mockReturnValueOnce(undefined);
+    // Phase 1 (system update) - SCP + SSH succeed
+    execSyncMock.mockReturnValueOnce(undefined);
+    execSyncMock.mockReturnValueOnce('');
+    // Phase 2 (nodejs) - SCP + SSH succeed
+    execSyncMock.mockReturnValueOnce(undefined);
+    execSyncMock.mockReturnValueOnce('');
+    // Phase 3 (postgresql) - SCP succeeds, SSH fails
+    execSyncMock.mockReturnValueOnce(undefined);
+    execSyncMock.mockImplementationOnce(() => {
+      throw new Error('apt-get failed: unable to locate package');
+    });
 
     const result = await stepVmSetup(makeCtx());
     expect(result.success).toBe(false);
     expect(result.message).toContain('Installing PostgreSQL 16');
     expect(result.message).toContain('failed');
     expect(result.message).toContain('apt-get failed');
-
-    // Only 3 SSH calls should have been made
-    const sshCalls = getSshCalls();
-    expect(sshCalls.length).toBe(3);
   });
 
-  it('includes set -euo pipefail in each phase command', async () => {
+  it('includes set -euo pipefail in each phase script', async () => {
     mockAllPhasesSuccess();
 
     await stepVmSetup(makeCtx());
 
-    const sshCalls = getSshCalls();
-    for (const call of sshCalls) {
-      const args = call[1] as string[];
-      const cmdIdx = args.indexOf('--command');
-      const cmd = args[cmdIdx + 1];
-      expect(cmd).toContain('set -euo pipefail');
+    // Check writeFileSync calls for phase scripts
+    for (let i = 0; i < TOTAL_SSH_PHASES; i++) {
+      const content = writeFileSyncMock.mock.calls[i][1] as string;
+      expect(content).toContain('set -euo pipefail');
     }
   });
 });
 
 describe('stepVmSetup -- DB setup phase', () => {
-  it('passes dbPassword in the DB setup SSH command', async () => {
+  it('passes dbPassword in the DB setup script', async () => {
     mockAllPhasesSuccess();
 
     await stepVmSetup(makeCtx());
 
-    const sshCalls = getSshCalls();
-    // DB setup is the last SSH call (index 6)
-    const dbCall = sshCalls[TOTAL_SSH_PHASES - 1];
-    const args = dbCall[1] as string[];
-    const cmdIdx = args.indexOf('--command');
-    const cmd = args[cmdIdx + 1];
-
-    // Must contain DB setup keywords
-    expect(cmd).toContain('CREATE USER lox');
-    expect(cmd).toContain('CREATE DATABASE lox_brain');
-    expect(cmd).toContain('CREATE EXTENSION IF NOT EXISTS vector');
-    expect(cmd).toContain('vault_embeddings');
+    // DB setup is the 7th phase script (index 6)
+    const dbScriptContent = writeFileSyncMock.mock.calls[TOTAL_SSH_PHASES - 1][1] as string;
+    expect(dbScriptContent).toContain('CREATE USER lox');
+    expect(dbScriptContent).toContain('CREATE DATABASE lox_brain');
+    expect(dbScriptContent).toContain('CREATE EXTENSION IF NOT EXISTS vector');
+    expect(dbScriptContent).toContain('vault_embeddings');
   });
 });
 
 describe('stepVmSetup -- per-phase timeout retry', () => {
   it('prompts user on timeout, retries with doubled timeout, and succeeds', async () => {
-    // Phase 1 (system update) times out
-    shellMock.mockRejectedValueOnce(Object.assign(new Error('timed out'), { killed: true }));
-    // fetchVmLogs call — return some logs
-    shellMock.mockResolvedValueOnce({ stdout: 'some log output', stderr: '' });
-    // Retry phase 1 — succeeds
-    shellMock.mockResolvedValueOnce({ stdout: '', stderr: '' });
-    // Remaining 6 phases succeed
+    // Warm-up
+    execSyncMock.mockReturnValueOnce(undefined);
+    // Phase 1 SCP succeeds
+    execSyncMock.mockReturnValueOnce(undefined);
+    // Phase 1 SSH exec times out
+    execSyncMock.mockImplementationOnce(() => {
+      throw Object.assign(new Error('timed out'), { killed: true });
+    });
+    // fetchVmLogs — sshExec for simple command (no SCP)
+    execSyncMock.mockReturnValueOnce('some log output');
+    // Retry phase 1 SCP + SSH succeed
+    execSyncMock.mockReturnValueOnce(undefined);
+    execSyncMock.mockReturnValueOnce('');
+    // Remaining 6 phases (SCP + SSH each)
     for (let i = 0; i < TOTAL_SSH_PHASES - 1; i++) {
-      shellMock.mockResolvedValueOnce({ stdout: '', stderr: '' });
+      execSyncMock.mockReturnValueOnce(undefined);
+      execSyncMock.mockReturnValueOnce('');
     }
     // Secret Manager
     shellMock.mockResolvedValueOnce({ stdout: '', stderr: '' });
@@ -228,19 +365,28 @@ describe('stepVmSetup -- per-phase timeout retry', () => {
     expect(result.success).toBe(true);
     expect(confirmMock).toHaveBeenCalledOnce();
 
-    // The retry call should use doubled timeout (300_000 * 2 = 600_000)
-    const sshCalls = getSshCalls();
-    // Call index 2 is the retry of phase 1 (index 0 = fail, index 1 = fetchVmLogs, index 2 = retry)
-    const retryCall = sshCalls[2];
-    const retryOpts = retryCall[2] as { timeout: number };
+    // Verify the retry SSH exec call uses doubled timeout (300_000 * 2 = 600_000)
+    // Find the SSH exec calls for phase 1 (the retry)
+    const sshExecCalls = getSshExecCalls();
+    // First SSH exec is the failed one, second is fetchVmLogs, third is the retry
+    const retryCall = sshExecCalls[2];
+    const retryOpts = retryCall[1] as { timeout: number };
     expect(retryOpts.timeout).toBe(600_000);
   });
 
   it('returns timeout error with phase name when user declines retry', async () => {
-    // Phase 1 times out
-    shellMock.mockRejectedValueOnce(Object.assign(new Error('timed out'), { killed: true }));
-    // fetchVmLogs — fails
-    shellMock.mockRejectedValueOnce(new Error('cannot connect'));
+    // Warm-up
+    execSyncMock.mockReturnValueOnce(undefined);
+    // Phase 1 SCP succeeds
+    execSyncMock.mockReturnValueOnce(undefined);
+    // Phase 1 SSH exec times out
+    execSyncMock.mockImplementationOnce(() => {
+      throw Object.assign(new Error('timed out'), { killed: true });
+    });
+    // fetchVmLogs fails
+    execSyncMock.mockImplementationOnce(() => {
+      throw new Error('cannot connect');
+    });
 
     confirmMock.mockResolvedValueOnce(false);
 
@@ -251,13 +397,22 @@ describe('stepVmSetup -- per-phase timeout retry', () => {
   });
 
   it('fails immediately without prompt when already at max timeout', async () => {
-    // Phase 1 times out — user says yes
-    shellMock.mockRejectedValueOnce(Object.assign(new Error('timed out'), { killed: true }));
-    shellMock.mockResolvedValueOnce({ stdout: '', stderr: '' }); // fetchVmLogs
+    // Warm-up
+    execSyncMock.mockReturnValueOnce(undefined);
+    // Phase 1 SCP + SSH timeout
+    execSyncMock.mockReturnValueOnce(undefined);
+    execSyncMock.mockImplementationOnce(() => {
+      throw Object.assign(new Error('timed out'), { killed: true });
+    });
+    // fetchVmLogs
+    execSyncMock.mockReturnValueOnce('');
     confirmMock.mockResolvedValueOnce(true);
 
-    // Retry at doubled timeout — also times out
-    shellMock.mockRejectedValueOnce(Object.assign(new Error('timed out'), { killed: true }));
+    // Retry at doubled timeout — SCP succeeds, SSH also times out
+    execSyncMock.mockReturnValueOnce(undefined);
+    execSyncMock.mockImplementationOnce(() => {
+      throw Object.assign(new Error('timed out'), { killed: true });
+    });
 
     const result = await stepVmSetup(makeCtx());
     expect(result.success).toBe(false);
@@ -267,7 +422,13 @@ describe('stepVmSetup -- per-phase timeout retry', () => {
   });
 
   it('does NOT prompt on non-timeout errors', async () => {
-    shellMock.mockRejectedValueOnce(new Error('Connection refused'));
+    // Warm-up
+    execSyncMock.mockReturnValueOnce(undefined);
+    // Phase 1 SCP succeeds, SSH fails with non-timeout error
+    execSyncMock.mockReturnValueOnce(undefined);
+    execSyncMock.mockImplementationOnce(() => {
+      throw new Error('Connection refused');
+    });
 
     const result = await stepVmSetup(makeCtx());
     expect(result.success).toBe(false);
@@ -278,38 +439,50 @@ describe('stepVmSetup -- per-phase timeout retry', () => {
 
 describe('stepVmSetup -- fetchVmLogs on timeout', () => {
   it('attempts to fetch VM logs when a phase times out', async () => {
-    // Phase 1 times out
-    shellMock.mockRejectedValueOnce(Object.assign(new Error('timed out'), { killed: true }));
-    // fetchVmLogs succeeds
-    shellMock.mockResolvedValueOnce({ stdout: 'apt log line 1\napt log line 2', stderr: '' });
+    // Warm-up
+    execSyncMock.mockReturnValueOnce(undefined);
+    // Phase 1 SCP succeeds, SSH times out
+    execSyncMock.mockReturnValueOnce(undefined);
+    execSyncMock.mockImplementationOnce(() => {
+      throw Object.assign(new Error('timed out'), { killed: true });
+    });
+    // fetchVmLogs succeeds (uses sshExec, not sshExecScript — no SCP)
+    execSyncMock.mockReturnValueOnce('apt log line 1\napt log line 2');
 
-    confirmMock.mockResolvedValueOnce(false); // user declines retry
+    confirmMock.mockResolvedValueOnce(false);
 
     await stepVmSetup(makeCtx());
 
     // Verify fetchVmLogs SSH call was made
-    const sshCalls = getSshCalls();
-    expect(sshCalls.length).toBe(2); // phase attempt + fetchVmLogs
-    const logCall = sshCalls[1];
-    const logArgs = logCall[1] as string[];
-    const cmdIdx = logArgs.indexOf('--command');
-    const logCmd = logArgs[cmdIdx + 1];
-    expect(logCmd).toContain('tail -20');
+    const allCalls = execSyncMock.mock.calls;
+    const logCall = allCalls.find(
+      (call: unknown[]) => {
+        const cmd = call[0] as string;
+        return cmd.includes('tail -20');
+      },
+    );
+    expect(logCall).toBeDefined();
     // fetchVmLogs uses 15_000 timeout
-    const logOpts = logCall[2] as { timeout: number };
+    const logOpts = logCall![1] as { timeout: number };
     expect(logOpts.timeout).toBe(15_000);
   });
 
   it('continues gracefully when fetchVmLogs fails', async () => {
-    // Phase 1 times out
-    shellMock.mockRejectedValueOnce(Object.assign(new Error('timed out'), { killed: true }));
+    // Warm-up
+    execSyncMock.mockReturnValueOnce(undefined);
+    // Phase 1 SCP succeeds, SSH times out
+    execSyncMock.mockReturnValueOnce(undefined);
+    execSyncMock.mockImplementationOnce(() => {
+      throw Object.assign(new Error('timed out'), { killed: true });
+    });
     // fetchVmLogs also fails
-    shellMock.mockRejectedValueOnce(new Error('SSH connection lost'));
+    execSyncMock.mockImplementationOnce(() => {
+      throw new Error('SSH connection lost');
+    });
 
     confirmMock.mockResolvedValueOnce(false);
 
     const result = await stepVmSetup(makeCtx());
-    // Should still return a clean error, not crash
     expect(result.success).toBe(false);
     expect(result.message).toContain('timed out');
   });
@@ -322,23 +495,22 @@ describe('stepVmSetup -- Secret Manager uses temp file (no bash)', () => {
     const result = await stepVmSetup(makeCtx());
     expect(result.success).toBe(true);
 
-    // writeFileSync should have been called with a temp file path and mode 0o600
-    expect(writeFileSyncMock).toHaveBeenCalledOnce();
-    const [tmpPath, content, opts] = writeFileSyncMock.mock.calls[0];
+    // The last writeFileSync call is for the Secret Manager temp file
+    const secretCall = writeFileSyncMock.mock.calls[TOTAL_SSH_PHASES];
+    const [tmpPath, content, opts] = secretCall;
     expect(typeof tmpPath).toBe('string');
     expect(tmpPath).toMatch(/lox-db-pw-/);
     expect(typeof content).toBe('string');
     expect(content.length).toBeGreaterThan(0);
     expect(opts).toMatchObject({ mode: 0o600 });
 
-    // unlinkSync should have been called to clean up
-    expect(unlinkSyncMock).toHaveBeenCalledOnce();
-    expect(unlinkSyncMock).toHaveBeenCalledWith(tmpPath);
+    // unlinkSync should clean up the secret temp file
+    const secretUnlinkCall = unlinkSyncMock.mock.calls[TOTAL_SSH_PHASES];
+    expect(secretUnlinkCall[0]).toBe(tmpPath);
 
     // The secret version add call should use --data-file, NOT bash
-    // Secret calls are the last 2 shell calls
-    const allCalls = shellMock.mock.calls;
-    const secretAddCall = allCalls[allCalls.length - 1];
+    const allShellCalls = shellMock.mock.calls;
+    const secretAddCall = allShellCalls[allShellCalls.length - 1];
     expect(secretAddCall[0]).toBe('gcloud');
     const secretArgs = secretAddCall[1] as string[];
     expect(secretArgs).toContain('secrets');
@@ -348,7 +520,7 @@ describe('stepVmSetup -- Secret Manager uses temp file (no bash)', () => {
     expect(dataFileArg).toBeDefined();
     expect(dataFileArg).toContain('lox-db-pw-');
 
-    // bash should NEVER be called
+    // bash should NEVER be called via shell()
     const bashCalls = shellMock.mock.calls.filter(
       (call: unknown[]) => call[0] === 'bash',
     );
@@ -356,9 +528,11 @@ describe('stepVmSetup -- Secret Manager uses temp file (no bash)', () => {
   });
 
   it('deletes temp file even when gcloud fails', async () => {
-    // All SSH phases succeed
+    // Warm-up + all phases succeed
+    execSyncMock.mockReturnValueOnce(undefined);
     for (let i = 0; i < TOTAL_SSH_PHASES; i++) {
-      shellMock.mockResolvedValueOnce({ stdout: '', stderr: '' });
+      execSyncMock.mockReturnValueOnce(undefined);
+      execSyncMock.mockReturnValueOnce('');
     }
     // Secret create — succeeds
     shellMock.mockResolvedValueOnce({ stdout: '', stderr: '' });
@@ -369,14 +543,24 @@ describe('stepVmSetup -- Secret Manager uses temp file (no bash)', () => {
     expect(result.success).toBe(false);
     expect(result.message).toContain('Failed to store DB password in Secret Manager');
 
-    // Temp file must still be cleaned up
-    expect(unlinkSyncMock).toHaveBeenCalledOnce();
+    // Secret Manager temp file must still be cleaned up
+    // It's the last unlinkSync call
+    const secretUnlinks = unlinkSyncMock.mock.calls.filter(
+      (call: unknown[]) => (call[0] as string).includes('lox-db-pw-'),
+    );
+    expect(secretUnlinks.length).toBe(1);
   });
 });
 
 describe('stepVmSetup -- error handling', () => {
   it('returns clean error on SSH phase failure (no stack trace)', async () => {
-    shellMock.mockRejectedValueOnce(new Error('Connection refused\nstack trace line'));
+    // Warm-up
+    execSyncMock.mockReturnValueOnce(undefined);
+    // Phase 1 SCP + SSH fail
+    execSyncMock.mockReturnValueOnce(undefined);
+    execSyncMock.mockImplementationOnce(() => {
+      throw new Error('Connection refused\nstack trace line');
+    });
 
     const result = await stepVmSetup(makeCtx());
     expect(result.success).toBe(false);
@@ -387,9 +571,11 @@ describe('stepVmSetup -- error handling', () => {
   });
 
   it('returns clean error on secret storage failure', async () => {
-    // All SSH phases succeed
+    // Warm-up + all phases
+    execSyncMock.mockReturnValueOnce(undefined);
     for (let i = 0; i < TOTAL_SSH_PHASES; i++) {
-      shellMock.mockResolvedValueOnce({ stdout: '', stderr: '' });
+      execSyncMock.mockReturnValueOnce(undefined);
+      execSyncMock.mockReturnValueOnce('');
     }
     // Secret create — succeeds
     shellMock.mockResolvedValueOnce({ stdout: '', stderr: '' });

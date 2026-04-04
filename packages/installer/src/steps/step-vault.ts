@@ -105,9 +105,11 @@ export function isRepoNotFoundError(err: unknown): boolean {
  *   3. Removes itself after running.
  *
  * It is uploaded to the VM as a file and executed with a plain
- * `bash ~/lox-setup-sync.sh` — this avoids passing shell metacharacters
+ * `bash /tmp/lox-setup-sync.sh` — this avoids passing shell metacharacters
  * through `gcloud ... --command`, which fails on Windows cmd.exe (see #61).
  */
+export const VM_SETUP_SCRIPT_REMOTE_PATH = '/tmp/lox-setup-sync.sh';
+
 export function buildVmSetupScript(): string {
   // cronLine must not contain single quotes — embedded in a single-quoted bash assignment below.
   const cronLine = '*/2 * * * * ~/sync-vault.sh >> ~/sync-vault.log 2>&1';
@@ -439,14 +441,17 @@ export async function stepVault(ctx: InstallerContext): Promise<StepResult> {
       writeFileSync(localScriptPath, setupScript);
 
       try {
-        // Upload the setup script to the VM via IAP-tunneled SCP
+        // Upload the setup script to the VM via IAP-tunneled SCP. Use an
+        // absolute remote path (/tmp) — pscp.exe (Windows Cloud SDK) does
+        // not perform tilde expansion, so `~/...` destinations land in a
+        // literal directory named "~" and fail (see #64).
         await shell('gcloud', [
           'compute', 'scp',
           '--project', projectId,
           '--zone', zone,
           '--tunnel-through-iap',
           localScriptPath,
-          `${vmName}:~/lox-setup-sync.sh`,
+          `${vmName}:${VM_SETUP_SCRIPT_REMOTE_PATH}`,
         ], { timeout: 120_000 });
 
         // Execute the script on the VM — the --command value has no shell
@@ -456,7 +461,7 @@ export async function stepVault(ctx: InstallerContext): Promise<StepResult> {
           '--project', projectId,
           '--zone', zone,
           '--tunnel-through-iap',
-          '--command', 'bash ~/lox-setup-sync.sh',
+          '--command', `bash ${VM_SETUP_SCRIPT_REMOTE_PATH}`,
         ], { timeout: 120_000 });
       } finally {
         try { rmSync(localScriptPath, { force: true }); } catch { /* best-effort cleanup */ }

@@ -15,7 +15,7 @@ Permite ao Claude Code adicionar notas, processar URLs, analisar imagens, import
 
 ## Interface primaria: MCP Tools
 
-Usa `mcp__lox-brain__write_note`, `search_semantic`, `search_text`, `read_note`, `list_recent` do [[Lox - MCP Server]]. Filesystem direto (`~/Obsidian/iSorensen/`) apenas para binarios (imagens, PDFs).
+Usa `mcp__lox-brain__write_note`, `search_semantic`, `search_text`, `read_note`, `list_recent` do [[Lox - MCP Server]]. Filesystem direto (`<your-vault-path>`) apenas para binarios (imagens, PDFs).
 
 ## Workflow de ingestao
 

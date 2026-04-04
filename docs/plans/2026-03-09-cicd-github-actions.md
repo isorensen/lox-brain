@@ -4,7 +4,7 @@
 
 **Goal:** Automate code validation on PRs and deploy to VM on merge to main.
 
-**Architecture:** Two GitHub Actions workflows — `ci.yml` validates PRs (build, test, coverage, audit), `deploy.yml` deploys on merge to main via `gcloud compute ssh` through IAP tunnel. GCP service account `github-actions-deploy` with minimal roles.
+**Architecture:** Two GitHub Actions workflows — `ci.yml` validates PRs (build, test, coverage, audit), `deploy.yml` deploys on merge to main via `gcloud compute ssh` through IAP tunnel. GCP service account `<your-deploy-sa>` with minimal roles.
 
 **Tech Stack:** GitHub Actions, gcloud CLI, google-github-actions/auth, IAP tunnel SSH
 
@@ -74,8 +74,8 @@ This task requires the user to run commands. Provide instructions and wait for c
 The user runs on their local machine (with gcloud authenticated):
 
 ```bash
-gcloud iam service-accounts create github-actions-deploy \
-  --project=obsidian-open-brain \
+gcloud iam service-accounts create <your-deploy-sa> \
+  --project=<your-gcp-project> \
   --display-name="GitHub Actions Deploy"
 ```
 
@@ -83,33 +83,33 @@ gcloud iam service-accounts create github-actions-deploy \
 
 ```bash
 # IAP tunnel access
-gcloud projects add-iam-policy-binding obsidian-open-brain \
-  --member="serviceAccount:github-actions-deploy@obsidian-open-brain.iam.gserviceaccount.com" \
+gcloud projects add-iam-policy-binding <your-gcp-project> \
+  --member="serviceAccount:<your-deploy-sa>@<your-project>.iam.gserviceaccount.com" \
   --role="roles/iap.tunnelResourceAccessor"
 
 # Compute instance access (for SSH)
-gcloud projects add-iam-policy-binding obsidian-open-brain \
-  --member="serviceAccount:github-actions-deploy@obsidian-open-brain.iam.gserviceaccount.com" \
+gcloud projects add-iam-policy-binding <your-gcp-project> \
+  --member="serviceAccount:<your-deploy-sa>@<your-project>.iam.gserviceaccount.com" \
   --role="roles/compute.instanceAdmin.v1"
 
 # Service account user (required for gcloud compute ssh)
-gcloud projects add-iam-policy-binding obsidian-open-brain \
-  --member="serviceAccount:github-actions-deploy@obsidian-open-brain.iam.gserviceaccount.com" \
+gcloud projects add-iam-policy-binding <your-gcp-project> \
+  --member="serviceAccount:<your-deploy-sa>@<your-project>.iam.gserviceaccount.com" \
   --role="roles/iam.serviceAccountUser"
 ```
 
 **Step 3: Generate JSON key**
 
 ```bash
-gcloud iam service-accounts keys create /tmp/github-actions-deploy-key.json \
-  --iam-account=github-actions-deploy@obsidian-open-brain.iam.gserviceaccount.com
+gcloud iam service-accounts keys create /tmp/<your-deploy-sa>-key.json \
+  --iam-account=<your-deploy-sa>@<your-project>.iam.gserviceaccount.com
 ```
 
 **Step 4: Note the key expiry date**
 
 ```bash
 gcloud iam service-accounts keys list \
-  --iam-account=github-actions-deploy@obsidian-open-brain.iam.gserviceaccount.com \
+  --iam-account=<your-deploy-sa>@<your-project>.iam.gserviceaccount.com \
   --format="table(name.basename(), validAfterTime, validBeforeTime)"
 ```
 
@@ -119,24 +119,24 @@ Record the expiry date and update TODO.md with the actual date.
 
 ```bash
 # Copy key content
-cat /tmp/github-actions-deploy-key.json | pbcopy  # macOS
-# Or: cat /tmp/github-actions-deploy-key.json | xclip -selection clipboard  # Linux
+cat /tmp/<your-deploy-sa>-key.json | pbcopy  # macOS
+# Or: cat /tmp/<your-deploy-sa>-key.json | xclip -selection clipboard  # Linux
 
 # Add via gh CLI
-gh secret set GCP_SA_KEY --repo isorensen/obsidian_open_brain < /tmp/github-actions-deploy-key.json
-gh secret set GCP_PROJECT_ID --repo isorensen/obsidian_open_brain --body "obsidian-open-brain"
+gh secret set GCP_SA_KEY --repo <your-github-org>/<your-repo> < /tmp/<your-deploy-sa>-key.json
+gh secret set GCP_PROJECT_ID --repo <your-github-org>/<your-repo> --body "<your-gcp-project>"
 ```
 
 **Step 6: Delete local key file**
 
 ```bash
-rm -f /tmp/github-actions-deploy-key.json
+rm -f /tmp/<your-deploy-sa>-key.json
 ```
 
 **Step 7: Verify secrets are set**
 
 ```bash
-gh secret list --repo isorensen/obsidian_open_brain
+gh secret list --repo <your-github-org>/<your-repo>
 ```
 
 Expected: `GCP_SA_KEY` and `GCP_PROJECT_ID` listed.
@@ -150,26 +150,26 @@ The deploy SA needs to be able to SSH into the VM. The user runs:
 **Step 1: Add OS Login role (allows SA to get SSH access via IAP)**
 
 ```bash
-gcloud projects add-iam-policy-binding obsidian-open-brain \
-  --member="serviceAccount:github-actions-deploy@obsidian-open-brain.iam.gserviceaccount.com" \
+gcloud projects add-iam-policy-binding <your-gcp-project> \
+  --member="serviceAccount:<your-deploy-sa>@<your-project>.iam.gserviceaccount.com" \
   --role="roles/compute.osLogin"
 ```
 
 **Step 2: Verify VM has OS Login enabled**
 
 ```bash
-gcloud compute instances describe obsidian-vm \
+gcloud compute instances describe lox-vm \
   --zone=us-east1-b \
-  --project=obsidian-open-brain \
+  --project=<your-gcp-project> \
   --format="value(metadata.items[key='enable-oslogin'].value)"
 ```
 
 If empty or false:
 
 ```bash
-gcloud compute instances add-metadata obsidian-vm \
+gcloud compute instances add-metadata lox-vm \
   --zone=us-east1-b \
-  --project=obsidian-open-brain \
+  --project=<your-gcp-project> \
   --metadata enable-oslogin=TRUE
 ```
 
@@ -178,7 +178,7 @@ gcloud compute instances add-metadata obsidian-vm \
 The SA will SSH as a generated OS Login user. To allow `sudo systemctl restart`, the user must SSH into the VM and configure sudoers:
 
 ```bash
-ssh obsidian-vm
+ssh lox-vm
 # On the VM:
 sudo bash -c 'echo "ALL ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart obsidian-watcher, /usr/bin/systemctl is-active obsidian-watcher" > /etc/sudoers.d/github-deploy'
 sudo chmod 440 /etc/sudoers.d/github-deploy
@@ -215,15 +215,15 @@ jobs:
 
       - name: Deploy to VM
         run: |
-          gcloud compute ssh obsidian-vm \
+          gcloud compute ssh lox-vm \
             --zone=us-east1-b \
             --project=${{ secrets.GCP_PROJECT_ID }} \
             --tunnel-through-iap \
-            --command="cd ~/obsidian_open_brain && git pull origin main && npm ci --omit=dev && npm run build && sudo systemctl restart obsidian-watcher && pkill -f 'tsx src/mcp/index.ts' || true"
+            --command="cd ~/lox-brain && git pull origin main && npm ci --omit=dev && npm run build && sudo systemctl restart obsidian-watcher && pkill -f 'tsx src/mcp/index.ts' || true"
 
       - name: Health check
         run: |
-          gcloud compute ssh obsidian-vm \
+          gcloud compute ssh lox-vm \
             --zone=us-east1-b \
             --project=${{ secrets.GCP_PROJECT_ID }} \
             --tunnel-through-iap \
@@ -251,7 +251,7 @@ The user configures via GitHub CLI or web UI:
 **Step 1: Enable branch protection on main**
 
 ```bash
-gh api repos/isorensen/obsidian_open_brain/branches/main/protection \
+gh api repos/<your-github-org>/<your-repo>/branches/main/protection \
   --method PUT \
   --field required_status_checks='{"strict":true,"contexts":["validate"]}' \
   --field enforce_admins=true \
@@ -264,7 +264,7 @@ Note: `required_approving_review_count: 0` means PRs are required but self-merge
 **Step 2: Verify protection is set**
 
 ```bash
-gh api repos/isorensen/obsidian_open_brain/branches/main/protection
+gh api repos/<your-github-org>/<your-repo>/branches/main/protection
 ```
 
 ---
@@ -334,7 +334,7 @@ Add under Pending Improvements:
 ```markdown
 ### ~~CI/CD auto-deploy~~ — DONE (2026-03-09)
 - GitHub Actions: `ci.yml` (PR validation) + `deploy.yml` (deploy on merge to main)
-- GCP SA `github-actions-deploy` with IAP tunnel SSH
+- GCP SA `<your-deploy-sa>` with IAP tunnel SSH
 - Branch protection: CI must pass before merge
 ```
 

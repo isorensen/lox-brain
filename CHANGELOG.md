@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- Prepare repository for open source release
+- Remove personal artifacts and internal documentation
+- Redact personal infrastructure details (IPs, project IDs, service accounts)
+- Rewrite CLAUDE.md as contributor guide
+- Refactor installer to use config values instead of hardcoded usernames/paths
+- Fix shell injection vulnerability in deploy step
+- Update README with badges, improved splash, and public install instructions
+- Add CONTRIBUTING.md, CODE_OF_CONDUCT.md, and GitHub issue/PR templates
+
 ## [0.1.0] — 2026-04-03
 
 > **Note:** Version reset to 0.1.0. Previous version numbers (0.1.0–0.4.0) reflected internal phase milestones, not public SemVer. This entry marks the first versioned public-facing release of Lox.
@@ -30,7 +40,7 @@ All notable changes to this project will be documented in this file.
 - CI/CD updated for monorepo: sequential build (shared → core → installer), parameterized deploy secrets
 - All 4 Claude Code skills updated: `obsidian-brain` MCP reference → `lox-brain`
 - `lox-watcher` systemd service replaces `obsidian-watcher.service`
-- Secrets location: `/etc/lox/secrets.env` (chmod 640, root:sorensen) replaces `.env` in repo root
+- Secrets location: `/etc/lox/secrets.env` (chmod 640, root:<user>) replaces `.env` in repo root
 
 ### Fixed
 - npm audit: picomatch vulnerability resolved

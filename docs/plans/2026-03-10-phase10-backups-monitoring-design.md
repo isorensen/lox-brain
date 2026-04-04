@@ -5,9 +5,9 @@
 
 ## 1. PostgreSQL Backup (pg_dump + GCS)
 
-- Script `/home/sorensen/scripts/pg-backup.sh`
+- Script `/home/<user>/scripts/pg-backup.sh`
 - Executes `pg_dump open_brain | gzip` as postgres user
-- Local destination: `/home/sorensen/backups/open_brain_YYYY-MM-DD.sql.gz`
+- Local destination: `/home/<user>/backups/open_brain_YYYY-MM-DD.sql.gz`
 - Upload to GCS: `gsutil cp` to `gs://obsidian-brain-backups/pg/`
 - Schedule: daily at 22h BRT (01:00 UTC) via cron
 - Retention: 30 days (local `find -mtime +30 -delete`, GCS lifecycle policy)
@@ -21,19 +21,19 @@
 - Encryption: Google-managed (default)
 - Lifecycle policy: delete objects older than 30 days
 - Versioning: enabled (protects against corrupted overwrites)
-- Access: `obsidian-vm-sa` with `roles/storage.objectCreator` only (write-only, no list/delete)
+- Access: `lox-vm-sa` with `roles/storage.objectCreator` only (write-only, no list/delete)
 - Network: VM accesses GCS via Google Private Access (internal traffic)
 
 ## 3. VM Disk Snapshot (GCP native)
 
-- Resource policy: `obsidian-vm-daily-snapshot`
+- Resource policy: `lox-vm-daily-snapshot`
 - Schedule: daily at 02:00 UTC (after pg_dump completes at 01:00 UTC)
 - Retention: 7 days (auto-delete by GCP)
-- Applied to: boot disk of `obsidian-vm`
+- Applied to: boot disk of `lox-vm`
 
 ## 4. VM Instance Schedule (GCP native)
 
-- Resource policy: `obsidian-vm-schedule`
+- Resource policy: `lox-vm-schedule`
 - Start: 07:00 BRT (10:00 UTC)
 - Stop: 23:00 BRT (02:00 UTC)
 - Timezone: America/Sao_Paulo
@@ -66,7 +66,7 @@
 - Backup files: `chmod 600` (owner-only read/write)
 - pg_dump via local socket (no credentials exposed)
 - GCS bucket: private, uniform access, no public ACLs
-- SA `obsidian-vm-sa`: only `storage.objectCreator` on backup bucket (least privilege)
+- SA `lox-vm-sa`: only `storage.objectCreator` on backup bucket (least privilege)
 - GCS accessed via Google Private Access (no public internet)
 - Snapshot policy managed by GCP (no credentials needed)
 

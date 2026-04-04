@@ -7,21 +7,27 @@ import type { InstallerContext, StepResult } from './types.js';
 
 const TOTAL_STEPS = 12;
 
-const SSH_CONFIG_ENTRY = `
+/**
+ * Build the SSH config entry for the lox-vm host.
+ * Extracted to avoid hardcoding personal values.
+ */
+export function buildSshConfigEntry(vpnServerIp: string, sshUser: string): string {
+  return `
 # Lox Brain VM — managed by lox installer
 Host lox-vm
-  HostName 10.10.0.1
-  User sorensen
+  HostName ${vpnServerIp}
+  User ${sshUser}
   IdentityFile ~/.ssh/google_compute_engine
   StrictHostKeyChecking accept-new
   ServerAliveInterval 30
   ServerAliveCountMax 3
 `;
+}
 
 /**
  * Ensure ~/.ssh/config exists and append the lox-vm entry if not present.
  */
-async function configureSshConfig(): Promise<void> {
+async function configureSshConfig(vpnServerIp: string, sshUser: string): Promise<void> {
   const { readFileSync, writeFileSync, existsSync, mkdirSync } = await import('node:fs');
   const { join } = await import('node:path');
 
@@ -43,7 +49,8 @@ async function configureSshConfig(): Promise<void> {
     return;
   }
 
-  writeFileSync(configPath, existing + SSH_CONFIG_ENTRY);
+  const entry = buildSshConfigEntry(vpnServerIp, sshUser);
+  writeFileSync(configPath, existing + entry);
   // Ensure correct permissions on SSH config
   const { chmodSync } = await import('node:fs');
   chmodSync(configPath, 0o600);
@@ -59,15 +66,19 @@ export async function stepMcp(ctx: InstallerContext): Promise<StepResult> {
   const strings = t();
   console.log(renderStepHeader(12, TOTAL_STEPS, strings.step_mcp));
 
+  const vpnServerIp = ctx.config.vpn?.server_ip ?? '10.10.0.1';
+  const sshUser = ctx.gcpUsername ?? 'lox';
+
   // 1. Generate SSH config entry
   await withSpinner(
     `${strings.configuring} SSH config for lox-vm...`,
-    () => configureSshConfig(),
+    () => configureSshConfig(vpnServerIp, sshUser),
   );
   console.log(chalk.green('  ✓ SSH config entry for lox-vm added'));
 
   // 2. Register MCP server with Claude Code
-  const mcpCommand = 'cd ~/lox-brain && export $(cat /etc/lox/secrets.env | xargs) && node packages/core/dist/mcp/index.js';
+  const installDir = ctx.config.install_dir ?? '/home/' + sshUser + '/lox-brain';
+  const mcpCommand = `cd ${installDir} && set -a && source /etc/lox/secrets.env && set +a && node packages/core/dist/mcp/index.js`;
 
   await withSpinner(
     'Registering lox-brain MCP server with Claude Code...',

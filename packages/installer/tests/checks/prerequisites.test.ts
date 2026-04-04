@@ -78,10 +78,10 @@ describe('checkGcloud Windows .cmd fallback', () => {
     expect(shellMod.shell).toHaveBeenCalledWith('gcloud', ['--version']);
   });
 
-  it('falls back to gcloud.cmd on Windows when gcloud fails', async () => {
+  it('falls back to cmd.exe /c gcloud on Windows when gcloud fails', async () => {
     const shellMod = await import('../../src/utils/shell.js');
 
-    // First call (gcloud) fails
+    // First call (gcloud) fails; fallback uses cmd.exe to resolve gcloud.cmd
     const shellSpy = vi.spyOn(shellMod, 'shell')
       .mockRejectedValueOnce(new Error('Command not found: gcloud'))
       .mockResolvedValueOnce({
@@ -97,7 +97,7 @@ describe('checkGcloud Windows .cmd fallback', () => {
     expect(result.installed).toBe(true);
     expect(result.version).toBe('Google Cloud SDK 450.0.0');
     expect(shellSpy).toHaveBeenCalledWith('gcloud', ['--version']);
-    expect(shellSpy).toHaveBeenCalledWith('gcloud.cmd', ['--version']);
+    expect(shellSpy).toHaveBeenCalledWith('cmd.exe', ['/c', 'gcloud', '--version']);
   });
 
   it('returns installed: false when both gcloud and gcloud.cmd fail on Windows', async () => {

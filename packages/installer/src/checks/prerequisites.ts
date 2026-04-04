@@ -51,14 +51,15 @@ export async function checkGcloud(): Promise<PrerequisiteResult> {
     return { name: 'gcloud CLI', installed: true, version: firstLine };
   } catch {
     // On Windows, gcloud SDK installs gcloud.cmd (batch wrapper).
-    // Node.js execFile() doesn't resolve .cmd extensions, so try explicitly.
+    // Node.js execFile() cannot execute .cmd/.bat files directly — they
+    // require cmd.exe as an intermediary to resolve and run the script.
     if (getPlatform() === 'windows') {
       try {
-        const { stdout } = await shell('gcloud.cmd', ['--version']);
+        const { stdout } = await shell('cmd.exe', ['/c', 'gcloud', '--version']);
         const firstLine = stdout.split('\n')[0] ?? '';
         return { name: 'gcloud CLI', installed: true, version: firstLine };
       } catch {
-        // Both gcloud and gcloud.cmd failed — fall through to not-installed
+        // Both approaches failed — fall through to not-installed
       }
     }
 

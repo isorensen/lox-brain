@@ -14,6 +14,11 @@ All notable changes to this project will be documented in this file.
 - Update README with badges, improved splash, and public install instructions
 - Add CONTRIBUTING.md, CODE_OF_CONDUCT.md, and GitHub issue/PR templates
 
+## [0.1.2] — 2026-04-04
+
+### Fixed
+- gcloud CLI Windows detection fix was incomplete (#17). Node.js `execFile()` cannot execute `.cmd`/`.bat` files at all — not even with explicit extension. Changed fallback to use `cmd.exe /c gcloud --version` which properly resolves `gcloud.cmd` via the Windows command interpreter. Args remain hardcoded with no injection risk.
+
 ## [0.1.1] — 2026-04-04
 
 ### Fixed

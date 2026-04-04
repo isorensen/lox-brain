@@ -77,6 +77,16 @@ export const ptBr: I18nStrings = {
   preset_para: 'PARA',
   preset_para_desc: 'Projetos, Areas, Recursos, Arquivos — organizacao orientada a acao.',
 
+  // Billing
+  billing_checking: 'Verificando conta de faturamento...',
+  billing_not_linked: 'Nenhuma conta de faturamento vinculada ao projeto',
+  billing_select_account: 'Selecione uma conta de faturamento:',
+  billing_no_accounts: 'Nenhuma conta de faturamento encontrada. Crie uma em:',
+  billing_press_enter: 'Pressione Enter apos criar uma conta de faturamento',
+  billing_linked_success: 'Conta de faturamento vinculada com sucesso',
+  billing_required_for_apis: 'Faturamento e necessario para ativar APIs do GCP. Vincule uma conta e tente novamente.',
+  billing_linking: 'Vinculando conta de faturamento...',
+
   // Modes
   mode_personal: 'Pessoal',
   mode_team: 'Equipe',

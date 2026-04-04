@@ -47,6 +47,10 @@ async function main(): Promise<void> {
 
   // Step 1.5: License Key (team mode only)
   const LICENSE_PUBLIC_KEY = process.env.LOX_LICENSE_PUBLIC_KEY ?? '';
+  if (ctx.config.mode === 'team' && !LICENSE_PUBLIC_KEY) {
+    console.error('LOX_LICENSE_PUBLIC_KEY environment variable is required for team mode.');
+    process.exit(1);
+  }
   const licenseResult = await stepLicense(ctx, LICENSE_PUBLIC_KEY);
   if (!licenseResult.success) {
     console.error(`\n${licenseResult.message}`);

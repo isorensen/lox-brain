@@ -9,7 +9,8 @@ vi.mock('node:child_process', () => ({
     return Buffer.from('');
   }),
 }));
-vi.mock('node:fs', () => ({ mkdirSync: vi.fn(), writeFileSync: vi.fn() }));
+vi.mock('node:fs', () => ({ mkdirSync: vi.fn(), writeFileSync: vi.fn(), chmodSync: vi.fn() }));
+vi.mock('node:os', () => ({ homedir: () => '/mock-home' }));
 
 describe('stepPeers', () => {
   beforeEach(() => { vi.clearAllMocks(); });
@@ -44,13 +45,15 @@ describe('stepPeers', () => {
     expect(ctx.config.vpn!.peers![0].name).toBe('eduardo');
     expect(ctx.config.vpn!.peers![0].ip).toBe('10.10.0.2');
     expect(ctx.config.vpn!.peers![1].ip).toBe('10.10.0.3');
+    expect(ctx.config.vpn!.peers![0]).not.toHaveProperty('privateKey');
+    expect(ctx.config.vpn!.peers![0].email).toBe('eduardo@credifit.com.br');
   });
 
   it('should write .conf files', async () => {
     const { input, number: numberPrompt } = await import('@inquirer/prompts');
     (numberPrompt as any).mockResolvedValue(1);
     (input as any).mockResolvedValueOnce('eduardo').mockResolvedValueOnce('eduardo@credifit.com.br');
-    const { writeFileSync, mkdirSync } = await import('node:fs');
+    const { writeFileSync, mkdirSync, chmodSync } = await import('node:fs');
 
     const { stepPeers } = await import('../../src/steps/step-peers.js');
     const ctx: InstallerContext = {
@@ -62,9 +65,10 @@ describe('stepPeers', () => {
     };
     await stepPeers(ctx);
 
-    expect(mkdirSync).toHaveBeenCalledWith(expect.stringContaining('output'), { recursive: true });
+    expect(mkdirSync).toHaveBeenCalledWith(expect.stringContaining('.lox'), { recursive: true });
     expect(writeFileSync).toHaveBeenCalledWith(
       expect.stringContaining('eduardo.conf'), expect.stringContaining('[Interface]'),
     );
+    expect(chmodSync).toHaveBeenCalledWith(expect.stringContaining('eduardo.conf'), 0o600);
   });
 });

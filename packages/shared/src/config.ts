@@ -2,6 +2,7 @@ export interface VpnPeer {
   name: string;
   ip: string;
   public_key: string;
+  email?: string;
   added_at: string;
 }
 

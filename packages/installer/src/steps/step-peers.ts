@@ -1,12 +1,14 @@
 import { input, number as numberPrompt } from '@inquirer/prompts';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import path from 'node:path';
 import { t } from '../i18n/index.js';
 import type { InstallerContext, StepResult } from './types.js';
 
 interface PeerData {
   name: string;
+  email: string;
   ip: string;
   public_key: string;
   privateKey: string;
@@ -66,11 +68,12 @@ export async function stepPeers(ctx: InstallerContext): Promise<StepResult> {
 
   for (let i = 0; i < count; i++) {
     const name = await input({ message: `${strings.peers_name_prompt} ${i + 1}:` });
-    const _email = await input({ message: `${strings.peers_email_prompt} ${i + 1}:` });
+    const email = await input({ message: `${strings.peers_email_prompt} ${i + 1}:` });
     const ip = assignIp(subnet, i);
     const keypair = generateKeypair();
     peers.push({
       name,
+      email,
       ip,
       public_key: keypair.publicKey,
       privateKey: keypair.privateKey,
@@ -80,15 +83,16 @@ export async function stepPeers(ctx: InstallerContext): Promise<StepResult> {
 
   // Store peers in config (without private keys)
   ctx.config.vpn = ctx.config.vpn ?? { server_ip: '10.10.0.1', subnet, listen_port: serverPort, peers: [] };
-  ctx.config.vpn.peers = peers.map(({ name, ip, public_key, added_at }) => ({
+  ctx.config.vpn.peers = peers.map(({ name, email, ip, public_key, added_at }) => ({
     name,
+    email,
     ip,
     public_key,
     added_at,
   }));
 
   // Write .conf files for distribution
-  const outputDir = path.resolve(process.cwd(), 'output');
+  const outputDir = path.join(homedir(), '.lox', 'peers');
   mkdirSync(outputDir, { recursive: true });
 
   const serverPublicKey = 'SERVER_PUBLIC_KEY_PLACEHOLDER';
@@ -96,11 +100,16 @@ export async function stepPeers(ctx: InstallerContext): Promise<StepResult> {
 
   for (const peer of peers) {
     const conf = generateConfFile(peer.privateKey, peer.ip, serverPublicKey, serverEndpoint, serverPort);
-    writeFileSync(path.join(outputDir, `${peer.name}.conf`), conf);
+    const confPath = path.join(outputDir, `${peer.name}.conf`);
+    writeFileSync(confPath, conf);
+    chmodSync(confPath, 0o600);
   }
 
   console.log(strings.peers_generated);
   console.log(strings.peers_conf_written);
+
+  console.log('\n  ⚠ Server endpoint and public key are placeholders.');
+  console.log('  Edit each .conf file with actual values before distributing to peers.');
 
   return { success: true };
 }

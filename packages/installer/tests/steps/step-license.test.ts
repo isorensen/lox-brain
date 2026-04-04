@@ -48,6 +48,22 @@ describe('stepLicense', () => {
     expect(ctx.config.license_key).toBe(token);
   });
 
+  it('should return failure for expired license key', async () => {
+    const { password } = await import('@inquirer/prompts');
+    const token = jwt.sign(
+      { org: 'credifit', max_peers: 10, expires: '2025-01-01', issued_by: 'isorensen' },
+      privateKey,
+      { algorithm: 'RS256', expiresIn: '-1s' },
+    );
+    (password as any).mockResolvedValue(token);
+
+    const { stepLicense } = await import('../../src/steps/step-license.js');
+    const ctx: InstallerContext = { config: { mode: 'team' }, locale: 'en' };
+    const result = await stepLicense(ctx, publicKey);
+
+    expect(result.success).toBe(false);
+  });
+
   it('should return failure for invalid license key', async () => {
     const { password } = await import('@inquirer/prompts');
     (password as any).mockResolvedValue('invalid-token');

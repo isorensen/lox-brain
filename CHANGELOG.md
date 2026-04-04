@@ -14,6 +14,16 @@ All notable changes to this project will be documented in this file.
 - Update README with badges, improved splash, and public install instructions
 - Add CONTRIBUTING.md, CODE_OF_CONDUCT.md, and GitHub issue/PR templates
 
+## [0.2.2] — 2026-04-04
+
+### Fixed
+- `--ssh-flag="-o StrictHostKeyChecking=accept-new"` not recognized by gcloud (#31). Replaced with native `--strict-host-key-checking=accept_new` flag.
+- `LOX_VERSION` was hardcoded in installer `index.ts` — now imported from `@lox-brain/shared`.
+
+### Added
+- Auto-issue-reporting: when the installer fails, offers to create a GitHub issue via `gh` CLI with sanitized error details (redacts GCP project IDs, service accounts, Windows paths, billing IDs).
+- Centralized `handleStepFailure()` in index.ts — all 12 steps now use consistent error handling with auto-report.
+
 ## [0.2.1] — 2026-04-04
 
 ### Fixed

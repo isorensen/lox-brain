@@ -34,7 +34,7 @@ describe('registerTeamFeatures', () => {
       install_dir: '/opt/lox',
       installed_at: '2026-04-03',
       ...overrides,
-    } as LoxConfig;
+    };
   }
 
   it('should return success:false when mode is personal', async () => {
@@ -53,7 +53,7 @@ describe('registerTeamFeatures', () => {
 
   it('should return success:false when license key is invalid', async () => {
     const config = makeConfig();
-    (config as any).license_key = 'invalid-token';
+    config.license_key = 'invalid-token';
     const result = await registerTeamFeatures({} as any, config, [], publicKey);
     expect(result.success).toBe(false);
     expect(result.error).toContain('license');
@@ -66,7 +66,7 @@ describe('registerTeamFeatures', () => {
       { algorithm: 'RS256', expiresIn: '365d' },
     );
     const config = makeConfig();
-    (config as any).license_key = token;
+    config.license_key = token;
 
     const mockTool = { name: 'write_note', description: 'Write', inputSchema: {}, handler: vi.fn() };
     const result = await registerTeamFeatures({} as any, config, [mockTool], publicKey);
@@ -83,7 +83,7 @@ describe('registerTeamFeatures', () => {
       { algorithm: 'RS256', expiresIn: '365d' },
     );
     const config = makeConfig();
-    (config as any).license_key = token;
+    config.license_key = token;
 
     const mockTool = { name: 'write_note', description: 'Write', inputSchema: {}, handler: vi.fn() };
     const mockDbClient = { listRecent: vi.fn(), searchByAuthor: vi.fn() } as any;
@@ -97,5 +97,46 @@ describe('registerTeamFeatures', () => {
     expect(toolNames).toContain('write_note');
     expect(toolNames).toContain('list_team_activity');
     expect(toolNames).toContain('search_by_author');
+  });
+
+  it('should return success:false when license is expired', async () => {
+    const token = jwt.sign(
+      { org: 'credifit', max_peers: 10, expires: '2025-01-01', issued_by: 'isorensen' },
+      privateKey,
+      { algorithm: 'RS256', expiresIn: '-1s' },
+    );
+    const config = makeConfig();
+    config.license_key = token;
+    const result = await registerTeamFeatures({} as any, config, [], publicKey);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('license');
+  });
+
+  it('should call wrapped handler with created_by metadata', async () => {
+    const token = jwt.sign(
+      { org: 'credifit', max_peers: 10, expires: '2027-04-03', issued_by: 'isorensen' },
+      privateKey,
+      { algorithm: 'RS256', expiresIn: '365d' },
+    );
+    const config = makeConfig();
+    config.license_key = token;
+
+    const handlerResult = { path: 'test.md', title: 'Test' };
+    const mockHandler = vi.fn().mockResolvedValue(handlerResult);
+    const mockTool = { name: 'write_note', description: 'Write', inputSchema: {}, handler: mockHandler };
+
+    const result = await registerTeamFeatures({} as any, config, [mockTool], publicKey, {
+      getClientIp: () => '10.10.0.2',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.tools).toBeDefined();
+
+    const wrappedTool = result.tools!.find(t => t.name === 'write_note')!;
+    const output = await wrappedTool.handler({ title: 'Test', content: 'Hello' });
+
+    expect(mockHandler).toHaveBeenCalled();
+    const calledArgs = mockHandler.mock.calls[0][0];
+    expect(calledArgs._created_by).toBe('eduardo');
   });
 });

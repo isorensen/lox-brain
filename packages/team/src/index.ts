@@ -39,7 +39,7 @@ export async function registerTeamFeatures(
     return { success: false, error: 'Cannot register team features in personal mode' };
   }
 
-  const licenseKey = (config as any).license_key as string | undefined;
+  const licenseKey = config.license_key;
   if (!licenseKey) {
     return { success: false, error: 'No license key found in config' };
   }

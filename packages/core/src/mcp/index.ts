@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { createServer } from 'node:http';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -13,6 +14,10 @@ import { DbClient } from '../lib/db-client.js';
 import { createPool } from '../lib/create-pool.js';
 import { createTools } from './tools.js';
 import { getTransportConfig } from './transports.js';
+
+const clientIpStorage = new AsyncLocalStorage<string>();
+
+export { clientIpStorage };
 
 const VAULT_PATH = process.env.VAULT_PATH;
 if (!VAULT_PATH) {
@@ -91,7 +96,7 @@ async function loadTeamFeatures(): Promise<void> {
     const transportConfig = getTransportConfig();
     let clientIpGetter: (() => string | null) | undefined;
     if (transportConfig.type === 'http') {
-      clientIpGetter = () => (globalThis as any).__lox_current_client_ip ?? null;
+      clientIpGetter = () => clientIpStorage.getStore() ?? null;
     }
 
     const result = await registerTeamFeatures(server, config, tools, PUBLIC_KEY, {
@@ -133,7 +138,9 @@ async function main(): Promise<void> {
       const clientIp = req.socket.remoteAddress ?? '';
       req.headers['x-real-ip'] = clientIp;
 
-      await transport.handleRequest(req, res);
+      await clientIpStorage.run(clientIp, async () => {
+        await transport.handleRequest(req, res);
+      });
     });
 
     httpServer.listen(transportConfig.port, transportConfig.host, () => {

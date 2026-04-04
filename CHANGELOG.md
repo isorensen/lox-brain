@@ -14,6 +14,11 @@ All notable changes to this project will be documented in this file.
 - Update README with badges, improved splash, and public install instructions
 - Add CONTRIBUTING.md, CODE_OF_CONDUCT.md, and GitHub issue/PR templates
 
+## [0.3.7] — 2026-04-04
+
+### Fixed
+- Vault Setup step no longer crashes when the `lox-vault` repo already exists in the user's GitHub account. Detects existing repos and prompts to reuse (clone) or pick a different name. Also handles stale local clone directories from prior runs (#59)
+
 ## [0.3.6] — 2026-04-04
 
 ### Fixed

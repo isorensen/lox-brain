@@ -1,5 +1,10 @@
-import { describe, it, expect } from 'vitest';
-import { isProPlanGate } from '../../src/steps/step-vault.js';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { isProPlanGate, isRepoNotFoundError, repoExists } from '../../src/steps/step-vault.js';
+import { shell } from '../../src/utils/shell.js';
+
+vi.mock('../../src/utils/shell.js', () => ({
+  shell: vi.fn(),
+}));
 
 describe('isProPlanGate', () => {
   it('detects the Pro upgrade 403 from err.message', () => {
@@ -53,5 +58,86 @@ describe('isProPlanGate', () => {
     const err = Object.assign(new Error('Command failed'), { stderr: Buffer.from('HTTP 403') });
     // Buffer stderr is not a string — helper only checks typeof string
     expect(isProPlanGate(err)).toBe(false);
+  });
+});
+
+describe('isRepoNotFoundError', () => {
+  it('detects "Could not resolve to a Repository" in err.stderr', () => {
+    const err = Object.assign(new Error('Command failed'), {
+      stderr: 'GraphQL: Could not resolve to a Repository with the name \'isorensen/lox-vault\'. (repository)',
+    });
+    expect(isRepoNotFoundError(err)).toBe(true);
+  });
+
+  it('detects "Could not resolve" in err.message', () => {
+    const err = new Error('GraphQL: Could not resolve to a Repository with the name');
+    expect(isRepoNotFoundError(err)).toBe(true);
+  });
+
+  it('detects HTTP 404 from gh api', () => {
+    const err = Object.assign(new Error('Command failed'), {
+      stderr: 'gh: Not Found (HTTP 404)',
+    });
+    expect(isRepoNotFoundError(err)).toBe(true);
+  });
+
+  it('returns false for other errors', () => {
+    expect(isRepoNotFoundError(new Error('HTTP 403 Forbidden'))).toBe(false);
+    expect(isRepoNotFoundError(new Error('ECONNREFUSED'))).toBe(false);
+    expect(isRepoNotFoundError(new Error(''))).toBe(false);
+  });
+
+  it('returns false for a bare "HTTP 404" without the "Not Found" signal', () => {
+    // Prevents false positives from unrelated 404s in error chains
+    expect(isRepoNotFoundError(new Error('proxy returned HTTP 404 upstream'))).toBe(false);
+  });
+
+  it('returns false for non-Error values', () => {
+    expect(isRepoNotFoundError(null)).toBe(false);
+    expect(isRepoNotFoundError(undefined)).toBe(false);
+    expect(isRepoNotFoundError('string')).toBe(false);
+    expect(isRepoNotFoundError({})).toBe(false);
+  });
+});
+
+describe('repoExists', () => {
+  beforeEach(() => {
+    vi.mocked(shell).mockReset();
+  });
+
+  it('returns true when gh repo view succeeds', async () => {
+    vi.mocked(shell).mockResolvedValueOnce({ stdout: 'lox-vault', stderr: '' });
+    await expect(repoExists('isorensen/lox-vault')).resolves.toBe(true);
+    expect(vi.mocked(shell)).toHaveBeenCalledWith('gh', [
+      'repo', 'view', 'isorensen/lox-vault', '--json', 'name', '--jq', '.name',
+    ]);
+  });
+
+  it('returns false when repo is not found (GraphQL Could not resolve)', async () => {
+    vi.mocked(shell).mockRejectedValueOnce(
+      Object.assign(new Error('Command failed'), {
+        stderr: 'GraphQL: Could not resolve to a Repository with the name \'x/y\'. (repository)',
+      }),
+    );
+    await expect(repoExists('x/y')).resolves.toBe(false);
+  });
+
+  it('returns false when repo is not found (HTTP 404)', async () => {
+    vi.mocked(shell).mockRejectedValueOnce(
+      Object.assign(new Error('Command failed'), { stderr: 'gh: Not Found (HTTP 404)' }),
+    );
+    await expect(repoExists('x/y')).resolves.toBe(false);
+  });
+
+  it('rethrows unrelated errors (e.g. auth, network)', async () => {
+    vi.mocked(shell).mockRejectedValueOnce(
+      Object.assign(new Error('Command failed'), { stderr: 'HTTP 403 Forbidden — token expired' }),
+    );
+    await expect(repoExists('x/y')).rejects.toThrow('Command failed');
+  });
+
+  it('rethrows "Command not found" errors', async () => {
+    vi.mocked(shell).mockRejectedValueOnce(new Error('Command not found: gh'));
+    await expect(repoExists('x/y')).rejects.toThrow('Command not found: gh');
   });
 });

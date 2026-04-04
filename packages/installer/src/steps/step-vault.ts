@@ -78,6 +78,41 @@ async function isRepoPrivate(repo: string): Promise<boolean> {
 }
 
 /**
+ * Detect a "repo does not exist" error from `gh repo view`. Used to distinguish
+ * missing repos (expected) from real failures (auth, network, permissions).
+ * Both GitHub GraphQL and REST surface this differently, so we match both.
+ */
+export function isRepoNotFoundError(err: unknown): boolean {
+  const parts: string[] = [];
+  if (err instanceof Error) parts.push(err.message);
+  if (err && typeof err === 'object' && 'stderr' in err) {
+    const stderr = (err as { stderr: unknown }).stderr;
+    if (typeof stderr === 'string') parts.push(stderr);
+  }
+  // Match gh's two shapes for "repo does not exist" precisely. Avoid a bare
+  // 'HTTP 404' match, which could false-positive on unrelated 404s.
+  return parts.some(p =>
+    p.includes('Could not resolve to a Repository') ||
+    (p.includes('HTTP 404') && p.includes('Not Found')),
+  );
+}
+
+/**
+ * Check whether a GitHub repo exists and is accessible to the current user.
+ * Returns false only for "not found" errors; rethrows other failures (auth,
+ * network, missing `gh`) so they surface with the real cause.
+ */
+export async function repoExists(repo: string): Promise<boolean> {
+  try {
+    await shell('gh', ['repo', 'view', repo, '--json', 'name', '--jq', '.name']);
+    return true;
+  } catch (err) {
+    if (isRepoNotFoundError(err)) return false;
+    throw err;
+  }
+}
+
+/**
  * Step 9: Vault Setup
  *
  * Creates a private GitHub repo for the vault, sets up templates,
@@ -88,7 +123,8 @@ export async function stepVault(ctx: InstallerContext): Promise<StepResult> {
   console.log(renderStepHeader(9, TOTAL_STEPS, strings.step_git_sync));
 
   // 1. Ask vault preset
-  const { select } = await import('@inquirer/prompts');
+  const { select, input, confirm } = await import('@inquirer/prompts');
+  const { existsSync: fsExistsSync, rmSync } = await import('node:fs');
   const preset = await select({
     message: strings.step_vault_preset,
     choices: [
@@ -104,17 +140,83 @@ export async function stepVault(ctx: InstallerContext): Promise<StepResult> {
     () => getGitHubUser(),
   );
 
-  const repoName = 'lox-vault';
+  // Resolve a repo name: loop until we have either a missing name (to create)
+  // or the user chooses to reuse an existing one. Supports re-runs where
+  // lox-vault was already created by a prior attempt (see issue #59).
+  // Iteration cap prevents an infinite loop for confused users.
+  let repoName = 'lox-vault';
+  let action: 'create' | 'reuse' | 'cancel' = 'create';
+  const MAX_ATTEMPTS = 10;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const fullCandidate = `${ghUser}/${repoName}`;
+    const exists = await withSpinner(
+      `Checking if ${fullCandidate} exists...`,
+      () => repoExists(fullCandidate),
+    );
+    if (!exists) {
+      action = 'create';
+      break;
+    }
+    console.log(chalk.yellow(`  ⚠ Repo ${fullCandidate} already exists on your account.`));
+    const choice = await select({
+      message: 'How would you like to proceed?',
+      choices: [
+        { name: `Reuse existing (clone ${fullCandidate})`, value: 'reuse' as const },
+        { name: 'Use a different repo name', value: 'rename' as const },
+        { name: 'Cancel vault setup', value: 'cancel' as const },
+      ],
+    });
+    if (choice === 'reuse') { action = 'reuse'; break; }
+    if (choice === 'cancel') { action = 'cancel'; break; }
+    const newName = await input({
+      message: 'Enter a new repo name:',
+      default: repoName,
+      validate: (v) => /^[A-Za-z0-9._-]+$/.test(v.trim()) || 'Only letters, digits, dot, underscore, hyphen.',
+    });
+    repoName = newName.trim();
+  }
+  if (action === 'cancel') {
+    return { success: false, message: 'Vault setup cancelled by user.' };
+  }
+
   const fullRepo = `${ghUser}/${repoName}`;
+  const vaultDir = repoName;
 
-  await withSpinner(
-    `${strings.creating} private repo ${fullRepo}...`,
-    async () => {
-      await shell('gh', ['repo', 'create', fullRepo, '--private', '--clone']);
-    },
-  );
+  // Handle a stale local clone directory from a prior run.
+  if (fsExistsSync(vaultDir)) {
+    console.log(chalk.yellow(`  ⚠ Local directory ./${vaultDir} already exists.`));
+    const removeIt = await confirm({
+      message: `Remove ./${vaultDir} and continue? (choose No to abort)`,
+      default: false,
+    });
+    if (!removeIt) {
+      return { success: false, message: `Aborted: ./${vaultDir} already exists.` };
+    }
+    try {
+      rmSync(vaultDir, { recursive: true, force: true });
+    } catch (err) {
+      return {
+        success: false,
+        message: `Failed to remove ./${vaultDir}: ${(err as Error).message}`,
+      };
+    }
+  }
 
-  const vaultDir = `${repoName}`;
+  if (action === 'create') {
+    await withSpinner(
+      `${strings.creating} private repo ${fullRepo}...`,
+      async () => {
+        await shell('gh', ['repo', 'create', fullRepo, '--private', '--clone']);
+      },
+    );
+  } else {
+    await withSpinner(
+      `Cloning existing repo ${fullRepo}...`,
+      async () => {
+        await shell('gh', ['repo', 'clone', fullRepo, vaultDir]);
+      },
+    );
+  }
 
   // 3. Copy template files
   await withSpinner(
@@ -152,7 +254,6 @@ export async function stepVault(ctx: InstallerContext): Promise<StepResult> {
   ]);
   console.log(`\n${patInstructions}\n`);
 
-  const { input } = await import('@inquirer/prompts');
   await input({
     message: strings.press_enter,
     default: '',

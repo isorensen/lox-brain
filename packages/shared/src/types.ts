@@ -13,6 +13,7 @@ export interface NoteRow {
   embedding: number[];
   file_hash: string;
   chunk_index: number;
+  created_by?: string;
 }
 
 export interface SearchOptions {
@@ -37,6 +38,7 @@ export interface SearchResult {
   tags: string[];
   similarity: number;
   updated_at: Date;
+  created_by?: string;
 }
 
 export interface RecentNote {
@@ -46,4 +48,5 @@ export interface RecentNote {
   content?: string;
   tags: string[];
   updated_at: Date;
+  created_by?: string;
 }

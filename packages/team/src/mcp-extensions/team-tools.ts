@@ -55,7 +55,8 @@ export function createTeamTools(dbClient: DbClientLike): Tool[] {
         if (typeof author !== 'string' || author.trim() === '') {
           throw new Error('author must be a non-empty string');
         }
-        return dbClient.searchByAuthor(author, args.query as string | undefined, {
+        const trimmedAuthor = author.trim();
+        return dbClient.searchByAuthor(trimmedAuthor, args.query as string | undefined, {
           limit: (args.limit as number) ?? 20,
           offset: (args.offset as number) ?? 0,
           includeContent: (args.include_content as boolean) ?? false,

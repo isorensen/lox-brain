@@ -58,5 +58,17 @@ describe('createTeamTools', () => {
       const searchTool = tools.find(t => t.name === 'search_by_author')!;
       await expect(searchTool.handler({ author: '  ' })).rejects.toThrow('author must be a non-empty string');
     });
+
+    it('should trim author before querying', async () => {
+      mockDbClient.searchByAuthor.mockResolvedValue({ results: [], total: 0, limit: 20, offset: 0 });
+      const tools = createTeamTools(mockDbClient as any);
+      const searchTool = tools.find(t => t.name === 'search_by_author')!;
+      await searchTool.handler({ author: '  eduardo  ' });
+      expect(mockDbClient.searchByAuthor).toHaveBeenCalledWith(
+        'eduardo',
+        undefined,
+        expect.objectContaining({ limit: 20, offset: 0 }),
+      );
+    });
   });
 });

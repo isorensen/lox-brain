@@ -173,3 +173,44 @@ describe('offerErrorReport', () => {
     expect(remaining).toHaveLength(0);
   });
 });
+
+import { extractSubPhase, sourceFileForStep } from '../../src/utils/error-report.js';
+
+describe('extractSubPhase', () => {
+  it('extracts sub-phase from "<phase> failed: <error>" format', () => {
+    expect(extractSubPhase('Creating database and schema failed: ERROR: role lox already exists'))
+      .toBe('Creating database and schema');
+  });
+
+  it('extracts multi-word sub-phase with spaces', () => {
+    expect(extractSubPhase('SSH warm-up failed: Connection reset'))
+      .toBe('SSH warm-up');
+  });
+
+  it('uses non-greedy match to capture shortest prefix before "failed:"', () => {
+    expect(extractSubPhase('Phase A failed: something failed: deeper'))
+      .toBe('Phase A');
+  });
+
+  it('returns undefined when message has no "failed:" marker', () => {
+    expect(extractSubPhase('Unknown error')).toBeUndefined();
+  });
+
+  it('returns undefined on empty string', () => {
+    expect(extractSubPhase('')).toBeUndefined();
+  });
+});
+
+describe('sourceFileForStep', () => {
+  it('maps known step names to source files', () => {
+    expect(sourceFileForStep('VM Setup')).toBe('packages/installer/src/steps/step-vm-setup.ts');
+    expect(sourceFileForStep('GCP Auth')).toBe('packages/installer/src/steps/step-gcp-auth.ts');
+    expect(sourceFileForStep('WireGuard VPN')).toBe('packages/installer/src/steps/step-vpn.ts');
+    expect(sourceFileForStep('MCP Server')).toBe('packages/installer/src/steps/step-mcp.ts');
+  });
+
+  it('returns undefined for unknown step names', () => {
+    expect(sourceFileForStep('NonExistent')).toBeUndefined();
+    expect(sourceFileForStep('')).toBeUndefined();
+  });
+});

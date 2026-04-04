@@ -5,6 +5,43 @@ import { join } from 'node:path';
 import { shell } from './shell.js';
 import { t } from '../i18n/index.js';
 
+/**
+ * Map of installer step names (as passed to handleStepFailure in index.ts)
+ * to their source file paths. Used to enrich auto-reported issues.
+ */
+const STEP_SOURCE_FILES: Record<string, string> = {
+  'Prerequisites': 'packages/installer/src/steps/step-prerequisites.ts',
+  'GCP Auth': 'packages/installer/src/steps/step-gcp-auth.ts',
+  'GCP Project': 'packages/installer/src/steps/step-gcp-project.ts',
+  'Billing': 'packages/installer/src/steps/step-billing.ts',
+  'VPC Network': 'packages/installer/src/steps/step-network.ts',
+  'VM Instance': 'packages/installer/src/steps/step-vm.ts',
+  'VM Setup': 'packages/installer/src/steps/step-vm-setup.ts',
+  'WireGuard VPN': 'packages/installer/src/steps/step-vpn.ts',
+  'Vault Setup': 'packages/installer/src/steps/step-vault.ts',
+  'Obsidian': 'packages/installer/src/steps/step-obsidian.ts',
+  'Deploy': 'packages/installer/src/steps/step-deploy.ts',
+  'MCP Server': 'packages/installer/src/steps/step-mcp.ts',
+};
+
+/**
+ * Extract sub-phase name from an error message formatted as
+ * "<sub-phase> failed: <error details>". Returns undefined if the
+ * message doesn't follow this convention.
+ */
+export function extractSubPhase(message: string): string | undefined {
+  const m = message.match(/^(.+?) failed: /);
+  return m ? m[1] : undefined;
+}
+
+/**
+ * Look up the source file path for a known installer step name.
+ * Returns undefined if the step is not recognized.
+ */
+export function sourceFileForStep(stepName: string): string | undefined {
+  return STEP_SOURCE_FILES[stepName];
+}
+
 export interface ErrorReportContext {
   stepName: string;
   errorMessage: string;

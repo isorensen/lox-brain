@@ -136,6 +136,51 @@ export function buildVmSetupScript(): string {
 }
 
 /**
+ * Validate the shape of a pasted GitHub Personal Access Token.
+ * We don't call GitHub — we just rule out obvious paste corruption
+ * (whitespace, wrong prefix, truncation, stray quotes). A token that
+ * passes this check may still be invalid/expired; that surfaces when
+ * git sync runs on the VM. Returning false here just means "definitely
+ * not a PAT" so we can re-prompt without bothering the GitHub API.
+ *
+ * Accepts both fine-grained (`github_pat_`) and classic (`ghp_`) tokens.
+ * The installer's UI recommends fine-grained, but we don't reject a
+ * working classic PAT over a prefix mismatch.
+ */
+export function isValidPatFormat(token: string): boolean {
+  if (typeof token !== 'string') return false;
+  const trimmed = token.trim();
+  // Fine-grained PATs are ~93+ chars (github_pat_ + 82 chars of payload).
+  // Classic PATs are exactly 40 chars (ghp_ + 36 chars). Use a forgiving
+  // lower bound of 36 characters of suffix to tolerate minor format drift.
+  return /^(github_pat_|ghp_)[A-Za-z0-9_]{36,}$/.test(trimmed);
+}
+
+/**
+ * Check whether a GCP Secret Manager secret already exists in the given project.
+ * Returns true on success, false when the secret is not found, and rethrows on
+ * other failures (auth, billing, API disabled) so real problems surface.
+ */
+export async function gcpSecretExists(secretName: string, projectId: string): Promise<boolean> {
+  try {
+    await shell('gcloud', ['secrets', 'describe', secretName, '--project', projectId]);
+    return true;
+  } catch (err) {
+    const parts: string[] = [];
+    if (err instanceof Error) parts.push(err.message);
+    if (err && typeof err === 'object' && 'stderr' in err) {
+      const stderr = (err as { stderr: unknown }).stderr;
+      if (typeof stderr === 'string') parts.push(stderr);
+    }
+    const isNotFound = parts.some(p =>
+      p.includes('NOT_FOUND') || (p.includes('Secret') && p.includes('was not found')),
+    );
+    if (isNotFound) return false;
+    throw err;
+  }
+}
+
+/**
  * Check whether a GitHub repo exists and is accessible to the current user.
  * Returns false only for "not found" errors; rethrows other failures (auth,
  * network, missing `gh`) so they surface with the real cause.
@@ -161,7 +206,7 @@ export async function stepVault(ctx: InstallerContext): Promise<StepResult> {
   console.log(renderStepHeader(9, TOTAL_STEPS, strings.step_git_sync));
 
   // 1. Ask vault preset
-  const { select, input, confirm } = await import('@inquirer/prompts');
+  const { select, input, confirm, password } = await import('@inquirer/prompts');
   const { existsSync: fsExistsSync, rmSync, writeFileSync, mkdirSync } = await import('node:fs');
   const { join } = await import('node:path');
   const preset = await select({
@@ -277,6 +322,7 @@ export async function stepVault(ctx: InstallerContext): Promise<StepResult> {
   console.log(chalk.green('  ✓ .gitignore created with security patterns'));
 
   // 5. Guide fine-grained PAT creation
+  const patSecretName = 'lox-github-pat';
   const patInstructions = renderBox([
     'GitHub Fine-Grained PAT Setup',
     '',
@@ -286,15 +332,66 @@ export async function stepVault(ctx: InstallerContext): Promise<StepResult> {
     '4. Permissions: Contents (Read and write), Metadata (Read)',
     '5. Generate and copy the token',
     '',
-    'This PAT will be used for git sync on the VM.',
-    'Store it in GCP Secret Manager after this step.',
+    `The PAT will be stored in GCP Secret Manager as "${patSecretName}"`,
+    'and read by the VM for git sync. Paste it when prompted below.',
   ]);
   console.log(`\n${patInstructions}\n`);
 
-  await input({
-    message: strings.press_enter,
-    default: '',
-  });
+  const gcpProjectId = ctx.gcpProjectId ?? 'lox-project';
+  const manualCmd = `gcloud secrets create ${patSecretName} --data-file=<path> --project=${gcpProjectId}`;
+
+  // Capture the token (masked) and loop on format validation.
+  let patToken = '';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const entered = await password({
+      message: 'Paste your GitHub PAT (input hidden, empty to skip):',
+      mask: '*',
+    });
+    const trimmed = entered.trim();
+    if (trimmed === '') {
+      console.log(chalk.yellow(`  ⚠ Skipped. Store the PAT manually later with:\n    ${manualCmd}`));
+      break;
+    }
+    if (!isValidPatFormat(trimmed)) {
+      console.log(chalk.red('  ✗ That does not look like a GitHub PAT (expected prefix github_pat_ or ghp_). Try again.'));
+      continue;
+    }
+    patToken = trimmed;
+    break;
+  }
+
+  // Store the token in GCP Secret Manager if we captured one.
+  if (patToken !== '') {
+    const { tmpdir } = await import('node:os');
+    const patTempPath = join(tmpdir(), `lox-pat-${Date.now()}.txt`);
+    try {
+      writeFileSync(patTempPath, patToken, { mode: 0o600 });
+      const exists = await gcpSecretExists(patSecretName, gcpProjectId);
+      await withSpinner(
+        `${exists ? 'Adding new version to' : 'Creating'} secret ${patSecretName}...`,
+        async () => {
+          // Pass --data-file as two separate args so paths with spaces
+          // (Windows temp dirs like C:\Users\First Last\...) survive
+          // cmd.exe tokenization correctly.
+          const args = exists
+            ? ['secrets', 'versions', 'add', patSecretName, '--data-file', patTempPath, '--project', gcpProjectId]
+            : ['secrets', 'create', patSecretName, '--data-file', patTempPath, '--project', gcpProjectId, '--replication-policy=automatic'];
+          await shell('gcloud', args);
+        },
+      );
+      console.log(chalk.green(
+        `  ✓ PAT stored in Secret Manager (secret: ${patSecretName}, project: ${gcpProjectId})`,
+      ));
+    } catch (err) {
+      // Never surface the token — only the failure reason.
+      const msg = err instanceof Error ? err.message : String(err);
+      console.log(chalk.yellow(
+        `  ⚠ Failed to store PAT in Secret Manager: ${msg}\n    Store manually: ${manualCmd}`,
+      ));
+    } finally {
+      try { rmSync(patTempPath, { force: true }); } catch { /* best-effort */ }
+    }
+  }
 
   // 6. Set up branch protection (graceful degradation for GitHub Free + private repos)
   try {

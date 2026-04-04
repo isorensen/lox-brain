@@ -14,6 +14,11 @@ All notable changes to this project will be documented in this file.
 - Update README with badges, improved splash, and public install instructions
 - Add CONTRIBUTING.md, CODE_OF_CONDUCT.md, and GitHub issue/PR templates
 
+## [0.1.1] — 2026-04-04
+
+### Fixed
+- gcloud CLI not detected on Windows during installation (#17). Google Cloud SDK installs `gcloud.cmd` (batch wrapper), which Node.js `execFile()` doesn't resolve. Added explicit `gcloud.cmd` fallback for Windows without compromising `execFile` security.
+
 ## [0.1.0] — 2026-04-03
 
 > **Note:** Version reset to 0.1.0. Previous version numbers (0.1.0–0.4.0) reflected internal phase milestones, not public SemVer. This entry marks the first versioned public-facing release of Lox.

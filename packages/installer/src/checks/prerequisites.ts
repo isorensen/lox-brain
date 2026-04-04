@@ -44,12 +44,24 @@ async function checkGit(): Promise<PrerequisiteResult> {
   }
 }
 
-async function checkGcloud(): Promise<PrerequisiteResult> {
+export async function checkGcloud(): Promise<PrerequisiteResult> {
   try {
     const { stdout } = await shell('gcloud', ['--version']);
     const firstLine = stdout.split('\n')[0] ?? '';
     return { name: 'gcloud CLI', installed: true, version: firstLine };
   } catch {
+    // On Windows, gcloud SDK installs gcloud.cmd (batch wrapper).
+    // Node.js execFile() doesn't resolve .cmd extensions, so try explicitly.
+    if (getPlatform() === 'windows') {
+      try {
+        const { stdout } = await shell('gcloud.cmd', ['--version']);
+        const firstLine = stdout.split('\n')[0] ?? '';
+        return { name: 'gcloud CLI', installed: true, version: firstLine };
+      } catch {
+        // Both gcloud and gcloud.cmd failed — fall through to not-installed
+      }
+    }
+
     return {
       name: 'gcloud CLI',
       installed: false,

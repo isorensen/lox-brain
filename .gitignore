@@ -38,3 +38,6 @@ Thumbs.db
 # Coverage & logs
 coverage/
 *.log
+
+# Git worktrees
+.worktrees/

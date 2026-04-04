@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getPlatform } from '../../src/utils/shell.js';
 
 describe('getPlatform', () => {
@@ -54,5 +54,82 @@ describe('PrerequisiteResult interface', () => {
         expect(r.installCommand.length).toBeGreaterThan(0);
       }
     }
+  });
+});
+
+describe('checkGcloud Windows .cmd fallback', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('detects gcloud normally when shell("gcloud") succeeds', async () => {
+    const shellMod = await import('../../src/utils/shell.js');
+    vi.spyOn(shellMod, 'shell').mockResolvedValueOnce({
+      stdout: 'Google Cloud SDK 450.0.0\nother lines',
+      stderr: '',
+    });
+
+    // Re-import to pick up the mock (checkGcloud uses the same module reference)
+    const { checkGcloud } = await import('../../src/checks/prerequisites.js');
+    const result = await checkGcloud();
+
+    expect(result.installed).toBe(true);
+    expect(result.version).toBe('Google Cloud SDK 450.0.0');
+    expect(shellMod.shell).toHaveBeenCalledWith('gcloud', ['--version']);
+  });
+
+  it('falls back to gcloud.cmd on Windows when gcloud fails', async () => {
+    const shellMod = await import('../../src/utils/shell.js');
+
+    // First call (gcloud) fails
+    const shellSpy = vi.spyOn(shellMod, 'shell')
+      .mockRejectedValueOnce(new Error('Command not found: gcloud'))
+      .mockResolvedValueOnce({
+        stdout: 'Google Cloud SDK 450.0.0\nother lines',
+        stderr: '',
+      });
+
+    vi.spyOn(shellMod, 'getPlatform').mockReturnValue('windows');
+
+    const { checkGcloud } = await import('../../src/checks/prerequisites.js');
+    const result = await checkGcloud();
+
+    expect(result.installed).toBe(true);
+    expect(result.version).toBe('Google Cloud SDK 450.0.0');
+    expect(shellSpy).toHaveBeenCalledWith('gcloud', ['--version']);
+    expect(shellSpy).toHaveBeenCalledWith('gcloud.cmd', ['--version']);
+  });
+
+  it('returns installed: false when both gcloud and gcloud.cmd fail on Windows', async () => {
+    const shellMod = await import('../../src/utils/shell.js');
+
+    vi.spyOn(shellMod, 'shell')
+      .mockRejectedValueOnce(new Error('Command not found: gcloud'))
+      .mockRejectedValueOnce(new Error('Command not found: gcloud.cmd'));
+
+    vi.spyOn(shellMod, 'getPlatform').mockReturnValue('windows');
+
+    const { checkGcloud } = await import('../../src/checks/prerequisites.js');
+    const result = await checkGcloud();
+
+    expect(result.installed).toBe(false);
+    expect(result.installCommand).toBeDefined();
+  });
+
+  it('does not try gcloud.cmd fallback on non-Windows platforms', async () => {
+    const shellMod = await import('../../src/utils/shell.js');
+
+    const shellSpy = vi.spyOn(shellMod, 'shell')
+      .mockRejectedValueOnce(new Error('Command not found: gcloud'));
+
+    vi.spyOn(shellMod, 'getPlatform').mockReturnValue('linux');
+
+    const { checkGcloud } = await import('../../src/checks/prerequisites.js');
+    const result = await checkGcloud();
+
+    expect(result.installed).toBe(false);
+    // Should only have called shell once (no .cmd fallback)
+    expect(shellSpy).toHaveBeenCalledTimes(1);
+    expect(shellSpy).toHaveBeenCalledWith('gcloud', ['--version']);
   });
 });

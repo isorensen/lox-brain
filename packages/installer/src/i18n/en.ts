@@ -88,6 +88,9 @@ export interface I18nStrings {
   // Modes
   mode_personal: string;
   mode_team: string;
+
+  // VM setup
+  vm_setup_timeout: string;
 }
 
 export const en: I18nStrings = {
@@ -180,4 +183,7 @@ export const en: I18nStrings = {
   // Modes
   mode_personal: 'Personal',
   mode_team: 'Team',
+
+  // VM setup
+  vm_setup_timeout: 'VM setup is taking longer than expected. Continue waiting?',
 };

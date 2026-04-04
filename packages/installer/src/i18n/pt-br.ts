@@ -90,4 +90,7 @@ export const ptBr: I18nStrings = {
   // Modes
   mode_personal: 'Pessoal',
   mode_team: 'Equipe',
+
+  // VM setup
+  vm_setup_timeout: 'A configuracao da VM esta demorando mais que o esperado. Continuar aguardando?',
 };

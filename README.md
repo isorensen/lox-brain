@@ -142,6 +142,36 @@ npm run index-vault                      # One-time full vault indexing
 
 Estimated monthly cost: **~US$18/month** (GCE e2-small + 30GB pd-ssd + Cloud NAT + minimal traffic).
 
+## Lox Team (Commercial)
+
+Lox Team extends the personal brain into a shared, multi-user knowledge base
+for corporate teams. It is available under a commercial license.
+
+### What Team Mode adds
+
+- **Multi-user identity** via WireGuard VPN peers -- each user is identified
+  by their VPN IP, no auth server needed.
+- **`created_by` attribution** -- every note is tagged with its author
+  automatically.
+- **Team MCP tools** -- `list_team_activity` and `search_by_author` for
+  cross-team knowledge discovery.
+- **Installer team flow** -- guided setup for license validation, peer
+  generation, and WireGuard config distribution.
+
+### Licensing
+
+| Package | License |
+|---------|---------|
+| `packages/core` | MIT |
+| `packages/shared` | MIT |
+| `packages/cli` | MIT |
+| `packages/installer` | MIT |
+| `packages/team` | Commercial (see `packages/team/LICENSE`) |
+
+Personal mode (single user) is free and open source. Team mode (2+ users)
+requires a commercial license key. Contact eduardo@isorensen.dev for
+licensing inquiries.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.

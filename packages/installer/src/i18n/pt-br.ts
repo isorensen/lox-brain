@@ -78,6 +78,10 @@ export const ptBr: I18nStrings = {
   preset_para_desc: 'Projetos, Areas, Recursos, Arquivos — organizacao orientada a acao.',
 
   // Modes
+  step_mode: 'Seleção de Modo',
+  mode_prompt: 'Escolha o modo de instalação:',
   mode_personal: 'Pessoal',
+  mode_personal_desc: 'Usuário único — seu Segundo Cérebro pessoal.',
   mode_team: 'Equipe',
+  mode_team_desc: 'Multi-usuário — cérebro compartilhado para a equipe (requer chave de licença).',
 };

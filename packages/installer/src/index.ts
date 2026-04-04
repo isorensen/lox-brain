@@ -2,6 +2,7 @@
 
 import { renderSplash } from './ui/splash.js';
 import { stepLanguage } from './steps/step-language.js';
+import { stepMode } from './steps/step-mode.js';
 import { stepPrerequisites } from './steps/step-prerequisites.js';
 import { stepGcpAuth } from './steps/step-gcp-auth.js';
 import { stepGcpProject } from './steps/step-gcp-project.js';
@@ -38,7 +39,11 @@ async function main(): Promise<void> {
 
   console.log(renderSplash());
 
-  // Step 1: Prerequisites
+  // Step 1: Mode Selection
+  const modeResult = await stepMode(ctx);
+  if (!modeResult.success) process.exit(1);
+
+  // Step 2: Prerequisites
   const prereqResult = await stepPrerequisites(ctx);
   if (!prereqResult.success) {
     console.error(`\n${prereqResult.message}`);

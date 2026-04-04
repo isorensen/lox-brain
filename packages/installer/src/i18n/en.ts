@@ -76,8 +76,12 @@ export interface I18nStrings {
   preset_para_desc: string;
 
   // Modes
+  step_mode: string;
+  mode_prompt: string;
   mode_personal: string;
+  mode_personal_desc: string;
   mode_team: string;
+  mode_team_desc: string;
 }
 
 export const en: I18nStrings = {
@@ -158,6 +162,10 @@ export const en: I18nStrings = {
   preset_para_desc: 'Projects, Areas, Resources, Archives — action-oriented organization.',
 
   // Modes
+  step_mode: 'Mode Selection',
+  mode_prompt: 'Choose installation mode:',
   mode_personal: 'Personal',
+  mode_personal_desc: 'Single user — your personal Second Brain.',
   mode_team: 'Team',
+  mode_team_desc: 'Multi-user — shared brain for your team (requires license key).',
 };

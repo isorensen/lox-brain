@@ -21,7 +21,12 @@ export interface InstallerState {
   failed_step: number | null;
   /** ISO 8601 timestamp of when this state was written. */
   timestamp: string;
-  /** Lox version that produced this state — state is rejected on version mismatch. */
+  /** Lox version that produced this state. Informational only — kept for
+   * the resume-prompt UI and debugging. The real compatibility gate is
+   * `schema_version`, which is bumped whenever `InstallerContext` changes
+   * shape. This lets a user who failed on vX.Y.Z and re-ran `install.ps1`
+   * (which always fetches the latest tarball) resume their install on
+   * vX.Y.Z+1 instead of starting from step 1. See #92. */
   lox_version: string;
   /** Serialized installer context, minus any transient fields. */
   ctx: InstallerContext;
@@ -70,9 +75,16 @@ export function saveState(
 
 /**
  * Load and validate installer state. Returns null if the file is missing,
- * unreadable, malformed, or belongs to a different schema/version.
+ * unreadable, malformed, or belongs to a different `schema_version`.
+ *
+ * `lox_version` is NOT a compatibility gate — see #92. `install.ps1` always
+ * downloads the latest tarball, so a user who failed on vX.Y.Z and re-ran
+ * `irm .../install.ps1 | iex` is now running vX.Y.Z+1 with state saved by
+ * vX.Y.Z. Rejecting on version mismatch would silently skip the resume
+ * prompt on every cross-release recovery. `schema_version` is the real
+ * gate, bumped whenever `InstallerContext` changes shape.
  */
-export function loadState(expectedLoxVersion: string): InstallerState | null {
+export function loadState(): InstallerState | null {
   const statePath = getStatePath();
   if (!existsSync(statePath)) return null;
   let raw: string;
@@ -89,7 +101,6 @@ export function loadState(expectedLoxVersion: string): InstallerState | null {
   }
   if (!isInstallerState(parsed)) return null;
   if (parsed.schema_version !== STATE_SCHEMA_VERSION) return null;
-  if (parsed.lox_version !== expectedLoxVersion) return null;
   return parsed;
 }
 

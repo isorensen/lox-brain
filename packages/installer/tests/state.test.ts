@@ -63,7 +63,7 @@ describe('installer state persistence', () => {
   it('saveState creates ~/.lox/ if missing and round-trips with loadState', () => {
     const ctx = makeCtx();
     saveState(ctx, 5, null, FAKE_VERSION);
-    const loaded = loadState(FAKE_VERSION);
+    const loaded = loadState();
     expect(loaded).not.toBeNull();
     expect(loaded!.schema_version).toBe(STATE_SCHEMA_VERSION);
     expect(loaded!.last_completed_step).toBe(5);
@@ -92,19 +92,42 @@ describe('installer state persistence', () => {
   });
 
   it('loadState returns null when the file does not exist', () => {
-    expect(loadState(FAKE_VERSION)).toBeNull();
+    expect(loadState()).toBeNull();
   });
 
   it('loadState returns null for malformed JSON', () => {
     const statePath = getStatePath();
     mkdirSync(path.dirname(statePath), { recursive: true });
     writeFileSync(statePath, '{ not valid json');
-    expect(loadState(FAKE_VERSION)).toBeNull();
+    expect(loadState()).toBeNull();
   });
 
-  it('loadState rejects state from a different lox_version', () => {
-    saveState(makeCtx(), 1, null, '0.4.5');
-    expect(loadState('0.4.6')).toBeNull();
+  it('loadState accepts state from a different lox_version (patch bump)', () => {
+    // State written by 0.6.1 must still load on 0.6.2 — install.ps1 always
+    // pulls the latest tarball, so every cross-release re-run looks like a
+    // version mismatch. schema_version is the real gate. See #92.
+    saveState(makeCtx(), 1, null, '0.6.1');
+    const loaded = loadState();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.lox_version).toBe('0.6.1');
+    expect(loaded!.last_completed_step).toBe(1);
+  });
+
+  it('loadState accepts state from a different lox_version (minor bump)', () => {
+    // Matches the Lara-upgrade path 0.5.0 → 0.6.0. Minor bumps do not change
+    // InstallerContext shape (schema_version is still 1).
+    saveState(makeCtx(), 3, 4, '0.5.0');
+    const loaded = loadState();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.lox_version).toBe('0.5.0');
+    expect(loaded!.failed_step).toBe(4);
+  });
+
+  it('loadState accepts state from the same lox_version', () => {
+    saveState(makeCtx(), 2, null, FAKE_VERSION);
+    const loaded = loadState();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.lox_version).toBe(FAKE_VERSION);
   });
 
   it('loadState rejects state with a stale schema_version', () => {
@@ -118,14 +141,14 @@ describe('installer state persistence', () => {
       lox_version: FAKE_VERSION,
       ctx: makeCtx(),
     }));
-    expect(loadState(FAKE_VERSION)).toBeNull();
+    expect(loadState()).toBeNull();
   });
 
   it('loadState rejects state with missing required fields', () => {
     const statePath = getStatePath();
     mkdirSync(path.dirname(statePath), { recursive: true });
     writeFileSync(statePath, JSON.stringify({ schema_version: 1 }));
-    expect(loadState(FAKE_VERSION)).toBeNull();
+    expect(loadState()).toBeNull();
   });
 
   it('clearState removes the file and is a no-op when already absent', () => {
@@ -139,14 +162,14 @@ describe('installer state persistence', () => {
 
   it('saveState records failed_step when a step errored', () => {
     saveState(makeCtx(), 10, 11, FAKE_VERSION);
-    const loaded = loadState(FAKE_VERSION);
+    const loaded = loadState();
     expect(loaded!.last_completed_step).toBe(10);
     expect(loaded!.failed_step).toBe(11);
   });
 
   it('persists vmUser and vmHome so the next run can skip SSH probe', () => {
     saveState(makeCtx(), 11, 12, FAKE_VERSION);
-    const loaded = loadState(FAKE_VERSION);
+    const loaded = loadState();
     // These fields carry the fix from #79 across runs so step-mcp
     // does not reprobe identity when resuming.
     expect(loaded!.ctx.vmUser).toBe('demo_example_com');
@@ -157,13 +180,13 @@ describe('installer state persistence', () => {
     const ctx = makeCtx();
     ctx.config.gcp = { project: 'p', region: 'r', zone: 'z', vm_name: 'v', service_account: 'sa' };
     saveState(ctx, 6, null, FAKE_VERSION);
-    const loaded = loadState(FAKE_VERSION);
+    const loaded = loadState();
     expect(loaded!.ctx.config.gcp).toEqual(ctx.config.gcp);
   });
 
   it('timestamp is a parseable ISO 8601 string', () => {
     saveState(makeCtx(), 1, null, FAKE_VERSION);
-    const loaded = loadState(FAKE_VERSION);
+    const loaded = loadState();
     expect(Number.isNaN(Date.parse(loaded!.timestamp))).toBe(false);
   });
 

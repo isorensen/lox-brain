@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.3] — 2026-04-05
+
+### Fixed
+- Installer resume now works across Lox releases (#92). Previously `loadState` strict-rejected any saved state whose `lox_version` did not match the currently running installer, so re-running `irm .../install.ps1 | iex` after a new release shipped (install.ps1 always pulls the latest tarball) silently skipped the resume prompt and restarted from step 1. `schema_version` — bumped whenever `InstallerContext` changes shape — is now the sole compatibility gate. The `lox_version` field stays in the state file (and is shown in the resume-prompt summary as "Saved: … (Lox vX.Y.Z)") so the user can see when state comes from a previous release.
+
+
 ## [0.6.2] — 2026-04-05
 
 ### Fixed

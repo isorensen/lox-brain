@@ -62,7 +62,11 @@ export function renderResumeSummary(state: InstallerState): string[] {
   if (state.failed_step !== null) {
     lines.push(`  ${strings.resume_failed_at}: ${stepLabel(state.failed_step)}`);
   }
-  lines.push(`  ${strings.resume_saved_at}: ${state.timestamp}`);
+  // Include lox_version so the user can tell when saved state came from a
+  // different release than the installer they're currently running (#92).
+  // "(Lox vX.Y.Z)" is an untranslated product-version token on purpose —
+  // the product name and SemVer format are the same in every locale.
+  lines.push(`  ${strings.resume_saved_at}: ${state.timestamp} (Lox v${state.lox_version})`);
   return lines;
 }
 

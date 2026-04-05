@@ -259,3 +259,104 @@ describe('.gitignore sensitive patterns gate (#119)', () => {
     }))).toBe(true);
   });
 });
+
+describe('VM public IP restricted to VPN endpoint gate (#119 PR-B)', () => {
+  const gate = findGate('VM public IP restricted to VPN endpoint');
+
+  beforeEach(() => { vi.mocked(shell).mockReset(); });
+
+  it('passes when VM has zero access configs (truly no public IP)', async () => {
+    vi.mocked(shell).mockResolvedValueOnce({
+      stdout: JSON.stringify({ networkInterfaces: [{}] }),
+      stderr: '',
+    });
+    expect(await gate.check(buildConfig())).toBe(true);
+  });
+
+  it('passes when networkInterfaces is an empty array', async () => {
+    // gcloud's behaviour when the VM has its external IP released but
+    // the interface still listed can produce an empty interfaces array
+    // via the JSON projection. Strictly safer than vpn-only; should pass.
+    vi.mocked(shell).mockResolvedValueOnce({
+      stdout: JSON.stringify({ networkInterfaces: [] }),
+      stderr: '',
+    });
+    expect(await gate.check(buildConfig())).toBe(true);
+  });
+
+  it('passes when VM has exactly one access config named "vpn-only"', async () => {
+    // This is the correct-by-design state: step 8 (step-vpn.ts) attaches
+    // a static IP via `gcloud compute instances add-access-config
+    // --access-config-name=vpn-only` because WireGuard needs a reachable
+    // UDP endpoint. The firewall (gate #4) separately guarantees only
+    // UDP 51820 is open to 0.0.0.0/0.
+    vi.mocked(shell).mockResolvedValueOnce({
+      stdout: JSON.stringify({
+        networkInterfaces: [{
+          accessConfigs: [{ name: 'vpn-only', natIP: '35.196.10.20' }],
+        }],
+      }),
+      stderr: '',
+    });
+    expect(await gate.check(buildConfig())).toBe(true);
+  });
+
+  it('fails when VM has a single access config with the default "external-nat" name', async () => {
+    // If someone manually re-creates the VM without --no-address OR
+    // attaches an access config via `gcloud compute instances add-access-config`
+    // without `--access-config-name=vpn-only`, the default name is
+    // "external-nat" (or "External NAT"). That's NOT our VPN endpoint —
+    // it means an unintended public IP exists.
+    vi.mocked(shell).mockResolvedValueOnce({
+      stdout: JSON.stringify({
+        networkInterfaces: [{
+          accessConfigs: [{ name: 'external-nat', natIP: '35.196.10.20' }],
+        }],
+      }),
+      stderr: '',
+    });
+    expect(await gate.check(buildConfig())).toBe(false);
+  });
+
+  it('fails when VM has two access configs (extra IP attached)', async () => {
+    vi.mocked(shell).mockResolvedValueOnce({
+      stdout: JSON.stringify({
+        networkInterfaces: [{
+          accessConfigs: [
+            { name: 'vpn-only', natIP: '35.196.10.20' },
+            { name: 'debug', natIP: '34.150.0.99' },
+          ],
+        }],
+      }),
+      stderr: '',
+    });
+    expect(await gate.check(buildConfig())).toBe(false);
+  });
+
+  it('fails when VM has access configs on multiple network interfaces', async () => {
+    // Defense in depth: a VM with two NICs each holding an access config
+    // would pass a naive "first-interface" check but shouldn't pass ours.
+    vi.mocked(shell).mockResolvedValueOnce({
+      stdout: JSON.stringify({
+        networkInterfaces: [
+          { accessConfigs: [{ name: 'vpn-only', natIP: '35.196.10.20' }] },
+          { accessConfigs: [{ name: 'external-nat', natIP: '34.150.0.99' }] },
+        ],
+      }),
+      stderr: '',
+    });
+    expect(await gate.check(buildConfig())).toBe(false);
+  });
+
+  it('fails when gcloud describe fails (VM missing, auth error)', async () => {
+    vi.mocked(shell).mockRejectedValueOnce(Object.assign(new Error('Command failed'), {
+      stderr: 'ERROR: (gcloud.compute.instances.describe) NOT_FOUND: instance not found',
+    }));
+    expect(await gate.check(buildConfig())).toBe(false);
+  });
+
+  it('fails when gcloud returns malformed JSON', async () => {
+    vi.mocked(shell).mockResolvedValueOnce({ stdout: 'not json', stderr: '' });
+    expect(await gate.check(buildConfig())).toBe(false);
+  });
+});

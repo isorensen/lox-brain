@@ -1,5 +1,6 @@
 import { shell } from '../utils/shell.js';
 import { isProPlanGate } from '../steps/step-vault.js';
+import { VPN_ACCESS_CONFIG_NAME } from '../steps/step-vpn.js';
 import type { LoxConfig } from '@lox-brain/shared';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -76,9 +77,20 @@ export const securityGates: SecurityGate[] = [
     },
   },
 
-  // 3. VM has no public IP
+  // 3. VM public IP is restricted to the VPN endpoint (#119 item 2)
+  //
+  // The VM intentionally HAS a public IP: step 8 (step-vpn.ts) attaches
+  // a static IP via `gcloud compute instances add-access-config
+  // --access-config-name=vpn-only` because WireGuard needs a reachable
+  // UDP endpoint on the internet. The previous "VM has no public IP"
+  // check contradicted the architecture and always failed on working
+  // installs. What we actually verify here is that the public IP exists
+  // ONLY as the VPN endpoint — any additional or differently-named
+  // access config means an unintended IP got attached. The firewall
+  // gate (#4) is the companion check that guarantees only UDP 51820 is
+  // reachable on that IP.
   {
-    name: 'VM has no public IP',
+    name: 'VM public IP restricted to VPN endpoint',
     blocking: true,
     async check(config) {
       try {
@@ -86,16 +98,22 @@ export const securityGates: SecurityGate[] = [
           'compute', 'instances', 'describe', config.gcp.vm_name,
           '--zone', config.gcp.zone,
           '--project', config.gcp.project,
-          '--format', 'json(networkInterfaces[].accessConfigs[].natIP)',
+          '--format', 'json(networkInterfaces[].accessConfigs[])',
         ]);
         const parsed = JSON.parse(stdout);
         const interfaces = parsed.networkInterfaces ?? [];
-        for (const iface of interfaces) {
-          for (const ac of iface.accessConfigs ?? []) {
-            if (ac.natIP) return false;
-          }
-        }
-        return true;
+        const allConfigs = interfaces.flatMap(
+          (iface: { accessConfigs?: Array<{ name?: string }> }) => iface.accessConfigs ?? [],
+        );
+        // Zero access configs = no public IP at all. Strictly safer
+        // than the "one vpn-only config" state from a public-exposure
+        // standpoint. If step 8 silently failed to attach the static
+        // IP, the VPN tunnel probe in step 12 catches that failure —
+        // this gate is about "is the public IP restricted?", and the
+        // answer is trivially yes when there is no public IP.
+        if (allConfigs.length === 0) return true;
+        if (allConfigs.length === 1 && allConfigs[0].name === VPN_ACCESS_CONFIG_NAME) return true;
+        return false;
       } catch {
         return false;
       }

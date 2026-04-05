@@ -93,8 +93,11 @@ import { fixWindowsAcl as fixWindowsSshAcl } from '../utils/windows-acl.js';
 
 /**
  * Ensure ~/.ssh/config exists and append the lox-vm entry if not present.
+ * Exported for tests — the #109 regression requires verifying that
+ * `tightenGcloudSshKey` runs on BOTH the new-entry AND already-configured
+ * paths (previously a bug skipped it on re-runs).
  */
-async function configureSshConfig(vpnServerIp: string, sshUser: string): Promise<void> {
+export async function configureSshConfig(vpnServerIp: string, sshUser: string): Promise<void> {
   const { readFileSync, writeFileSync, existsSync, mkdirSync } = await import('node:fs');
   const { join } = await import('node:path');
 
@@ -122,16 +125,22 @@ async function configureSshConfig(vpnServerIp: string, sshUser: string): Promise
     // never have been fixed, and OpenSSH validates the parent dir too.
     await fixWindowsSshAcl(sshDir);
     await fixWindowsSshAcl(configPath);
-    return;
+  } else {
+    const entry = buildSshConfigEntry(vpnServerIp, sshUser);
+    writeFileSync(configPath, existing + entry);
+    // Ensure correct permissions on SSH config
+    const { chmodSync } = await import('node:fs');
+    chmodSync(configPath, 0o600);
+    await fixWindowsSshAcl(configPath);
   }
 
-  const entry = buildSshConfigEntry(vpnServerIp, sshUser);
-  writeFileSync(configPath, existing + entry);
-  // Ensure correct permissions on SSH config
-  const { chmodSync } = await import('node:fs');
-  chmodSync(configPath, 0o600);
-  await fixWindowsSshAcl(configPath);
-
+  // ALWAYS tighten the gcloud private key (#109). `gcloud compute ssh` in
+  // earlier steps — and inside step 12's own `ensureVmIdentity` call —
+  // regenerates ~/.ssh/google_compute_engine with fresh inherited loose
+  // Windows ACLs EVERY TIME it runs. So even if a previous step 12 run
+  // tightened the key, a subsequent re-run would re-loosen it via
+  // ensureVmIdentity, then skip the tightening via the early-return
+  // above. Must run unconditionally AFTER the config-entry branch.
   await tightenGcloudSshKey(sshDir);
 }
 

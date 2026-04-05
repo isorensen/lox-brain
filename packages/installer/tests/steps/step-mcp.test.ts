@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { isMcpServerRegistered, buildMcpLauncherScript, fixWindowsSshAcl, buildVpnUnreachableMessage, tightenGcloudSshKey } from '../../src/steps/step-mcp.js';
+import { isMcpServerRegistered, buildMcpLauncherScript, fixWindowsSshAcl, buildVpnUnreachableMessage, tightenGcloudSshKey, configureSshConfig } from '../../src/steps/step-mcp.js';
 import { shell } from '../../src/utils/shell.js';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -136,6 +136,83 @@ describe('tightenGcloudSshKey (#101)', () => {
       expect(call[0]).toBe('icacls');
       expect(call[1]).toContain(keyPath);
     }
+  });
+});
+
+describe('configureSshConfig (#109 re-run regression)', () => {
+  let tmp: string;
+  const originalPlatform = process.platform;
+  const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
+  const originalUsername = process.env.USERNAME;
+
+  beforeEach(() => {
+    tmp = mkdtempSync(path.join(tmpdir(), 'lox-ssh-cfg-'));
+    // Point HOME (and USERPROFILE on Windows CI) to our tmp dir so
+    // configureSshConfig reads/writes under there instead of $HOME.
+    process.env.HOME = tmp;
+    process.env.USERPROFILE = tmp;
+    vi.mocked(shell).mockReset();
+    vi.mocked(shell).mockResolvedValue({ stdout: '', stderr: '' });
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = originalUserProfile;
+    if (originalUsername === undefined) delete process.env.USERNAME;
+    else process.env.USERNAME = originalUsername;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('calls tightenGcloudSshKey when lox-vm is ALREADY in ~/.ssh/config (re-run path, #109)', async () => {
+    // This is the bug scenario: user re-runs the installer, ~/.ssh/config
+    // already has `Host lox-vm`, so configureSshConfig took an early
+    // return and NEVER tightened the gcloud key ACLs. Ship-blocker for
+    // every Windows re-run.
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    process.env.USERNAME = 'alice';
+
+    // Seed an existing ~/.ssh/config with the Host lox-vm entry and the
+    // gcloud private key file. configureSshConfig must tighten the key
+    // despite taking the "already configured" branch.
+    const sshDir = path.join(tmp, '.ssh');
+    mkdirSync(sshDir, { recursive: true });
+    writeFileSync(path.join(sshDir, 'config'), 'Host lox-vm\n  HostName 10.10.0.1\n');
+    writeFileSync(path.join(sshDir, 'google_compute_engine'), 'fake-key');
+
+    await configureSshConfig('10.10.0.1', 'alice');
+
+    // fixWindowsAcl runs on each target (sshDir, configPath, keyPath) via
+    // the #101 6-call icacls sequence. We just need to prove the KEY path
+    // was among the icacls targets — that's what #109 was breaking.
+    const keyPath = path.join(sshDir, 'google_compute_engine');
+    const icaclsCalls = vi.mocked(shell).mock.calls.filter(
+      (c) => c[0] === 'icacls' && c[1]?.includes(keyPath),
+    );
+    expect(icaclsCalls.length).toBeGreaterThan(0);
+  });
+
+  it('calls tightenGcloudSshKey on the fresh-config path too', async () => {
+    // The other branch: no existing Host lox-vm entry. The tightening
+    // must still run. Both paths matter — don't regress the NEW code path
+    // while fixing the re-run path.
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    process.env.USERNAME = 'alice';
+    const sshDir = path.join(tmp, '.ssh');
+    mkdirSync(sshDir, { recursive: true });
+    writeFileSync(path.join(sshDir, 'google_compute_engine'), 'fake-key');
+    // NO existing config file.
+
+    await configureSshConfig('10.10.0.1', 'alice');
+
+    const keyPath = path.join(sshDir, 'google_compute_engine');
+    const icaclsCalls = vi.mocked(shell).mock.calls.filter(
+      (c) => c[0] === 'icacls' && c[1]?.includes(keyPath),
+    );
+    expect(icaclsCalls.length).toBeGreaterThan(0);
   });
 });
 

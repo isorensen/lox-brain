@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-04-05
+
+### Fixed
+- Step 12 (MCP) now strips inherited NTFS ACLs from `~/.ssh/config` on Windows via `icacls /inheritance:r /grant:r "<USERNAME>":F` after writing the file. OpenSSH refuses to read configs with inherited ACEs (e.g. the "Owner Rights" SID S-1-3-4), so `scp`/`ssh lox-vm` failed with "Bad owner or permissions" even after `chmodSync(path, 0o600)` — Windows `chmod` does not touch NTFS ACLs (#83). The same fix is applied to `~/.ssh/` when the installer creates it, and to the config file on resume runs where the entry was already present from a previous failed install.
+- The error-reporter's Windows user-path redactor now handles mixed separators (`C:\Users\<name>/.ssh/...`) that OpenSSH emits on Windows, so auto-reports no longer leak the user's Windows account name when scp/ssh errors reference `.ssh/config`.
+
+
 ## [0.5.0] — 2026-04-05
 
 ### Added

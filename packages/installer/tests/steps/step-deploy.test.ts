@@ -9,6 +9,7 @@ import {
   buildMcpHealthProbeScript,
   parseVmIdentity,
   buildIdentityProbeScript,
+  isRetryableSshError,
 } from '../../src/steps/step-deploy.js';
 
 describe('buildCloneScript', () => {
@@ -166,5 +167,79 @@ describe('buildWatcherService', () => {
     const unit = buildWatcherService('alice', '/opt/lox');
     expect(unit).toContain('User=alice');
     expect(unit).toContain('WorkingDirectory=/opt/lox');
+  });
+});
+
+describe('isRetryableSshError (#87)', () => {
+  it('flags "Remote side unexpectedly closed" as retryable', () => {
+    expect(isRetryableSshError(new Error(
+      'Command failed: gcloud compute ssh ...\nFATAL ERROR: Remote side unexpectedly closed network connection',
+    ))).toBe(true);
+  });
+
+  it('flags ECONNRESET as retryable', () => {
+    expect(isRetryableSshError(new Error('read ECONNRESET'))).toBe(true);
+  });
+
+  it('flags "Connection reset by peer" as retryable', () => {
+    expect(isRetryableSshError(new Error('ssh: Connection reset by peer'))).toBe(true);
+  });
+
+  it('does NOT flag "Connection refused" (usually sshd down, not transient)', () => {
+    expect(isRetryableSshError(new Error('ssh: connect to host foo port 22: Connection refused'))).toBe(false);
+  });
+
+  it('flags "kex_exchange_identification" as retryable', () => {
+    expect(isRetryableSshError(new Error(
+      'kex_exchange_identification: Connection closed by remote host',
+    ))).toBe(true);
+  });
+
+  it('flags the IAP 4003 tunnel-closed code as retryable', () => {
+    expect(isRetryableSshError(new Error(
+      'ERROR: 4003: The connection to the instance ended unexpectedly.',
+    ))).toBe(true);
+  });
+
+  it('flags the IAP 4033 code when it appears in a tunnel-context message', () => {
+    expect(isRetryableSshError(new Error('IAP Desktop 4033: tunnel closed'))).toBe(true);
+    expect(isRetryableSshError(new Error('ERROR: 4033 tunnel connection failed'))).toBe(true);
+  });
+
+  it('does NOT flag a bare "4033" appearing in unrelated output', () => {
+    // The anchored pattern rejects plain 4033 that is just an exit code
+    // or port number with no IAP/tunnel context (review fix).
+    expect(isRetryableSshError(new Error('build failed: test-id-4033 exited 1'))).toBe(false);
+    expect(isRetryableSshError(new Error('npm ERR! 4033'))).toBe(false);
+  });
+
+  it('flags "Operation timed out" as retryable', () => {
+    expect(isRetryableSshError(new Error('ssh: connect: Operation timed out'))).toBe(true);
+  });
+
+  it('is case-insensitive', () => {
+    expect(isRetryableSshError(new Error('REMOTE SIDE UNEXPECTEDLY CLOSED'))).toBe(true);
+  });
+
+  it('does NOT flag permission errors', () => {
+    expect(isRetryableSshError(new Error('Permission denied (publickey)'))).toBe(false);
+  });
+
+  it('does NOT flag "command not found" / script errors', () => {
+    expect(isRetryableSshError(new Error('bash: /tmp/lox-deploy.sh: No such file or directory'))).toBe(false);
+  });
+
+  it('does NOT flag arbitrary stderr output', () => {
+    expect(isRetryableSshError(new Error('npm ERR! code E404'))).toBe(false);
+  });
+
+  it('handles non-Error thrown values (string)', () => {
+    expect(isRetryableSshError('read ECONNRESET')).toBe(true);
+    expect(isRetryableSshError('arbitrary string')).toBe(false);
+  });
+
+  it('handles null and undefined without throwing', () => {
+    expect(isRetryableSshError(null)).toBe(false);
+    expect(isRetryableSshError(undefined)).toBe(false);
   });
 });

@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-04-05
+
+### Fixed
+- Step 11 (Deploy) now retries transient SSH / IAP tunnel drops up to 3 times with 2s/4s backoff before failing (#87). GCP's IAP relay occasionally drops long-lived \`gcloud compute ssh --tunnel-through-iap\` connections mid-command (errors like "Remote side unexpectedly closed network connection", \`ECONNRESET\`, \`kex_exchange_identification\`, IAP \`4003\`/\`4033\` codes), which previously failed the install on any flake. Non-transient errors (permission, missing script, quota) still fail immediately without wasted retries.
+- The main installer loop now catches thrown exceptions from any step and persists state (failed_step) before re-throwing, so the v0.5.0 resume prompt can offer to restart from the exact step that threw. Previously only returned \`{success: false}\` failures saved state; throws bubbled up without a resumable checkpoint.
+
+
 ## [0.6.0] — 2026-04-05
 
 ### Added

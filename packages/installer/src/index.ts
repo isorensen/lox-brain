@@ -84,7 +84,20 @@ async function main(): Promise<void> {
 
   for (const step of STEPS) {
     if (step.num < startFromStep) continue;
-    const result = await step.fn(ctx);
+    let result: Awaited<ReturnType<typeof step.fn>>;
+    try {
+      result = await step.fn(ctx);
+    } catch (err) {
+      // Thrown exceptions (e.g. transient SSH drops from runRemoteScript
+      // after exhausting retries) must also persist state so the v0.5.0
+      // resume prompt can offer to restart from this exact step (#87).
+      // Save first, then re-throw so the existing outer handler still
+      // offers the error report and exits.
+      try {
+        saveState(ctx, step.num - 1, step.num, LOX_VERSION);
+      } catch { /* best-effort */ }
+      throw err;
+    }
     if (!result.success) {
       await handleStepFailure(step.name, step.num, result.message, ctx);
     }

@@ -8,25 +8,6 @@ import type { InstallerContext, StepResult } from './types.js';
 const TOTAL_STEPS = 12;
 
 /**
- * Execute a command on the VM via SSH through IAP tunnel.
- */
-async function sshCommand(
-  vmName: string,
-  projectId: string,
-  zone: string,
-  command: string,
-): Promise<string> {
-  const { stdout } = await shell('gcloud', [
-    'compute', 'ssh', vmName,
-    '--project', projectId,
-    '--zone', zone,
-    '--tunnel-through-iap',
-    '--command', command,
-  ]);
-  return stdout;
-}
-
-/**
  * Build the systemd unit file for the vault watcher service.
  * Extracted to avoid hardcoding personal values.
  */
@@ -52,6 +33,159 @@ WantedBy=multi-user.target
 }
 
 /**
+ * Clone or update the lox-brain repo on the VM. Uses anonymous HTTPS against
+ * the public upstream so `gh` isn't required (see #73).
+ */
+export function buildCloneScript(installDir: string): string {
+  return [
+    '#!/bin/bash',
+    'set -euo pipefail',
+    `if [ -d "${installDir}" ]; then`,
+    `  cd "${installDir}"`,
+    '  git pull',
+    'else',
+    `  git clone https://github.com/isorensen/lox-brain.git "${installDir}"`,
+    'fi',
+    '',
+  ].join('\n');
+}
+
+/** Run npm ci + workspace build inside the install dir. */
+export function buildBuildScript(installDir: string): string {
+  return [
+    '#!/bin/bash',
+    'set -euo pipefail',
+    `cd "${installDir}"`,
+    'npm ci',
+    'npm run build --workspaces',
+    '',
+  ].join('\n');
+}
+
+/**
+ * Write /etc/lox/secrets.env with tight perms. The env content is embedded
+ * verbatim via a quoted heredoc — the local temp script owns the whole
+ * payload so we never pass multi-line content through `gcloud --command`.
+ */
+export function buildSecretsEnvScript(envContent: string, user: string): string {
+  return [
+    '#!/bin/bash',
+    'set -euo pipefail',
+    'sudo mkdir -p /etc/lox',
+    "sudo tee /etc/lox/secrets.env > /dev/null <<'LOX_ENV_EOF'",
+    envContent,
+    'LOX_ENV_EOF',
+    'sudo chmod 600 /etc/lox/secrets.env',
+    `sudo chown ${user}:${user} /etc/lox/secrets.env`,
+    '',
+  ].join('\n');
+}
+
+/** Install the lox-watcher systemd unit. */
+export function buildSystemdInstallScript(watcherService: string): string {
+  // buildWatcherService() always ends with a newline; join('\n') adds another
+  // between content and LOX_UNIT_EOF, which produces a safe blank line
+  // before the delimiter. No trimming needed.
+  return [
+    '#!/bin/bash',
+    'set -euo pipefail',
+    "sudo tee /etc/systemd/system/lox-watcher.service > /dev/null <<'LOX_UNIT_EOF'",
+    watcherService,
+    'LOX_UNIT_EOF',
+    '',
+  ].join('\n');
+}
+
+/** Reload systemd and enable+start the lox-watcher service. */
+export function buildServiceStartScript(): string {
+  return [
+    '#!/bin/bash',
+    'set -euo pipefail',
+    'sudo systemctl daemon-reload',
+    'sudo systemctl enable lox-watcher',
+    'sudo systemctl start lox-watcher',
+    '',
+  ].join('\n');
+}
+
+/**
+ * Smoke-test the MCP server by sending it a `tools/list` JSON-RPC request
+ * and echoing the first response line. All pipes and redirects live inside
+ * the script, not in `gcloud --command`.
+ */
+export function buildMcpHealthProbeScript(installDir: string): string {
+  // Deliberately NO `set -euo pipefail` — a failing MCP server (pipefail)
+  // would abort before `head -1` reads any output, hiding diagnostic info
+  // from the caller which inspects stdout to decide health. The enclosing
+  // TypeScript wraps this call in try/catch and treats any throw as unhealthy.
+  return [
+    '#!/bin/bash',
+    `cd "${installDir}" || exit 1`,
+    'echo \'{"jsonrpc":"2.0","method":"tools/list","id":1}\' | timeout 10 node packages/core/dist/mcp/index.js 2>/dev/null | head -1',
+    '',
+  ].join('\n');
+}
+
+/**
+ * Write `script` to a local temp file, scp it to the VM via IAP, execute it
+ * with `bash /tmp/lox-deploy-<phase>.sh`, and clean the local temp file.
+ *
+ * The remote `--command` value is always `bash <absolute-path>` — no shell
+ * metacharacters leak through cmd.exe on Windows (#61). The local path lives
+ * in os.tmpdir() and is always absolute (#64). Returns captured stdout so
+ * callers can inspect script output (used by the MCP health probe).
+ */
+async function runRemoteScript(
+  projectId: string,
+  zone: string,
+  vmName: string,
+  phaseName: string,
+  script: string,
+  opts?: { timeout?: number },
+): Promise<string> {
+  const { writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const timeout = opts?.timeout ?? 300_000;
+
+  const localPath = join(tmpdir(), `lox-deploy-${phaseName}-${Date.now()}.sh`);
+  const remotePath = `/tmp/lox-deploy-${phaseName}.sh`;
+  // Append a self-delete line so the script removes itself from the VM
+  // after running — important for the secrets phase whose body embeds
+  // DATABASE_URL credentials. Doing it inside the script keeps the
+  // --command argument metachar-free (a separate `; rm ...` would defeat
+  // the whole point of this refactor on Windows cmd.exe).
+  const scriptWithCleanup = script.endsWith('\n')
+    ? `${script}rm -- "$0"\n`
+    : `${script}\nrm -- "$0"\n`;
+  // mode 0600 — the secrets phase embeds DATABASE_URL credentials into the
+  // script body, so the local tmp file must not be world-readable.
+  writeFileSync(localPath, scriptWithCleanup, { mode: 0o600 });
+
+  try {
+    await shell('gcloud', [
+      'compute', 'scp',
+      '--project', projectId,
+      '--zone', zone,
+      '--tunnel-through-iap',
+      localPath, `${vmName}:${remotePath}`,
+    ], { timeout });
+
+    const { stdout } = await shell('gcloud', [
+      'compute', 'ssh', vmName,
+      '--project', projectId,
+      '--zone', zone,
+      '--tunnel-through-iap',
+      '--command', `bash ${remotePath}`,
+    ], { timeout });
+
+    return stdout;
+  } finally {
+    try { rmSync(localPath, { force: true }); } catch { /* best-effort */ }
+  }
+}
+
+/**
  * Step 11: Deploy Lox Core to VM
  *
  * Clones the repo, builds, creates env file, installs systemd service,
@@ -71,25 +205,13 @@ export async function stepDeploy(ctx: InstallerContext): Promise<StepResult> {
   // 1. Clone lox-brain repo on VM
   await withSpinner(
     'Cloning lox-brain repo on VM...',
-    async () => {
-      // Plain `git clone` over HTTPS — the upstream `isorensen/lox-brain` is
-      // a public repo, so no auth is needed and we avoid depending on `gh`
-      // being installed on the VM (step-vm-setup.ts does not install it, and
-      // anonymous `git clone` of a public repo works everywhere git exists).
-      await sshCommand(vmName, projectId, zone,
-        `test -d ${installDir} && (cd ${installDir} && git pull) || git clone https://github.com/isorensen/lox-brain.git ${installDir}`,
-      );
-    },
+    () => runRemoteScript(projectId, zone, vmName, 'clone', buildCloneScript(installDir)),
   );
 
   // 2. Build on VM
   await withSpinner(
     'Building lox-brain on VM (npm ci && npm run build)...',
-    async () => {
-      await sshCommand(vmName, projectId, zone,
-        `cd ${installDir} && npm ci && npm run build --workspaces`,
-      );
-    },
+    () => runRemoteScript(projectId, zone, vmName, 'build', buildBuildScript(installDir), { timeout: 600_000 }),
   );
 
   // 3. Create .env on VM from config (NOT in repo — in /etc/lox/secrets.env)
@@ -109,10 +231,7 @@ export async function stepDeploy(ctx: InstallerContext): Promise<StepResult> {
         'LOG_LEVEL=info',
       ].join('\n');
 
-      // Create /etc/lox directory and write secrets.env (requires sudo)
-      await sshCommand(vmName, projectId, zone,
-        `sudo mkdir -p /etc/lox && cat > /tmp/lox-env <<'ENVEOF'\n${envContent}\nENVEOF\nsudo mv /tmp/lox-env /etc/lox/secrets.env && sudo chmod 600 /etc/lox/secrets.env && sudo chown ${user}:${user} /etc/lox/secrets.env`,
-      );
+      await runRemoteScript(projectId, zone, vmName, 'secrets', buildSecretsEnvScript(envContent, user));
     },
   );
 
@@ -124,20 +243,14 @@ export async function stepDeploy(ctx: InstallerContext): Promise<StepResult> {
     'Installing lox-watcher systemd service...',
     async () => {
       const watcherService = buildWatcherService(user, installDir);
-      await sshCommand(vmName, projectId, zone,
-        `echo '${watcherService}' | sudo tee /etc/systemd/system/lox-watcher.service > /dev/null`,
-      );
+      await runRemoteScript(projectId, zone, vmName, 'systemd-install', buildSystemdInstallScript(watcherService));
     },
   );
 
   // 5. Enable and start watcher service
   await withSpinner(
     'Starting lox-watcher service...',
-    async () => {
-      await sshCommand(vmName, projectId, zone,
-        'sudo systemctl daemon-reload && sudo systemctl enable lox-watcher && sudo systemctl start lox-watcher',
-      );
-    },
+    () => runRemoteScript(projectId, zone, vmName, 'service-start', buildServiceStartScript()),
   );
 
   // 6. Test MCP server with a JSON-RPC test call
@@ -145,9 +258,7 @@ export async function stepDeploy(ctx: InstallerContext): Promise<StepResult> {
     'Testing MCP server...',
     async () => {
       try {
-        const result = await sshCommand(vmName, projectId, zone,
-          `echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | timeout 10 node ${installDir}/packages/core/dist/mcp/index.js 2>/dev/null | head -1`,
-        );
+        const result = await runRemoteScript(projectId, zone, vmName, 'mcp-probe', buildMcpHealthProbeScript(installDir), { timeout: 60_000 });
         return result.includes('"jsonrpc"');
       } catch {
         return false;

@@ -14,6 +14,12 @@ All notable changes to this project will be documented in this file.
 - Update README with badges, improved splash, and public install instructions
 - Add CONTRIBUTING.md, CODE_OF_CONDUCT.md, and GitHub issue/PR templates
 
+## [0.4.5] — 2026-04-04
+
+### Changed
+- Step 11 (Deploy) now runs all six VM-side phases via the file-based scp+bash pattern (same as step-vault.ts from #61). Each phase — clone, build, secrets.env write, systemd unit install, service start, MCP health probe — is now a local bash script that gets `scp`'d to `/tmp/lox-deploy-<phase>.sh` on the VM and executed with `gcloud compute ssh --command "bash /tmp/<phase>.sh"`. No shell metacharacters (`&&`, `||`, `(...)`, heredocs, pipes, redirects) pass through `gcloud --command` anymore, so cmd.exe on Windows can no longer fragment the remote invocation (#70)
+- Extracted each phase body as a pure `build<Phase>Script()` function so the bash content is independently testable without mocking SSH
+
 ## [0.4.4] — 2026-04-04
 
 ### Changed

@@ -102,6 +102,20 @@ export interface I18nStrings {
   vm_phase_fetching_logs: string;
   vm_ssh_warmup: string;
 
+  // Resume installer
+  resume_found_title: string;
+  resume_found_subtitle: string;
+  resume_last_completed: string;
+  resume_failed_at: string;
+  resume_saved_at: string;
+  resume_prompt: string;
+  resume_option_continue: string;
+  resume_option_pick_step: string;
+  resume_option_restart: string;
+  resume_pick_step_prompt: string;
+  resume_starting_from: string;
+  resume_cleared: string;
+
   // Error reporting
   error_report_prompt: string;
   error_report_creating: string;
@@ -213,6 +227,20 @@ export const en: I18nStrings = {
   vm_phase_wireguard: 'Installing WireGuard',
   vm_phase_fetching_logs: 'Fetching VM logs for diagnosis',
   vm_ssh_warmup: 'Establishing SSH connection to VM',
+
+  // Resume installer
+  resume_found_title: 'A previous installation was found',
+  resume_found_subtitle: 'You can continue where it stopped, pick a specific step, or start over.',
+  resume_last_completed: 'Last completed step',
+  resume_failed_at: 'Failed at step',
+  resume_saved_at: 'Saved',
+  resume_prompt: 'How do you want to proceed?',
+  resume_option_continue: 'Continue from where it stopped',
+  resume_option_pick_step: 'Pick a specific step to restart from',
+  resume_option_restart: 'Start a fresh installation (discard saved state)',
+  resume_pick_step_prompt: 'Select the step to restart from:',
+  resume_starting_from: 'Resuming from step',
+  resume_cleared: 'Previous installer state discarded.',
 
   // Error reporting
   error_report_prompt: 'Would you like to report this issue on GitHub?',

@@ -155,17 +155,29 @@ export async function stepObsidian(ctx: InstallerContext): Promise<StepResult> {
     },
   );
 
-  // 4. Pause with instructions for manual plugin activation
+  // 4. Pause with instructions for plugin install + obsidian-git configuration
   const pluginInstructions = renderBox([
-    'Obsidian Plugin Activation',
+    'Obsidian Plugin Setup',
     '',
-    '1. Open Obsidian',
-    `2. Open vault: ${localPath}`,
-    '3. Go to Settings → Community Plugins',
-    '4. Enable "Safe Mode" off if prompted',
-    '5. Enable the pre-configured plugins',
+    `1. Open Obsidian and open vault: ${localPath}`,
+    '2. Settings → Community Plugins → Turn on community plugins',
+    '3. Click Browse and install each of these plugins:',
+    '     • obsidian-git       (local vault ↔ git sync)',
+    '     • dataview           (query notes as a database)',
+    '     • omnisearch         (full-text search)',
+    '     • emoji-shortcodes   (inline emoji)',
+    '     • recent-files-obsidian',
+    '4. Settings → Community Plugins → enable each after install',
     '',
-    'Recommended plugins have been pre-copied to .obsidian/plugins/',
+    'obsidian-git — required for vault sync:',
+    '  Settings → Obsidian Git →',
+    '    • Vault backup interval: 2 min',
+    '    • Auto pull on startup: on',
+    '    • Auto pull interval: 2 min',
+    '    • Auto push after commit: on',
+    '',
+    'The plugin list (community-plugins.json) is already seeded,',
+    'so Obsidian will remember your selections after this step.',
   ]);
   console.log(`\n${pluginInstructions}\n`);
 

@@ -72,11 +72,12 @@ export async function stepDeploy(ctx: InstallerContext): Promise<StepResult> {
   await withSpinner(
     'Cloning lox-brain repo on VM...',
     async () => {
-      // Use the fully-qualified upstream repo — third-party installers do
-      // not have their own `lox-brain` fork under their GitHub account, so
-      // the unqualified name would resolve to $(gh_user)/lox-brain and 404.
+      // Plain `git clone` over HTTPS — the upstream `isorensen/lox-brain` is
+      // a public repo, so no auth is needed and we avoid depending on `gh`
+      // being installed on the VM (step-vm-setup.ts does not install it, and
+      // anonymous `git clone` of a public repo works everywhere git exists).
       await sshCommand(vmName, projectId, zone,
-        `test -d ${installDir} && (cd ${installDir} && git pull) || gh repo clone isorensen/lox-brain ${installDir}`,
+        `test -d ${installDir} && (cd ${installDir} && git pull) || git clone https://github.com/isorensen/lox-brain.git ${installDir}`,
       );
     },
   );

@@ -14,6 +14,13 @@ All notable changes to this project will be documented in this file.
 - Update README with badges, improved splash, and public install instructions
 - Add CONTRIBUTING.md, CODE_OF_CONDUCT.md, and GitHub issue/PR templates
 
+## [0.4.3] — 2026-04-04
+
+### Fixed
+- Step 11 (Deploy) no longer fails with `gh: command not found` on the VM. The VM bootstrap does not install the GitHub CLI, and the upstream `isorensen/lox-brain` is a public repo, so the clone now uses plain `git clone https://github.com/isorensen/lox-brain.git` — anonymous HTTPS, no auth or extra dependency required (#73)
+- Step 10 (Obsidian) post-install instructions no longer claim plugins were "pre-copied to .obsidian/plugins/". Only the plugin *list* (`community-plugins.json`) is seeded; the user has to install each plugin from Obsidian's Community Plugins browser (#74)
+- Step 10 now includes explicit configuration guidance for the `obsidian-git` plugin (vault backup interval, auto-pull, auto-push) — without this the local vault never syncs to the git remote, so VM-side changes never flow back and local edits never reach the embedding index (#74)
+
 ## [0.4.2] — 2026-04-04
 
 ### Fixed

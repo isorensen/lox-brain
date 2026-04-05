@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   validateOpenAiKeyFormat,
   openAiSecretExists,
@@ -106,7 +106,16 @@ describe('fetchOpenAiKey', () => {
 });
 
 describe('uploadOpenAiKey', () => {
-  beforeEach(() => vi.mocked(shell).mockReset());
+  const originalPlatform = process.platform;
+  beforeEach(() => {
+    vi.mocked(shell).mockReset();
+    // Force non-Windows so fixWindowsAcl is a no-op and our call-count
+    // assertions are stable regardless of the CI runner's OS.
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+  });
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+  });
 
   it('creates the secret, then adds a version with the key', async () => {
     vi.mocked(shell).mockResolvedValue({ stdout: '', stderr: '' });

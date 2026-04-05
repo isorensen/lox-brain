@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.6] — 2026-04-05
+
+### Fixed
+- Step 11 (Deploy) now resolves the real POSIX `$USER` and `$HOME` on the VM via an SSH probe instead of deriving the install path from the email prefix. GCP OS Login creates POSIX usernames as `<email-prefix>_<domain>_<tld>` (dots → underscores), so guessing `/home/<email-prefix>/` produced a path that did not exist on the VM and `git clone` failed with "could not create leading directories: Permission denied" (#79). The resolved identity is persisted on the installer context and reused by step 12 (MCP) for the SSH config entry, launcher upload path, and install directory.
+
+
 ### Changed
 - Prepare repository for open source release
 - Remove personal artifacts and internal documentation

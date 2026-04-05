@@ -4,6 +4,7 @@ import { t } from '../i18n/index.js';
 import { renderStepHeader } from '../ui/box.js';
 import { withSpinner } from '../ui/spinner.js';
 import type { InstallerContext, StepResult } from './types.js';
+import { ensureVmIdentity } from './step-deploy.js';
 
 const TOTAL_STEPS = 12;
 
@@ -103,12 +104,12 @@ export async function isMcpServerRegistered(name: string): Promise<boolean> {
  * executable. Uses plain `scp`/`ssh` via the SSH config entry written earlier
  * in this step (no gcloud, no IAP tunnel — the VPN is already up by now).
  */
-async function uploadMcpLauncher(sshUser: string, installDir: string): Promise<string> {
+async function uploadMcpLauncher(vmHome: string, installDir: string): Promise<string> {
   const { writeFileSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
 
-  const remotePath = `/home/${sshUser}/lox-mcp.sh`;
+  const remotePath = `${vmHome}/lox-mcp.sh`;
   const script = buildMcpLauncherScript(installDir);
   const localScriptPath = join(tmpdir(), `lox-mcp-${Date.now()}.sh`);
   writeFileSync(localScriptPath, script, { mode: 0o755 });
@@ -136,7 +137,16 @@ export async function stepMcp(ctx: InstallerContext): Promise<StepResult> {
   console.log(renderStepHeader(12, TOTAL_STEPS, strings.step_mcp));
 
   const vpnServerIp = ctx.config.vpn?.server_ip ?? '10.10.0.1';
-  const sshUser = ctx.gcpUsername ?? 'lox';
+  // Reuse the identity resolved in step-deploy (#79). If this step runs
+  // standalone (e.g. re-run after a failed step 12), probe the VM directly —
+  // the email-prefix derivation would reintroduce the original bug.
+  const projectId = ctx.gcpProjectId ?? 'lox-project';
+  const vmName = ctx.config.gcp?.vm_name ?? 'lox-vm';
+  const zone = ctx.config.gcp?.zone ?? 'us-east1-b';
+  const { user: sshUser, home: vmHome } = await withSpinner(
+    'Resolving VM user identity...',
+    () => ensureVmIdentity(ctx, projectId, zone, vmName),
+  );
 
   // 1. Generate SSH config entry
   await withSpinner(
@@ -149,10 +159,10 @@ export async function stepMcp(ctx: InstallerContext): Promise<StepResult> {
   //    Claude Code will invoke it over SSH with no shell metacharacters in
   //    the argument, so cmd.exe on Windows can't reinterpret `&&`/`source`
   //    when spawning the MCP server.
-  const installDir = ctx.config.install_dir ?? '/home/' + sshUser + '/lox-brain';
+  const installDir = ctx.config.install_dir ?? `${vmHome}/lox-brain`;
   const remoteLauncher = await withSpinner(
     'Uploading MCP launcher to VM...',
-    () => uploadMcpLauncher(sshUser, installDir),
+    () => uploadMcpLauncher(vmHome, installDir),
   );
   console.log(chalk.green(`  ✓ MCP launcher uploaded to ${remoteLauncher}`));
 

@@ -75,11 +75,19 @@ describe('buildSystemdInstallScript', () => {
 });
 
 describe('buildServiceStartScript', () => {
-  it('reloads systemd then enables and starts lox-watcher', () => {
+  it('reloads systemd then enables and restarts lox-watcher', () => {
     const s = buildServiceStartScript();
     expect(s).toContain('sudo systemctl daemon-reload');
     expect(s).toContain('sudo systemctl enable lox-watcher');
-    expect(s).toContain('sudo systemctl start lox-watcher');
+    expect(s).toContain('sudo systemctl restart lox-watcher');
+  });
+
+  it('uses restart, not start — locks in the fix for #99', () => {
+    // `systemctl start` is a no-op when the service is already active,
+    // so re-runs of step 11 never pick up changed unit files or env.
+    // Same class as #99 in step-vpn.ts. Do NOT revert to `start`.
+    const s = buildServiceStartScript();
+    expect(s).not.toMatch(/sudo systemctl start lox-watcher(?!\S)/);
   });
 });
 

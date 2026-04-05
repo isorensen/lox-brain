@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.6] — 2026-04-05
+
+### Fixed
+- Step 8 (WireGuard VPN) now restarts `wg-quick@wg0` on the VM instead of only starting it (#99). Previously re-runs of step 8 generated new server and client keys, overwrote `/etc/wireguard/wg0.conf`, then called `sudo systemctl start wg-quick@wg0` — but `start` is a no-op when the service is already active, so the kernel kept the previous peer keys loaded and client handshakes silently failed ("Handshake for peer 1 did not complete after 5 seconds" repeating indefinitely in the WireGuard log). `restart` stops and re-reads the config, syncing kernel state with the new keys on every step 8 run. Extracted the server-deploy script construction into a pure testable function so the `restart` invariant is locked in with a regression test.
+- Step 11 (Deploy) has the same class of bug: `sudo systemctl start lox-watcher` was a no-op on re-run, leaving the watcher loaded with the previous unit file / environment. Changed to `restart` so re-runs of step 11 (after an OpenAI key change, new VAULT_PATH, updated unit file, etc.) correctly reload the service.
+
+
 ## [0.6.5] — 2026-04-05
 
 ### Fixed

@@ -1,7 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { isProPlanGate, isRepoNotFoundError, repoExists, buildVmSetupScript, isValidPatFormat, gcpSecretExists, VM_SETUP_SCRIPT_REMOTE_PATH, resolveTemplatesDir } from '../../src/steps/step-vault.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { isProPlanGate, isRepoNotFoundError, repoExists, buildVmSetupScript, isValidPatFormat, gcpSecretExists, VM_SETUP_SCRIPT_REMOTE_PATH, resolveTemplatesDir, verifyTemplatesCopied, commitInitialVaultTemplate, EXPECTED_TEMPLATE_ENTRIES } from '../../src/steps/step-vault.js';
 import { shell } from '../../src/utils/shell.js';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 vi.mock('../../src/utils/shell.js', () => ({
   shell: vi.fn(),
@@ -359,5 +361,163 @@ describe('gcpSecretExists', () => {
   it('rethrows "Command not found" for missing gcloud', async () => {
     vi.mocked(shell).mockRejectedValueOnce(new Error('Command not found: gcloud'));
     await expect(gcpSecretExists('x', 'y')).rejects.toThrow('Command not found: gcloud');
+  });
+});
+
+describe('verifyTemplatesCopied (#122)', () => {
+  // Use a fresh tmpdir per test so we can exercise real filesystem reads —
+  // this is the check that would have caught #122 (empty vault after install).
+  let workDir: string;
+
+  beforeEach(() => {
+    workDir = join(tmpdir(), `lox-test-verify-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    mkdirSync(workDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    try { rmSync(workDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+  });
+
+  it('exposes the expected entries per preset', () => {
+    expect(EXPECTED_TEMPLATE_ENTRIES.para).toContain('1 - Inbox');
+    expect(EXPECTED_TEMPLATE_ENTRIES.para).toContain('Welcome to Lox.md');
+    expect(EXPECTED_TEMPLATE_ENTRIES.zettelkasten).toContain('Welcome to Lox.md');
+  });
+
+  it('returns silently when all expected PARA entries exist', () => {
+    for (const entry of EXPECTED_TEMPLATE_ENTRIES.para) {
+      if (entry.endsWith('.md')) {
+        writeFileSync(join(workDir, entry), '# test');
+      } else {
+        mkdirSync(join(workDir, entry));
+      }
+    }
+    expect(() => verifyTemplatesCopied(workDir, 'para', '/fake/src')).not.toThrow();
+  });
+
+  it('throws when the vault is empty (regression test for #122)', () => {
+    // This is the exact symptom from #122: cpSync silently produced an
+    // empty vault because the source path didn't resolve on Windows
+    // (or some other silent failure). Verification catches it.
+    expect(() => verifyTemplatesCopied(workDir, 'para', '/fake/src')).toThrow(/Template copy verification failed/);
+  });
+
+  it('includes templatesSrc, vaultDir, missing entries, and actual entries in the error message', () => {
+    writeFileSync(join(workDir, '1 - Inbox'), 'oops-this-is-a-file-not-a-dir'); // present but only one
+    try {
+      verifyTemplatesCopied(workDir, 'para', '/my/templates/src');
+      throw new Error('should have thrown');
+    } catch (err) {
+      const msg = (err as Error).message;
+      expect(msg).toContain('templatesSrc: /my/templates/src');
+      expect(msg).toContain(`vaultDir: ${workDir}`);
+      expect(msg).toContain('missing:');
+      // Present entry must NOT be reported as missing
+      expect(msg).not.toMatch(/missing:.*1 - Inbox/);
+      // A missing entry MUST be reported
+      expect(msg).toMatch(/missing:.*Welcome to Lox\.md/);
+      expect(msg).toContain('actual entries:');
+      // The one file we did create shows up under "actual entries"
+      expect(msg).toMatch(/actual entries:.*1 - Inbox/);
+    }
+  });
+
+  it('reports "(empty)" when the vaultDir has no entries', () => {
+    try {
+      verifyTemplatesCopied(workDir, 'para', '/s');
+      throw new Error('should have thrown');
+    } catch (err) {
+      expect((err as Error).message).toContain('actual entries: (empty)');
+    }
+  });
+
+  it('throws for unknown presets (defensive — caller validates, but still)', () => {
+    expect(() => verifyTemplatesCopied(workDir, 'unknown-preset', '/s')).toThrow(/unknown preset/i);
+  });
+
+  it('validates zettelkasten preset as well', () => {
+    for (const entry of EXPECTED_TEMPLATE_ENTRIES.zettelkasten) {
+      if (entry.endsWith('.md')) {
+        writeFileSync(join(workDir, entry), '# test');
+      } else {
+        mkdirSync(join(workDir, entry));
+      }
+    }
+    expect(() => verifyTemplatesCopied(workDir, 'zettelkasten', '/s')).not.toThrow();
+  });
+});
+
+describe('commitInitialVaultTemplate (#122)', () => {
+  beforeEach(() => {
+    vi.mocked(shell).mockReset();
+  });
+
+  it('adds, commits, and pushes when the working tree is dirty', async () => {
+    vi.mocked(shell)
+      .mockResolvedValueOnce({ stdout: '', stderr: '' })                     // git add -A
+      .mockResolvedValueOnce({ stdout: 'A  1 - Inbox/README.md\n', stderr: '' }) // git status --porcelain (dirty)
+      .mockResolvedValueOnce({ stdout: '', stderr: '' })                     // git config user.email
+      .mockResolvedValueOnce({ stdout: '', stderr: '' })                     // git config user.name
+      .mockResolvedValueOnce({ stdout: '', stderr: '' })                     // git commit
+      .mockResolvedValueOnce({ stdout: '', stderr: '' });                    // git push
+
+    const result = await commitInitialVaultTemplate('lox-vault', 'para');
+
+    expect(result).toBe('pushed');
+    expect(vi.mocked(shell)).toHaveBeenCalledTimes(6);
+    expect(vi.mocked(shell)).toHaveBeenNthCalledWith(1, 'git', ['-C', 'lox-vault', 'add', '-A']);
+    expect(vi.mocked(shell)).toHaveBeenNthCalledWith(2, 'git', ['-C', 'lox-vault', 'status', '--porcelain']);
+    expect(vi.mocked(shell)).toHaveBeenNthCalledWith(3, 'git', ['-C', 'lox-vault', 'config', 'user.email', 'installer@lox.local']);
+    expect(vi.mocked(shell)).toHaveBeenNthCalledWith(4, 'git', ['-C', 'lox-vault', 'config', 'user.name', 'Lox Installer']);
+    expect(vi.mocked(shell)).toHaveBeenNthCalledWith(5, 'git', ['-C', 'lox-vault', 'commit', '-m', 'chore: initialize para template']);
+    expect(vi.mocked(shell)).toHaveBeenNthCalledWith(6, 'git', ['-C', 'lox-vault', 'push', 'origin', 'main']);
+  });
+
+  it('propagates git add failures immediately (no status/commit/push attempted)', async () => {
+    vi.mocked(shell).mockRejectedValueOnce(
+      Object.assign(new Error('Command failed'), { stderr: 'fatal: unable to index file' }),
+    );
+    await expect(commitInitialVaultTemplate('lox-vault', 'para')).rejects.toThrow('Command failed');
+    expect(vi.mocked(shell)).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips commit and push when there is nothing to commit (idempotent re-run)', async () => {
+    vi.mocked(shell)
+      .mockResolvedValueOnce({ stdout: '', stderr: '' }) // git add -A
+      .mockResolvedValueOnce({ stdout: '   \n', stderr: '' }); // porcelain output is whitespace only
+
+    const result = await commitInitialVaultTemplate('lox-vault', 'para');
+
+    expect(result).toBe('nothing-to-commit');
+    expect(vi.mocked(shell)).toHaveBeenCalledTimes(2);
+    // No commit or push should have fired
+    expect(vi.mocked(shell)).not.toHaveBeenCalledWith('git', expect.arrayContaining(['commit', '-m', expect.any(String)]));
+    expect(vi.mocked(shell)).not.toHaveBeenCalledWith('git', expect.arrayContaining(['push', 'origin', 'main']));
+  });
+
+  it('uses the correct preset name in the commit message', async () => {
+    vi.mocked(shell)
+      .mockResolvedValueOnce({ stdout: '', stderr: '' })
+      .mockResolvedValueOnce({ stdout: 'A  file\n', stderr: '' })
+      .mockResolvedValueOnce({ stdout: '', stderr: '' })
+      .mockResolvedValueOnce({ stdout: '', stderr: '' })
+      .mockResolvedValueOnce({ stdout: '', stderr: '' })
+      .mockResolvedValueOnce({ stdout: '', stderr: '' });
+
+    await commitInitialVaultTemplate('lox-vault', 'zettelkasten');
+
+    expect(vi.mocked(shell)).toHaveBeenNthCalledWith(5, 'git', ['-C', 'lox-vault', 'commit', '-m', 'chore: initialize zettelkasten template']);
+  });
+
+  it('propagates git push failures (e.g. network, auth)', async () => {
+    vi.mocked(shell)
+      .mockResolvedValueOnce({ stdout: '', stderr: '' })
+      .mockResolvedValueOnce({ stdout: 'A  file\n', stderr: '' })
+      .mockResolvedValueOnce({ stdout: '', stderr: '' })
+      .mockResolvedValueOnce({ stdout: '', stderr: '' })
+      .mockResolvedValueOnce({ stdout: '', stderr: '' })
+      .mockRejectedValueOnce(Object.assign(new Error('Command failed'), { stderr: 'remote: Permission denied' }));
+
+    await expect(commitInitialVaultTemplate('lox-vault', 'para')).rejects.toThrow('Command failed');
   });
 });

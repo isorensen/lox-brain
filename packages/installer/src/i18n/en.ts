@@ -91,6 +91,7 @@ export interface I18nStrings {
 
   // VM setup
   vm_setup_timeout: string;
+  install_timeout_extend: string;
   vm_phase_system_update: string;
   vm_phase_nodejs: string;
   vm_phase_postgresql: string;
@@ -202,6 +203,7 @@ export const en: I18nStrings = {
 
   // VM setup
   vm_setup_timeout: 'VM setup is taking longer than expected. Continue waiting?',
+  install_timeout_extend: 'taking longer than expected. Continue waiting?',
   vm_phase_system_update: 'Updating system packages',
   vm_phase_nodejs: 'Installing Node.js 22',
   vm_phase_postgresql: 'Installing PostgreSQL 16',

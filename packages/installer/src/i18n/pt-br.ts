@@ -93,6 +93,7 @@ export const ptBr: I18nStrings = {
 
   // VM setup
   vm_setup_timeout: 'A configuracao da VM esta demorando mais que o esperado. Continuar aguardando?',
+  install_timeout_extend: 'esta demorando mais que o esperado. Continuar aguardando?',
   vm_phase_system_update: 'Atualizando pacotes do sistema',
   vm_phase_nodejs: 'Instalando Node.js 22',
   vm_phase_postgresql: 'Instalando PostgreSQL 16',

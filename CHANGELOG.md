@@ -14,6 +14,17 @@ All notable changes to this project will be documented in this file.
 - Update README with badges, improved splash, and public install instructions
 - Add CONTRIBUTING.md, CODE_OF_CONDUCT.md, and GitHub issue/PR templates
 
+## [0.4.2] — 2026-04-04
+
+### Fixed
+- Obsidian install no longer times out on Windows. `winget install Obsidian.Obsidian` (and the brew/snap equivalents) now runs with an initial 5-minute timeout, and if it still times out the user is prompted (default=yes) to extend to 10 minutes — same pattern we already use for VM setup phases (#68)
+- Step 10 (Obsidian) is now re-run safe: pre-checks via `brew list --cask`, `winget list -e`, or `snap list` and skips install when Obsidian is already present, skips `gh repo clone` when the target vault dir already exists, and copies plugin templates with Node's `fs.cpSync` instead of `cp -r` (which does not exist on Windows)
+- Step 11 (Deploy) now clones from the fully-qualified `isorensen/lox-brain` on the VM. The previous unqualified `gh repo clone lox-brain` resolved to the VM user's own GitHub namespace, which 404s for third-party installers who do not have their own fork
+- Step 12 (MCP) is now idempotent: detects an existing `lox-brain` entry in `claude mcp list` and removes it before re-adding, so re-running the installer no longer fails on the `claude mcp add` step
+
+### Added
+- `utils/extendable-timeout.ts` — reusable helper for long-running operations that should prompt the user to extend timeout on first failure
+
 ## [0.4.1] — 2026-04-04
 
 ### Fixed

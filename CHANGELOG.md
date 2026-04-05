@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.12] — 2026-04-05
+
+### Fixed
+- Add Claude Code CLI (`@anthropic-ai/claude-code`) as a prerequisite check so the installer fails fast at step 1 with `npm install -g @anthropic-ai/claude-code` instead of crashing at step 12 after 20+ minutes of VM provisioning (#115). Previously the installer invoked `claude mcp add` at the final sub-step of step 12 without ever verifying that `claude` was on `PATH`, causing a cryptic "command not found" error for users who had not yet installed Claude Code.
+
+
 ## [0.6.11] — 2026-04-05
 
 ### Fixed

@@ -25,6 +25,30 @@ Host lox-vm
 }
 
 /**
+ * Build the VM-side launcher script that Claude Code invokes over SSH to
+ * start the MCP server. Keeping all the shell metacharacters (`&&`, `source`,
+ * `set -a`) inside this script means the argument Claude Code passes to the
+ * local `ssh` binary is just a single path — no tokens for `cmd.exe` to
+ * reinterpret on Windows (see #61 for the same class of bug).
+ *
+ * The script is idempotent: it `cd`s into the install dir, loads the env
+ * file, and `exec`s node so the MCP server replaces the shell and responds
+ * to signals directly.
+ */
+export function buildMcpLauncherScript(installDir: string): string {
+  return [
+    '#!/bin/bash',
+    'set -euo pipefail',
+    `cd ${installDir}`,
+    'set -a',
+    'source /etc/lox/secrets.env',
+    'set +a',
+    'exec node packages/core/dist/mcp/index.js',
+    '',
+  ].join('\n');
+}
+
+/**
  * Ensure ~/.ssh/config exists and append the lox-vm entry if not present.
  */
 async function configureSshConfig(vpnServerIp: string, sshUser: string): Promise<void> {
@@ -75,6 +99,33 @@ export async function isMcpServerRegistered(name: string): Promise<boolean> {
 }
 
 /**
+ * Upload the MCP launcher script to the VM at an absolute path and make it
+ * executable. Uses plain `scp`/`ssh` via the SSH config entry written earlier
+ * in this step (no gcloud, no IAP tunnel — the VPN is already up by now).
+ */
+async function uploadMcpLauncher(sshUser: string, installDir: string): Promise<string> {
+  const { writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+
+  const remotePath = `/home/${sshUser}/lox-mcp.sh`;
+  const script = buildMcpLauncherScript(installDir);
+  const localScriptPath = join(tmpdir(), `lox-mcp-${Date.now()}.sh`);
+  writeFileSync(localScriptPath, script, { mode: 0o755 });
+
+  try {
+    // Absolute remote paths only — pscp.exe (Windows Cloud SDK) does not
+    // expand `~` (see #64). `/home/<user>/...` works on every platform.
+    await shell('scp', [localScriptPath, `lox-vm:${remotePath}`], { timeout: 60_000 });
+    await shell('ssh', ['lox-vm', 'chmod', '+x', remotePath], { timeout: 30_000 });
+  } finally {
+    try { rmSync(localScriptPath, { force: true }); } catch { /* best-effort */ }
+  }
+
+  return remotePath;
+}
+
+/**
  * Step 12: Configure Claude Code MCP
  *
  * Generates SSH config entry, registers the MCP server with Claude Code,
@@ -94,13 +145,22 @@ export async function stepMcp(ctx: InstallerContext): Promise<StepResult> {
   );
   console.log(chalk.green('  ✓ SSH config entry for lox-vm added'));
 
-  // 2. Register MCP server with Claude Code
+  // 2. Upload the VM-side MCP launcher script.
+  //    Claude Code will invoke it over SSH with no shell metacharacters in
+  //    the argument, so cmd.exe on Windows can't reinterpret `&&`/`source`
+  //    when spawning the MCP server.
   const installDir = ctx.config.install_dir ?? '/home/' + sshUser + '/lox-brain';
-  const mcpCommand = `cd ${installDir} && set -a && source /etc/lox/secrets.env && set +a && node packages/core/dist/mcp/index.js`;
+  const remoteLauncher = await withSpinner(
+    'Uploading MCP launcher to VM...',
+    () => uploadMcpLauncher(sshUser, installDir),
+  );
+  console.log(chalk.green(`  ✓ MCP launcher uploaded to ${remoteLauncher}`));
 
-  // Idempotency: `claude mcp add` fails when a server with the same name is
-  // already registered. Detect that and remove the prior entry so re-runs
-  // re-register cleanly (picks up changed installDir / lox-vm config).
+  // 3. Register MCP server with Claude Code.
+  //    Idempotency: `claude mcp add` fails when a server with the same name
+  //    is already registered. Detect that and remove the prior entry so
+  //    re-runs re-register cleanly (picks up changed installDir / lox-vm
+  //    config).
   const alreadyRegistered = await isMcpServerRegistered('lox-brain');
   if (alreadyRegistered) {
     try {
@@ -118,12 +178,12 @@ export async function stepMcp(ctx: InstallerContext): Promise<StepResult> {
         '--scope', 'user',
         'lox-brain',
         '--',
-        'ssh', 'lox-vm', mcpCommand,
+        'ssh', 'lox-vm', remoteLauncher,
       ]);
     },
   );
 
-  // 3. Verify registration
+  // 4. Verify registration
   const verified = await withSpinner(
     'Verifying MCP registration...',
     async () => {

@@ -3,7 +3,15 @@ import { shell } from '../utils/shell.js';
 import { t } from '../i18n/index.js';
 import { renderStepHeader } from '../ui/box.js';
 import { withSpinner } from '../ui/spinner.js';
+import { promptForOpenAiKey, OPENAI_SECRET_NAME } from '../utils/openai-key.js';
 import type { InstallerContext, StepResult } from './types.js';
+
+/**
+ * Placeholder kept only as a last-resort fallback if the user skips the
+ * OpenAI API key prompt. The watcher cannot embed notes until this is
+ * replaced with a real key (see #84).
+ */
+export const OPENAI_KEY_PLACEHOLDER = '__REPLACE_FROM_SECRET_MANAGER__';
 
 const TOTAL_STEPS = 12;
 
@@ -294,7 +302,16 @@ export async function stepDeploy(ctx: InstallerContext): Promise<StepResult> {
     () => runRemoteScript(projectId, zone, vmName, 'build', buildBuildScript(installDir), { timeout: 600_000 }),
   );
 
-  // 3. Create .env on VM from config (NOT in repo — in /etc/lox/secrets.env)
+  // 3. Collect the OpenAI API key interactively and upload to Secret
+  //    Manager (unless the user chose to skip or reuse an existing one).
+  //    Doing this BEFORE writing /etc/lox/secrets.env means the watcher
+  //    is ready to embed notes the moment the service starts (#84).
+  const openaiResult = await promptForOpenAiKey(projectId);
+  if (openaiResult.key !== null && openaiResult.source === 'new') {
+    console.log(chalk.green(`  ✓ ${strings.openai_saved_to_secret_manager}`));
+  }
+
+  // 4. Create .env on VM from config (NOT in repo — in /etc/lox/secrets.env)
   await withSpinner(
     `${strings.configuring} secrets on VM...`,
     async () => {
@@ -305,7 +322,7 @@ export async function stepDeploy(ctx: InstallerContext): Promise<StepResult> {
 
       const envContent = [
         `DATABASE_URL=postgresql://${dbUser}@${dbHost}:${dbPort}/${dbName}?sslmode=require`,
-        'OPENAI_API_KEY=__REPLACE_FROM_SECRET_MANAGER__',
+        `OPENAI_API_KEY=${openaiResult.key ?? OPENAI_KEY_PLACEHOLDER}`,
         `VAULT_PATH=${vaultPath}`,
         'NODE_ENV=production',
         'LOG_LEVEL=info',
@@ -315,8 +332,10 @@ export async function stepDeploy(ctx: InstallerContext): Promise<StepResult> {
     },
   );
 
-  console.log(chalk.yellow('  → IMPORTANT: Replace OPENAI_API_KEY in /etc/lox/secrets.env'));
-  console.log(chalk.yellow('    Use: gcloud secrets versions access latest --secret=openai-api-key'));
+  if (openaiResult.key === null) {
+    console.log(chalk.yellow(`  ⚠ ${strings.openai_skipped_warning}`));
+    console.log(chalk.yellow(`    Use: gcloud secrets versions access latest --secret=${OPENAI_SECRET_NAME}`));
+  }
 
   // 4. Install systemd service
   await withSpinner(

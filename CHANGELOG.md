@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-04-05
+
+### Added
+- Step 11 (Deploy) now prompts the user for their OpenAI API key with a masked input, validates format, uploads it to GCP Secret Manager as `openai-api-key`, and injects it directly into `/etc/lox/secrets.env` on the VM (#84). Previously the installer left an `OPENAI_API_KEY=__REPLACE_FROM_SECRET_MANAGER__` placeholder and instructed the user to fix it manually with `gcloud secrets versions access...`, which left every fresh install in a broken state until the user knew to run that command. If the secret already exists in Secret Manager (e.g. on re-runs), the installer offers to reuse the existing key, replace it, or skip.
+
+### Changed
+- The previous "IMPORTANT: Replace OPENAI_API_KEY..." yellow warning in step 11 is gone — it now appears only as a fallback when the user explicitly chose to skip the prompt.
+
+
 ## [0.5.1] — 2026-04-05
 
 ### Fixed

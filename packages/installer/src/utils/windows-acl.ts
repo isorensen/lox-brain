@@ -27,8 +27,35 @@ export async function fixWindowsAcl(targetPath: string): Promise<void> {
   // NOTE: For domain users, icacls resolves the bare name to the
   // domain account if no local account exists. Explicit DOMAIN\user
   // is unnecessary for the typical single-user install scenario.
+  //
+  // Three-step hardening (#101 follow-up):
+  //   1. `/inheritance:r` — strip INHERITED ACEs from the parent dir
+  //   2. `/remove` the common loose principals as EXPLICIT ACEs — step 1
+  //      only touches inherited ones, but CREATOR OWNER / BUILTIN\Users
+  //      frequently end up as explicit ACEs on files Windows creates
+  //      inside %USERPROFILE%\.ssh. OpenSSH rejects the key file if ANY
+  //      of these principals has access, so `/inheritance:r` alone is
+  //      not enough (seen on Windows 11, pt-BR locale, Lox v0.6.7).
+  //   3. `/grant:r user:F` — grant only the current user Full control.
+  //
+  // Each call is independent so a failure on one removal (e.g. the
+  // principal wasn't present) doesn't abort the rest.
+  const loosePrincipals = [
+    'CREATOR OWNER',
+    'BUILTIN\\Users',
+    'Authenticated Users',
+    'Everyone',
+  ];
   try {
-    await shell('icacls', [targetPath, '/inheritance:r', '/grant:r', `${username}:F`]);
+    await shell('icacls', [targetPath, '/inheritance:r']);
+  } catch { /* best-effort */ }
+  for (const principal of loosePrincipals) {
+    try {
+      await shell('icacls', [targetPath, '/remove', principal]);
+    } catch { /* principal may not be on this ACL */ }
+  }
+  try {
+    await shell('icacls', [targetPath, '/grant:r', `${username}:(F)`]);
   } catch {
     // Surfaced by the downstream operation if it still fails.
   }

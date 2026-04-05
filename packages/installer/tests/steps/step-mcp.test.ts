@@ -127,12 +127,15 @@ describe('tightenGcloudSshKey (#101)', () => {
 
     await tightenGcloudSshKey(tmp);
 
-    expect(shell).toHaveBeenCalledOnce();
-    const [cmd, args] = vi.mocked(shell).mock.calls[0]!;
-    expect(cmd).toBe('icacls');
-    // The exact flags are owned by fixWindowsAcl's own tests; here we
-    // just verify the key path was the target.
-    expect(args).toContain(keyPath);
+    // Post-#101-followup: fixWindowsAcl now runs 6 icacls calls (inherit
+    // strip + 4 principal removals + grant). The exact sequence is owned
+    // by fixWindowsAcl's own tests; here we just verify ALL invocations
+    // were icacls targeting the gcloud key path.
+    expect(shell).toHaveBeenCalledTimes(6);
+    for (const call of vi.mocked(shell).mock.calls) {
+      expect(call[0]).toBe('icacls');
+      expect(call[1]).toContain(keyPath);
+    }
   });
 });
 
@@ -206,17 +209,26 @@ describe("fixWindowsSshAcl (#83)", () => {
     expect(shell).not.toHaveBeenCalled();
   });
 
-  it("runs icacls with /inheritance:r and /grant:r USERNAME:F on Windows", async () => {
+  it("runs the full icacls hardening sequence on Windows (#101 follow-up)", async () => {
+    // Hardening added after v0.6.7: /inheritance:r alone was leaving
+    // EXPLICIT CREATOR OWNER / BUILTIN\Users ACEs on gcloud-created key
+    // files, and OpenSSH still rejected them. We now:
+    //   1. strip inherited ACEs
+    //   2. explicitly /remove the 4 common loose principals
+    //   3. grant the current user Full control
+    // = 6 total icacls invocations.
     Object.defineProperty(process, "platform", { value: "win32" });
     process.env.USERNAME = "alice";
     vi.mocked(shell).mockResolvedValue({ stdout: "", stderr: "" });
-    await fixWindowsSshAcl("C:\\Users\\alice\\.ssh\\config");
-    expect(shell).toHaveBeenCalledWith("icacls", [
-      "C:\\Users\\alice\\.ssh\\config",
-      "/inheritance:r",
-      "/grant:r",
-      "alice:F",
-    ]);
+    const target = "C:\\Users\\alice\\.ssh\\google_compute_engine";
+    await fixWindowsSshAcl(target);
+    expect(shell).toHaveBeenCalledWith("icacls", [target, "/inheritance:r"]);
+    expect(shell).toHaveBeenCalledWith("icacls", [target, "/remove", "CREATOR OWNER"]);
+    expect(shell).toHaveBeenCalledWith("icacls", [target, "/remove", "BUILTIN\\Users"]);
+    expect(shell).toHaveBeenCalledWith("icacls", [target, "/remove", "Authenticated Users"]);
+    expect(shell).toHaveBeenCalledWith("icacls", [target, "/remove", "Everyone"]);
+    expect(shell).toHaveBeenCalledWith("icacls", [target, "/grant:r", "alice:(F)"]);
+    expect(shell).toHaveBeenCalledTimes(6);
   });
 
   it("falls back to USER if USERNAME is unset (edge case)", async () => {
@@ -225,12 +237,7 @@ describe("fixWindowsSshAcl (#83)", () => {
     process.env.USER = "bob";
     vi.mocked(shell).mockResolvedValue({ stdout: "", stderr: "" });
     await fixWindowsSshAcl("C:\\path");
-    expect(shell).toHaveBeenCalledWith("icacls", [
-      "C:\\path",
-      "/inheritance:r",
-      "/grant:r",
-      "bob:F",
-    ]);
+    expect(shell).toHaveBeenCalledWith("icacls", ["C:\\path", "/grant:r", "bob:(F)"]);
   });
 
   it("treats an empty USERNAME env var as unset and falls back to USER", async () => {
@@ -239,12 +246,24 @@ describe("fixWindowsSshAcl (#83)", () => {
     process.env.USER = "alice";
     vi.mocked(shell).mockResolvedValue({ stdout: "", stderr: "" });
     await fixWindowsSshAcl("C:\\path");
-    expect(shell).toHaveBeenCalledWith("icacls", [
-      "C:\\path",
-      "/inheritance:r",
-      "/grant:r",
-      "alice:F",
-    ]);
+    expect(shell).toHaveBeenCalledWith("icacls", ["C:\\path", "/grant:r", "alice:(F)"]);
+  });
+
+  it("continues the sequence even if a /remove call fails (principal absent)", async () => {
+    // On a file whose ACL doesn't have CREATOR OWNER, `icacls /remove` exits
+    // non-zero. That must NOT abort the rest of the sequence — the user
+    // grant still needs to be applied.
+    Object.defineProperty(process, "platform", { value: "win32" });
+    process.env.USERNAME = "alice";
+    vi.mocked(shell).mockImplementation(async (_cmd, args) => {
+      if (args?.includes("CREATOR OWNER")) {
+        throw new Error("icacls: No mapping between account names and security IDs was done.");
+      }
+      return { stdout: "", stderr: "" };
+    });
+    await fixWindowsSshAcl("C:\\path");
+    // The /grant:r must still fire despite the earlier /remove failure.
+    expect(shell).toHaveBeenCalledWith("icacls", ["C:\\path", "/grant:r", "alice:(F)"]);
   });
 
   it("trims whitespace-only USERNAME/USER before treating as unset", async () => {

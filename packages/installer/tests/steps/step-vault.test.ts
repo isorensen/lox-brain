@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { isProPlanGate, isRepoNotFoundError, repoExists, buildVmSetupScript, isValidPatFormat, gcpSecretExists, VM_SETUP_SCRIPT_REMOTE_PATH } from '../../src/steps/step-vault.js';
+import { isProPlanGate, isRepoNotFoundError, repoExists, buildVmSetupScript, isValidPatFormat, gcpSecretExists, VM_SETUP_SCRIPT_REMOTE_PATH, resolveTemplatesDir } from '../../src/steps/step-vault.js';
 import { shell } from '../../src/utils/shell.js';
+import { existsSync } from 'node:fs';
 
 vi.mock('../../src/utils/shell.js', () => ({
   shell: vi.fn(),
@@ -143,7 +144,11 @@ describe('repoExists', () => {
 });
 
 describe('buildVmSetupScript', () => {
-  const script = buildVmSetupScript();
+  const script = buildVmSetupScript({
+    githubUser: 'alice',
+    repoName: 'lox-vault',
+    patSecretName: 'lox-github-pat',
+  });
 
   it('starts with a bash shebang and strict mode', () => {
     expect(script.startsWith('#!/bin/bash\n')).toBe(true);
@@ -174,6 +179,55 @@ describe('buildVmSetupScript', () => {
     expect(script).toContain('rm -- "$0"');
   });
 
+  it('clones the vault repo to ~/lox-vault if missing (#104-B)', () => {
+    // Before #104-B, sync-vault.sh did `cd ~/lox-vault` against a
+    // directory that the installer never created on the VM — cron
+    // failed silently forever. Now the setup script clones the repo
+    // as a one-time bootstrap.
+    expect(script).toContain('if [ ! -d "$HOME/lox-vault/.git" ]; then');
+    expect(script).toContain('git clone');
+    expect(script).toContain('github.com/alice/lox-vault.git');
+    expect(script).toContain('$HOME/lox-vault');
+  });
+
+  it('fetches the PAT from Secret Manager and unsets it after clone', () => {
+    // The token must be scrubbed from the shell env after the clone so
+    // it doesn't linger for subsequent lines in the setup script.
+    expect(script).toContain('gcloud secrets versions access latest --secret=lox-github-pat');
+    expect(script).toContain('unset GH_PAT');
+  });
+
+  it('sanitizes repoName / githubUser / patSecretName against shell injection', () => {
+    // Defense in depth: even though githubUser comes from the GitHub API
+    // and repoName passes through input validation, we strip anything
+    // outside the alphanumeric + allowed-punct set before interpolating.
+    const malicious = buildVmSetupScript({
+      githubUser: 'alice; rm -rf /',
+      repoName: 'lox-vault && curl evil',
+      patSecretName: 'x$(whoami)',
+    });
+    // Stripped to their safe character sets.
+    expect(malicious).toContain('github.com/alicerm-rf/lox-vaultcurlevil.git');
+    expect(malicious).toContain('--secret=xwhoami');
+    // Must NOT contain the raw injection metachars.
+    expect(malicious).not.toContain('; rm -rf /');
+    expect(malicious).not.toContain('&& curl');
+    expect(malicious).not.toContain('$(whoami)');
+  });
+
+  it('preserves underscores in patSecretName (GCP Secret Manager allows them)', () => {
+    // GCP allows [A-Za-z0-9_-] in secret names per
+    // https://cloud.google.com/secret-manager/docs/reference/rest/v1/projects.secrets
+    // Stripping underscores would silently break users whose secret names
+    // look like `lox_github_pat` instead of `lox-github-pat`.
+    const s = buildVmSetupScript({
+      githubUser: 'alice',
+      repoName: 'lox-vault',
+      patSecretName: 'lox_github_pat_2026',
+    });
+    expect(s).toContain('--secret=lox_github_pat_2026');
+  });
+
   it('VM_SETUP_SCRIPT_REMOTE_PATH is an absolute POSIX path', () => {
     // pscp.exe (Windows Cloud SDK) does not perform tilde expansion — a
     // destination like lox-vm:~/file.sh lands in a literal "~" directory
@@ -188,6 +242,25 @@ describe('buildVmSetupScript', () => {
     // trailing newline is conventional and ensures POSIX tools treat the
     // last line as a complete line.
     expect(script.endsWith('\n')).toBe(true);
+  });
+});
+
+describe('resolveTemplatesDir (#105)', () => {
+  it('resolves to an absolute path independent of CWD', () => {
+    const paraPath = resolveTemplatesDir('para');
+    expect(paraPath).toMatch(/templates[/\\]para$/);
+    // Not a relative path — must not depend on process.cwd().
+    expect(paraPath.startsWith('/') || /^[A-Z]:\\/.test(paraPath)).toBe(true);
+  });
+
+  it('resolves to actual template directories that exist in the repo', () => {
+    // End-to-end check: the path resolution isn't just syntactic — the
+    // templates MUST exist on disk for the installer to copy them.
+    // This would have caught the #105 silent-failure bug: the old code
+    // tried `cp -r templates/para/.` (CWD-relative), failed on Windows,
+    // and swallowed the error. The new path MUST reach a real folder.
+    expect(existsSync(resolveTemplatesDir('para'))).toBe(true);
+    expect(existsSync(resolveTemplatesDir('zettelkasten'))).toBe(true);
   });
 });
 

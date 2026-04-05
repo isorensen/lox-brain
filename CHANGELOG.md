@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.8] — 2026-04-05
+
+### Fixed
+- **Step 11 — `PG_PASSWORD` missing from `/etc/lox/secrets.env` (#103).** The DB password that step 7 (VM Setup) generates and stores in Secret Manager as `lox-db-password` was never read back by step 11. The watcher crashed on every install with "PG_PASSWORD environment variable or explicit password is required" and systemd restart-looped it forever. Step 11 now fetches `lox-db-password` from Secret Manager and includes it in secrets.env. If the secret is missing, returns an actionable failure pointing the user at step 7.
+- **Step 11 — `VAULT_PATH` used the user's LOCAL Obsidian folder (#104-A).** `ctx.config.vault.local_path` is the user's Obsidian path on their Windows/macOS machine (e.g. `~/Obsidian/Lox`). Step 11 wrongly copied that into the VM's `VAULT_PATH`. systemd's `EnvironmentFile=` doesn't expand `~`, and the VM doesn't have the user's Obsidian layout anyway. Now always uses the VM-side absolute path `${vmHome}/lox-vault`.
+- **Step 9 — VM never cloned the vault repo (#104-B).** `buildVmSetupScript` wrote `~/sync-vault.sh` with `cd ~/lox-vault` but nothing in the installer ever ran `git clone` on the VM. Cron fired silently every 2 minutes, watcher watched a missing directory, Node exited cleanly with no events, systemd restart-looped. Added a one-time idempotent clone at the top of the VM setup script (checks `~/lox-vault/.git` first, fetches PAT from Secret Manager on the VM, embeds it in the remote URL so subsequent `git fetch`/`push` in sync-vault.sh work without a credential helper).
+- **Step 9 — template copy silently failed on Windows (#105).** `cp -r templates/<preset>/. <vaultDir>` invoked `cp` which doesn't exist on Windows. The generic `try/catch` swallowed the error and printed the MISLEADING message "Template directory not found" even though the templates existed. Replaced with `fs.cpSync(..., { recursive: true, force: true })` (no shell, cross-platform by construction). Dropped the swallowing catch so a real packaging regression would surface loudly.
+- **Step 12 — `fixWindowsAcl` hardening for gcloud SSH key (#101 follow-up).** v0.6.7's `/inheritance:r` + `/grant:r user:F` only stripped inherited ACEs, leaving EXPLICIT `CREATOR OWNER` / `BUILTIN\Users` ACEs on the gcloud-created key file intact. OpenSSH still rejected the key with "UNPROTECTED PRIVATE KEY FILE". Now also explicitly removes the 4 common loose principals (CREATOR OWNER, BUILTIN\Users, Authenticated Users, Everyone) via `icacls /remove` before granting the current user.
+
+
 ## [0.6.7] — 2026-04-05
 
 ### Fixed

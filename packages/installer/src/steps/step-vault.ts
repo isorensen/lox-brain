@@ -1,9 +1,25 @@
 import chalk from 'chalk';
-import { shell, getPlatform } from '../utils/shell.js';
+import { shell } from '../utils/shell.js';
 import { t } from '../i18n/index.js';
 import { renderStepHeader, renderBox } from '../ui/box.js';
 import { withSpinner } from '../ui/spinner.js';
 import type { InstallerContext, StepResult } from './types.js';
+import { cpSync, existsSync } from 'node:fs';
+import { resolve as pathResolve } from 'node:path';
+
+/**
+ * Locate the bundled templates directory relative to THIS compiled module
+ * (not CWD — the installer may be invoked from any directory). Compiled
+ * layout: `packages/installer/dist/steps/step-vault.js` → go up 4 dirs to
+ * the repo root where `templates/<preset>/` lives.
+ *
+ * Uses CommonJS `__dirname` (the installer ships as CJS via
+ * `"type": "commonjs"` in packages/installer/package.json). Exported for
+ * tests which assert path resolution without depending on working dir.
+ */
+export function resolveTemplatesDir(preset: string): string {
+  return pathResolve(__dirname, '..', '..', '..', '..', 'templates', preset);
+}
 
 const TOTAL_STEPS = 12;
 
@@ -110,12 +126,47 @@ export function isRepoNotFoundError(err: unknown): boolean {
  */
 export const VM_SETUP_SCRIPT_REMOTE_PATH = '/tmp/lox-setup-sync.sh';
 
-export function buildVmSetupScript(): string {
+export interface VmSetupScriptInput {
+  /** GitHub handle that owns the vault repo (used to build the clone URL). */
+  githubUser: string;
+  /** Vault repo name on GitHub (default 'lox-vault'). */
+  repoName: string;
+  /** GCP Secret Manager secret name holding the fine-grained PAT. */
+  patSecretName: string;
+}
+
+export function buildVmSetupScript(input: VmSetupScriptInput): string {
   // cronLine must not contain single quotes — embedded in a single-quoted bash assignment below.
   const cronLine = '*/2 * * * * ~/sync-vault.sh >> ~/sync-vault.log 2>&1';
+  // Shell-injection guard on template strings: these values flow from
+  // GitHub API + user input. Trust is not guaranteed in user-controlled
+  // fields (repoName is user-entered), so restrict the format to the set
+  // GitHub actually allows (alphanumeric, dash, dot, underscore).
+  const safeRepo = input.repoName.replace(/[^A-Za-z0-9._-]/g, '');
+  const safeUser = input.githubUser.replace(/[^A-Za-z0-9-]/g, '');
+  // GCP Secret Manager allows underscores in secret names — must include
+  // `_` or a user with a secret like `lox_github_pat` gets silent truncation.
+  const safeSecret = input.patSecretName.replace(/[^A-Za-z0-9_-]/g, '');
   return [
     '#!/bin/bash',
     'set -euo pipefail',
+    '',
+    // #104-B: initial clone of the vault repo on the VM. sync-vault.sh
+    // (written below) does `cd ~/lox-vault` and assumes it exists — but
+    // step 9 only ever clones the repo on the user's local machine, never
+    // on the VM. Without this block, sync-vault.sh fails silently on
+    // every cron tick, the vault never appears, and the watcher exits
+    // cleanly (chokidar on a missing dir = no-op event loop). Idempotent:
+    // skipped if ~/lox-vault/.git already exists.
+    'if [ ! -d "$HOME/lox-vault/.git" ]; then',
+    '  echo "[lox] Cloning vault repo to ~/lox-vault (one-time)..."',
+    `  GH_PAT=$(gcloud secrets versions access latest --secret=${safeSecret})`,
+    // PAT embedded in the clone URL so subsequent `git fetch` / `git push`
+    // in sync-vault.sh work without a credential helper. The token stays
+    // in ~/lox-vault/.git/config, which is 0600 on the VM (single-user).
+    `  git clone "https://\${GH_PAT}@github.com/${safeUser}/${safeRepo}.git" "$HOME/lox-vault"`,
+    '  unset GH_PAT',
+    'fi',
     '',
     "cat > ~/sync-vault.sh <<'LOX_SYNC_EOF'",
     '#!/bin/bash',
@@ -304,18 +355,25 @@ export async function stepVault(ctx: InstallerContext): Promise<StepResult> {
     );
   }
 
-  // 3. Copy template files
+  // 3. Copy template files (#105). Uses fs.cpSync — cross-platform,
+  // no shell dependency. Previously invoked `cp -r` which doesn't exist
+  // on Windows; the silent try/catch then printed a misleading
+  // "Template directory not found" message when the real cause was
+  // cp missing from PATH. Now we let errors surface and say what's
+  // actually missing.
   await withSpinner(
     `Copying ${preset} template files...`,
     async () => {
-      // Template copy is best-effort; templates may not exist yet in early phases
-      try {
-        const platform = getPlatform();
-        const cpCmd = platform === 'macos' ? 'cp' : 'cp';
-        await shell(cpCmd, ['-r', `templates/${preset}/.`, vaultDir]);
-      } catch {
-        console.log(chalk.yellow('  → Template directory not found, creating empty vault structure.'));
+      const templatesSrc = resolveTemplatesDir(preset);
+      if (!existsSync(templatesSrc)) {
+        // Genuinely missing templates is a packaging/bundling regression —
+        // fail loudly instead of silently producing an empty vault.
+        throw new Error(
+          `Template directory not found: ${templatesSrc}. `
+          + `Check the installer package includes templates/${preset}/.`,
+        );
       }
+      cpSync(templatesSrc, vaultDir, { recursive: true, force: true });
     },
   );
 
@@ -436,7 +494,11 @@ export async function stepVault(ctx: InstallerContext): Promise<StepResult> {
       // through gcloud's --command, which cmd.exe on Windows interprets as
       // its own shell metacharacters and fragments the command (#61).
       const { tmpdir } = await import('node:os');
-      const setupScript = buildVmSetupScript();
+      const setupScript = buildVmSetupScript({
+        githubUser: ghUser,
+        repoName,
+        patSecretName,
+      });
       const localScriptPath = join(tmpdir(), `lox-setup-sync-${Date.now()}.sh`);
       writeFileSync(localScriptPath, setupScript);
 

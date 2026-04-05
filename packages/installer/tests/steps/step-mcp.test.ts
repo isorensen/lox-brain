@@ -266,9 +266,14 @@ describe("fixWindowsSshAcl (#83)", () => {
   const originalPlatform = process.platform;
   const originalUsername = process.env.USERNAME;
   const originalUser = process.env.USER;
+  const originalUserDomain = process.env.USERDOMAIN;
 
   beforeEach(() => {
     vi.mocked(shell).mockReset();
+    // Default to a populated USERDOMAIN to mirror real Windows behavior
+    // (standard MS-populated env var on both domain-joined AND workgroup
+    // machines). Tests that want the unset case will override it.
+    process.env.USERDOMAIN = "CORPNET";
   });
 
   afterEach(() => {
@@ -277,6 +282,8 @@ describe("fixWindowsSshAcl (#83)", () => {
     else process.env.USERNAME = originalUsername;
     if (originalUser === undefined) delete process.env.USER;
     else process.env.USER = originalUser;
+    if (originalUserDomain === undefined) delete process.env.USERDOMAIN;
+    else process.env.USERDOMAIN = originalUserDomain;
   });
 
   it("is a no-op on non-Windows platforms", async () => {
@@ -304,26 +311,57 @@ describe("fixWindowsSshAcl (#83)", () => {
     expect(shell).toHaveBeenCalledWith("icacls", [target, "/remove", "BUILTIN\\Users"]);
     expect(shell).toHaveBeenCalledWith("icacls", [target, "/remove", "Authenticated Users"]);
     expect(shell).toHaveBeenCalledWith("icacls", [target, "/remove", "Everyone"]);
-    expect(shell).toHaveBeenCalledWith("icacls", [target, "/grant:r", "alice:(F)"]);
+    // DOMAIN\USER format (#113) — on domain-joined pt-BR machine this
+    // is `CORPNET\alice`, on workgroup `COMPUTER\alice`.
+    expect(shell).toHaveBeenCalledWith("icacls", [target, "/grant:r", "CORPNET\\alice:(F)"]);
     expect(shell).toHaveBeenCalledTimes(6);
+  });
+
+  it("uses DOMAIN\\USER format when USERDOMAIN is set (#113)", async () => {
+    // Core of #113: on a domain-joined machine, bare `USERNAME` doesn't
+    // resolve to the user's actual domain account. icacls silently
+    // drops the grant and the user loses access to their own SSH key.
+    // DOMAIN\USERNAME resolves correctly on both domain-joined AND
+    // workgroup machines (workgroup's USERDOMAIN = computer name).
+    Object.defineProperty(process, "platform", { value: "win32" });
+    process.env.USERNAME = "alice.domain";
+    process.env.USERDOMAIN = "corpnet";
+    vi.mocked(shell).mockResolvedValue({ stdout: "", stderr: "" });
+    await fixWindowsSshAcl("C:\\path");
+    expect(shell).toHaveBeenCalledWith("icacls", ["C:\\path", "/grant:r", "corpnet\\alice.domain:(F)"]);
+  });
+
+  it("falls back to bare USERNAME when USERDOMAIN is unset", async () => {
+    // Non-standard Windows environment (shouldn't happen on Microsoft-
+    // shipped Windows, but restricted shells / minimal containers can
+    // blank USERDOMAIN). Use bare USERNAME rather than produce an
+    // invalid `\alice:(F)` principal.
+    Object.defineProperty(process, "platform", { value: "win32" });
+    process.env.USERNAME = "alice";
+    delete process.env.USERDOMAIN;
+    vi.mocked(shell).mockResolvedValue({ stdout: "", stderr: "" });
+    await fixWindowsSshAcl("C:\\path");
+    expect(shell).toHaveBeenCalledWith("icacls", ["C:\\path", "/grant:r", "alice:(F)"]);
   });
 
   it("falls back to USER if USERNAME is unset (edge case)", async () => {
     Object.defineProperty(process, "platform", { value: "win32" });
     delete process.env.USERNAME;
     process.env.USER = "bob";
+    process.env.USERDOMAIN = "WORKGROUP";
     vi.mocked(shell).mockResolvedValue({ stdout: "", stderr: "" });
     await fixWindowsSshAcl("C:\\path");
-    expect(shell).toHaveBeenCalledWith("icacls", ["C:\\path", "/grant:r", "bob:(F)"]);
+    expect(shell).toHaveBeenCalledWith("icacls", ["C:\\path", "/grant:r", "WORKGROUP\\bob:(F)"]);
   });
 
   it("treats an empty USERNAME env var as unset and falls back to USER", async () => {
     Object.defineProperty(process, "platform", { value: "win32" });
     process.env.USERNAME = "";
     process.env.USER = "alice";
+    process.env.USERDOMAIN = "DESKTOP-X1";
     vi.mocked(shell).mockResolvedValue({ stdout: "", stderr: "" });
     await fixWindowsSshAcl("C:\\path");
-    expect(shell).toHaveBeenCalledWith("icacls", ["C:\\path", "/grant:r", "alice:(F)"]);
+    expect(shell).toHaveBeenCalledWith("icacls", ["C:\\path", "/grant:r", "DESKTOP-X1\\alice:(F)"]);
   });
 
   it("continues the sequence even if a /remove call fails (principal absent)", async () => {
@@ -340,7 +378,7 @@ describe("fixWindowsSshAcl (#83)", () => {
     });
     await fixWindowsSshAcl("C:\\path");
     // The /grant:r must still fire despite the earlier /remove failure.
-    expect(shell).toHaveBeenCalledWith("icacls", ["C:\\path", "/grant:r", "alice:(F)"]);
+    expect(shell).toHaveBeenCalledWith("icacls", ["C:\\path", "/grant:r", "CORPNET\\alice:(F)"]);
   });
 
   it("trims whitespace-only USERNAME/USER before treating as unset", async () => {

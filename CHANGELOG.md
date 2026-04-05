@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.10] — 2026-04-05
+
+### Fixed
+- `fixWindowsAcl` now grants to `DOMAIN\USERNAME` instead of bare `USERNAME` (#113). On a domain-joined Windows machine, bare `USERNAME` doesn't resolve to the user's actual domain account, so `icacls /grant:r alice:(F)` silently no-ops ("successfully processed 1 file" reported, but the ACE is never written). The user then has NO access to their own SSH key and OpenSSH fails with `Load key "...": Permission denied` — a DIFFERENT failure from the "UNPROTECTED PRIVATE KEY FILE" error we fixed in #101. Fix reads `USERDOMAIN` (standard Windows-populated env var, equals domain name on domain-joined, computer name on workgroup) and builds the fully-qualified principal. Falls back to bare `USERNAME` if `USERDOMAIN` is unset (non-standard environments).
+
+
 ## [0.6.9] — 2026-04-05
 
 ### Fixed

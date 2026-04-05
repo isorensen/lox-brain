@@ -360,3 +360,61 @@ describe('VM public IP restricted to VPN endpoint gate (#119 PR-B)', () => {
     expect(await gate.check(buildConfig())).toBe(false);
   });
 });
+
+describe('SSH hardening gate (#119 PR-C)', () => {
+  const gate = findGate('SSH: no password auth, no root login');
+
+  beforeEach(() => { vi.mocked(shell).mockReset(); });
+
+  it('passes when both PasswordAuthentication and PermitRootLogin are "no"', async () => {
+    // Step 7 (vm_phase_ssh_hardening) runs sed to set both. The gate
+    // verifies each setting with a separate gcloud SSH call (#119:
+    // previously used && in --command which broke on Windows cmd.exe).
+    vi.mocked(shell)
+      .mockResolvedValueOnce({ stdout: '1', stderr: '' })   // PasswordAuthentication no
+      .mockResolvedValueOnce({ stdout: '1', stderr: '' });   // PermitRootLogin no
+    expect(await gate.check(buildConfig())).toBe(true);
+    // MUST be two separate SSH calls, no && chain
+    expect(vi.mocked(shell)).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails when PasswordAuthentication is not hardened', async () => {
+    vi.mocked(shell)
+      .mockResolvedValueOnce({ stdout: '0', stderr: '' })   // PasswordAuth grep finds 0 matches
+      .mockResolvedValueOnce({ stdout: '1', stderr: '' });   // PermitRootLogin is fine
+    expect(await gate.check(buildConfig())).toBe(false);
+  });
+
+  it('fails when PermitRootLogin is not hardened', async () => {
+    vi.mocked(shell)
+      .mockResolvedValueOnce({ stdout: '1', stderr: '' })   // PasswordAuth is fine
+      .mockResolvedValueOnce({ stdout: '0', stderr: '' });   // Root login grep finds 0 matches
+    expect(await gate.check(buildConfig())).toBe(false);
+  });
+
+  it('fails when the first SSH call throws (connection error)', async () => {
+    vi.mocked(shell).mockRejectedValueOnce(new Error('SSH connection timed out'));
+    expect(await gate.check(buildConfig())).toBe(false);
+    // Must not attempt the second SSH call
+    expect(vi.mocked(shell)).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails when the second SSH call throws', async () => {
+    vi.mocked(shell)
+      .mockResolvedValueOnce({ stdout: '1', stderr: '' })
+      .mockRejectedValueOnce(new Error('SSH connection reset'));
+    expect(await gate.check(buildConfig())).toBe(false);
+  });
+
+  it('each SSH call does NOT contain && (regression test for Windows cmd.exe)', async () => {
+    vi.mocked(shell)
+      .mockResolvedValueOnce({ stdout: '1', stderr: '' })
+      .mockResolvedValueOnce({ stdout: '1', stderr: '' });
+    await gate.check(buildConfig());
+    for (const call of vi.mocked(shell).mock.calls) {
+      const args = call[1] as string[];
+      const commandArg = args[args.indexOf('--command') + 1] ?? '';
+      expect(commandArg).not.toContain('&&');
+    }
+  });
+});

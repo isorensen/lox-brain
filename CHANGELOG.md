@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.7] — 2026-04-05
+
+### Fixed
+- Step 12 (MCP Server) now tightens ACLs on the gcloud-created `~/.ssh/google_compute_engine` private key on Windows (#101). Earlier steps (VM Setup, Deploy) invoke `gcloud compute ssh`, which creates the key with inherited loose Windows ACLs (CREATOR OWNER / BUILTIN\Users). Step 12's `scp lox-vm:...` then failed with "UNPROTECTED PRIVATE KEY FILE! Bad permissions" because OpenSSH on Windows validates identity-file permissions before use. The fix (#83) was already applied to `~/.ssh/` and `~/.ssh/config`, just not to the key itself. Extracted `tightenGcloudSshKey` as a testable helper and added 3 regression tests (no-op when key missing, no-op on non-Windows, invokes icacls on Windows when key exists).
+
+
 ## [0.6.6] — 2026-04-05
 
 ### Fixed

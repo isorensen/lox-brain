@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { isMcpServerRegistered, buildMcpLauncherScript, fixWindowsSshAcl, buildVpnUnreachableMessage } from '../../src/steps/step-mcp.js';
+import { isMcpServerRegistered, buildMcpLauncherScript, fixWindowsSshAcl, buildVpnUnreachableMessage, tightenGcloudSshKey } from '../../src/steps/step-mcp.js';
 import { shell } from '../../src/utils/shell.js';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
 vi.mock('../../src/utils/shell.js', () => ({
   shell: vi.fn(),
@@ -74,6 +77,62 @@ describe('buildMcpLauncherScript', () => {
   it('ends with a trailing newline', () => {
     const script = buildMcpLauncherScript('/home/lox/lox-brain');
     expect(script.endsWith('\n')).toBe(true);
+  });
+});
+
+describe('tightenGcloudSshKey (#101)', () => {
+  let tmp: string;
+  const originalPlatform = process.platform;
+  const originalUsername = process.env.USERNAME;
+
+  beforeEach(() => {
+    tmp = mkdtempSync(path.join(tmpdir(), 'lox-ssh-key-'));
+    mkdirSync(tmp, { recursive: true });
+    vi.mocked(shell).mockReset();
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+    if (originalUsername === undefined) delete process.env.USERNAME;
+    else process.env.USERNAME = originalUsername;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('is a no-op when the gcloud private key does not exist', async () => {
+    // Standalone step 12 runs may hit this path if no earlier step has
+    // invoked `gcloud compute ssh` yet — fixWindowsAcl must not be called
+    // on a missing file (icacls would error on a non-existent path).
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    process.env.USERNAME = 'alice';
+    await tightenGcloudSshKey(tmp);
+    expect(shell).not.toHaveBeenCalled();
+  });
+
+  it('is a no-op on non-Windows platforms even if the key exists', async () => {
+    // fixWindowsAcl gates internally, but we exercise the happy path here:
+    // Linux/macOS key-perm management is POSIX-based (chmod 600 elsewhere),
+    // not icacls. No shell invocation expected.
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    writeFileSync(path.join(tmp, 'google_compute_engine'), 'fake-key');
+    await tightenGcloudSshKey(tmp);
+    expect(shell).not.toHaveBeenCalled();
+  });
+
+  it('invokes icacls on the gcloud key path when on Windows and the key exists', async () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    process.env.USERNAME = 'alice';
+    vi.mocked(shell).mockResolvedValue({ stdout: '', stderr: '' });
+    const keyPath = path.join(tmp, 'google_compute_engine');
+    writeFileSync(keyPath, 'fake-key');
+
+    await tightenGcloudSshKey(tmp);
+
+    expect(shell).toHaveBeenCalledOnce();
+    const [cmd, args] = vi.mocked(shell).mock.calls[0]!;
+    expect(cmd).toBe('icacls');
+    // The exact flags are owned by fixWindowsAcl's own tests; here we
+    // just verify the key path was the target.
+    expect(args).toContain(keyPath);
   });
 });
 

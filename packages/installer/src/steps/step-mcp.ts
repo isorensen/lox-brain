@@ -131,6 +131,29 @@ async function configureSshConfig(vpnServerIp: string, sshUser: string): Promise
   const { chmodSync } = await import('node:fs');
   chmodSync(configPath, 0o600);
   await fixWindowsSshAcl(configPath);
+
+  await tightenGcloudSshKey(sshDir);
+}
+
+/**
+ * Apply `fixWindowsAcl` to the gcloud-created `~/.ssh/google_compute_engine`
+ * private key if present (#101). Earlier steps (VM setup, deploy) invoke
+ * `gcloud compute ssh`, which creates the key with inherited loose Windows
+ * ACLs (`CREATOR OWNER` / `BUILTIN\Users`). OpenSSH validates identity-file
+ * permissions before use and rejects the scp in step 12 with "UNPROTECTED
+ * PRIVATE KEY FILE". `fixWindowsAcl` is a no-op on non-Windows; on Windows
+ * it restricts access to the current user only. Gated on `existsSync`
+ * because the key may not yet exist when step 12 runs standalone.
+ *
+ * Exported for tests; the only production caller is `configureSshConfig`.
+ */
+export async function tightenGcloudSshKey(sshDir: string): Promise<void> {
+  const { existsSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const keyPath = join(sshDir, 'google_compute_engine');
+  if (existsSync(keyPath)) {
+    await fixWindowsSshAcl(keyPath);
+  }
 }
 
 /**

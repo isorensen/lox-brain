@@ -164,6 +164,26 @@ describe('buildMcpHealthProbeScript', () => {
     expect(s).not.toContain('set -euo pipefail');
     expect(s).not.toContain('pipefail');
   });
+
+  it('sources /etc/lox/secrets.env before running node so env vars are available (#116)', () => {
+    // The watcher gets VAULT_PATH, OPENAI_API_KEY, PG_PASSWORD etc. via
+    // systemd EnvironmentFile=. This one-off probe must source them explicitly,
+    // otherwise the MCP server aborts at startup and every install shows a
+    // false-negative "MCP server did not respond" warning.
+    const s = buildMcpHealthProbeScript('/home/lox/lox-brain');
+    expect(s).toContain('source /etc/lox/secrets.env');
+    // The source must appear BEFORE the node invocation line.
+    const sourceIdx = s.indexOf('source /etc/lox/secrets.env');
+    const nodeIdx = s.indexOf('node packages/core/dist/mcp/index.js');
+    expect(sourceIdx).toBeLessThan(nodeIdx);
+  });
+
+  it('guards the source with a file-existence check so a missing secrets.env does not abort the probe', () => {
+    // If /etc/lox/secrets.env is missing the probe should fall through and
+    // report unhealthy (no output), not abort the script before node runs.
+    const s = buildMcpHealthProbeScript('/home/lox/lox-brain');
+    expect(s).toContain('[ -f /etc/lox/secrets.env ]');
+  });
 });
 
 describe('parseVmIdentity', () => {

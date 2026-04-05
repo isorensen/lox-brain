@@ -166,9 +166,16 @@ export function buildMcpHealthProbeScript(installDir: string): string {
   // would abort before `head -1` reads any output, hiding diagnostic info
   // from the caller which inspects stdout to decide health. The enclosing
   // TypeScript wraps this call in try/catch and treats any throw as unhealthy.
+  //
+  // Load secrets so VAULT_PATH, OPENAI_API_KEY, PG_PASSWORD, etc. are present
+  // when the MCP server starts. The watcher gets these via systemd's
+  // EnvironmentFile= — this one-off probe must source them explicitly (#116).
+  // Guard with [ -f ] so a missing secrets.env falls through to "unhealthy"
+  // rather than aborting the script before the probe even runs.
   return [
     '#!/bin/bash',
     `cd "${installDir}" || exit 1`,
+    '[ -f /etc/lox/secrets.env ] && { set -a; source /etc/lox/secrets.env; set +a; }',
     'echo \'{"jsonrpc":"2.0","method":"tools/list","id":1}\' | timeout 10 node packages/core/dist/mcp/index.js 2>/dev/null | head -1',
     '',
   ].join('\n');

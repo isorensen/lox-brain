@@ -1,8 +1,8 @@
 {
   "name": "lox-brain",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "private": true,
-  "description": "Lox — Where knowledge lives. Personal AI-powered Second Brain with semantic search, MCP Server, and Obsidian integration.",
+  "description": "Lox \u2014 Where knowledge lives. Personal AI-powered Second Brain with semantic search, MCP Server, and Obsidian integration.",
   "workspaces": [
     "packages/shared",
     "packages/core",

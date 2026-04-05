@@ -186,6 +186,80 @@ async function runRemoteScript(
 }
 
 /**
+ * Parse `$USER:$HOME` output from the VM identity probe. Returns null if the
+ * output does not match the expected `user:/path` format.
+ */
+export function parseVmIdentity(output: string): { user: string; home: string } | null {
+  // Match `username:/absolute/path` — gcloud SSH may prepend MOTD banners or
+  // warnings, so we scan lines and pick the first one that matches the
+  // strict `user:/home/...` shape.
+  const re = /^([a-zA-Z0-9._-]+):(\/[^\s]*)$/;
+  for (const raw of output.split('\n')) {
+    const m = raw.trim().match(re);
+    if (m) {
+      return { user: m[1]!, home: m[2]! };
+    }
+  }
+  return null;
+}
+
+/** Script that echoes the VM's POSIX user and $HOME in `user:/home/path` form. */
+export function buildIdentityProbeScript(): string {
+  return [
+    '#!/bin/bash',
+    'set -euo pipefail',
+    'echo "${USER}:${HOME}"',
+    '',
+  ].join('\n');
+}
+
+/**
+ * SSH to the VM and capture `$USER:$HOME` via the scp+bash pattern (same as
+ * #70). Throws if the probe output cannot be parsed.
+ *
+ * Why: `ctx.gcpUsername` is derived from the email prefix, but GCP OS Login
+ * creates POSIX users as `<email-prefix>_<domain>_<tld>` (dots → underscores).
+ * Guessing the /home path from the email prefix makes `git clone` fail with
+ * "could not create leading directories" (see #79). We cannot pass
+ * `echo "$USER:$HOME"` via `--command` directly because on Windows cmd.exe
+ * reinterprets `$` and `"`, producing literal `$USER:$HOME` back — the exact
+ * class of bug the scp+bash refactor in #70 was introduced to prevent.
+ */
+async function resolveVmIdentity(
+  projectId: string,
+  zone: string,
+  vmName: string,
+): Promise<{ user: string; home: string }> {
+  const stdout = await runRemoteScript(
+    projectId, zone, vmName, 'identity', buildIdentityProbeScript(), { timeout: 60_000 },
+  );
+  const parsed = parseVmIdentity(stdout);
+  if (!parsed) {
+    throw new Error(`Could not parse VM identity from SSH probe output: ${JSON.stringify(stdout)}`);
+  }
+  return parsed;
+}
+
+/**
+ * Ensure `ctx.vmUser` and `ctx.vmHome` are set, resolving them via SSH if
+ * needed. Safe to call from any step — idempotent, caches on context.
+ */
+export async function ensureVmIdentity(
+  ctx: InstallerContext,
+  projectId: string,
+  zone: string,
+  vmName: string,
+): Promise<{ user: string; home: string }> {
+  if (ctx.vmUser && ctx.vmHome) {
+    return { user: ctx.vmUser, home: ctx.vmHome };
+  }
+  const identity = await resolveVmIdentity(projectId, zone, vmName);
+  ctx.vmUser = identity.user;
+  ctx.vmHome = identity.home;
+  return identity;
+}
+
+/**
  * Step 11: Deploy Lox Core to VM
  *
  * Clones the repo, builds, creates env file, installs systemd service,
@@ -198,9 +272,15 @@ export async function stepDeploy(ctx: InstallerContext): Promise<StepResult> {
   const projectId = ctx.gcpProjectId ?? 'lox-project';
   const vmName = ctx.config.gcp?.vm_name ?? 'lox-vm';
   const zone = ctx.config.gcp?.zone ?? 'us-east1-b';
-  const user = ctx.gcpUsername ?? 'lox';
-  const installDir = ctx.config.install_dir ?? `/home/${user}/lox-brain`;
-  const vaultPath = ctx.config.vault?.local_path ?? `/home/${user}/lox-vault`;
+
+  // Resolve the actual POSIX user + $HOME on the VM. Must not derive from the
+  // email — OS Login POSIX names differ from email prefixes (#79).
+  const { user, home: vmHome } = await withSpinner(
+    'Resolving VM user identity...',
+    () => ensureVmIdentity(ctx, projectId, zone, vmName),
+  );
+  const installDir = ctx.config.install_dir ?? `${vmHome}/lox-brain`;
+  const vaultPath = ctx.config.vault?.local_path ?? `${vmHome}/lox-vault`;
 
   // 1. Clone lox-brain repo on VM
   await withSpinner(

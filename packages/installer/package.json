@@ -1,8 +1,8 @@
 {
   "name": "lox",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "private": true,
-  "description": "Lox installer — set up your personal AI-powered Second Brain",
+  "description": "Lox installer \u2014 set up your personal AI-powered Second Brain",
   "bin": {
     "lox": "dist/index.js"
   },

@@ -7,6 +7,8 @@ import {
   buildSystemdInstallScript,
   buildServiceStartScript,
   buildMcpHealthProbeScript,
+  parseVmIdentity,
+  buildIdentityProbeScript,
 } from '../../src/steps/step-deploy.js';
 
 describe('buildCloneScript', () => {
@@ -94,6 +96,68 @@ describe('buildMcpHealthProbeScript', () => {
     const s = buildMcpHealthProbeScript('/home/lox/lox-brain');
     expect(s).not.toContain('set -euo pipefail');
     expect(s).not.toContain('pipefail');
+  });
+});
+
+describe('parseVmIdentity', () => {
+  it('parses a plain user:/home line', () => {
+    expect(parseVmIdentity('lara_gmail_com:/home/lara_gmail_com\n')).toEqual({
+      user: 'lara_gmail_com',
+      home: '/home/lara_gmail_com',
+    });
+  });
+
+  it('ignores MOTD banners and warnings before the identity line', () => {
+    const stdout = [
+      'Warning: Permanently added ... to the list of known hosts.',
+      'Welcome to Ubuntu 22.04.3 LTS',
+      '',
+      'alice:/home/alice',
+      '',
+    ].join('\n');
+    expect(parseVmIdentity(stdout)).toEqual({ user: 'alice', home: '/home/alice' });
+  });
+
+  it('accepts usernames with digits, dots, dashes, underscores', () => {
+    expect(parseVmIdentity('foo.bar-baz_42:/home/foo.bar-baz_42')).toEqual({
+      user: 'foo.bar-baz_42',
+      home: '/home/foo.bar-baz_42',
+    });
+  });
+
+  it('rejects output with no matching line', () => {
+    expect(parseVmIdentity('command not found\n')).toBeNull();
+    expect(parseVmIdentity('')).toBeNull();
+  });
+
+  it('rejects lines where the home path is not absolute', () => {
+    expect(parseVmIdentity('alice:relative/path')).toBeNull();
+  });
+
+  it('rejects lines where the username contains shell metachars', () => {
+    expect(parseVmIdentity('alice;rm -rf /:/home/alice')).toBeNull();
+    expect(parseVmIdentity('alice $(whoami):/home/alice')).toBeNull();
+  });
+
+  it('rejects lines where the home path contains whitespace', () => {
+    expect(parseVmIdentity('alice:/home/alice extra')).toBeNull();
+  });
+
+  it('handles newline-injection gracefully (first valid match wins)', () => {
+    // A nasty second line cannot override a legitimate first match.
+    expect(parseVmIdentity('alice:/home/alice\nroot:/root')).toEqual({
+      user: 'alice',
+      home: '/home/alice',
+    });
+  });
+});
+
+describe('buildIdentityProbeScript', () => {
+  it('is a bash script that echoes $USER:$HOME, runnable via scp+bash (#70)', () => {
+    const s = buildIdentityProbeScript();
+    expect(s.startsWith('#!/bin/bash')).toBe(true);
+    expect(s).toContain('set -euo pipefail');
+    expect(s).toContain('echo "${USER}:${HOME}"');
   });
 });
 

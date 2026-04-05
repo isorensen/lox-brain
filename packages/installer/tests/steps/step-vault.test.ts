@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { isProPlanGate, isRepoNotFoundError, repoExists, buildVmSetupScript, isValidPatFormat, gcpSecretExists, VM_SETUP_SCRIPT_REMOTE_PATH, resolveTemplatesDir, verifyTemplatesCopied, commitInitialVaultTemplate, EXPECTED_TEMPLATE_ENTRIES } from '../../src/steps/step-vault.js';
+import { isProPlanGate, isRepoNotFoundError, repoExists, buildVmSetupScript, isValidPatFormat, gcpSecretExists, VM_SETUP_SCRIPT_REMOTE_PATH, resolveTemplatesDir, verifyTemplatesCopied, commitInitialVaultTemplate, EXPECTED_TEMPLATE_ENTRIES, tryInstallGitleaks, GITLEAKS_VERSION, GITLEAKS_HOOK } from '../../src/steps/step-vault.js';
 import { shell } from '../../src/utils/shell.js';
 import { existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -519,5 +519,65 @@ describe('commitInitialVaultTemplate (#122)', () => {
       .mockRejectedValueOnce(Object.assign(new Error('Command failed'), { stderr: 'remote: Permission denied' }));
 
     await expect(commitInitialVaultTemplate('lox-vault', 'para')).rejects.toThrow('Command failed');
+  });
+});
+
+describe('GITLEAKS_HOOK constant (#119 item 6)', () => {
+  it('includes the ~/.lox/bin/gitleaks fallback path', () => {
+    expect(GITLEAKS_HOOK).toContain('${HOME}/.lox/bin/gitleaks');
+  });
+
+  it('checks PATH first, then falls back to ~/.lox/bin/', () => {
+    // The hook should check `command -v gitleaks` first, then the LOX path
+    const pathCheckIdx = GITLEAKS_HOOK.indexOf('command -v gitleaks');
+    const loxCheckIdx = GITLEAKS_HOOK.indexOf('LOX_GITLEAKS');
+    expect(pathCheckIdx).toBeGreaterThan(-1);
+    expect(loxCheckIdx).toBeGreaterThan(-1);
+  });
+
+  it('exits 0 (not 1) when gitleaks is not installed at all', () => {
+    // Graceful degradation: missing binary should not block commits
+    expect(GITLEAKS_HOOK).toContain('exit 0');
+  });
+
+  it('exits 1 when gitleaks detects secrets', () => {
+    expect(GITLEAKS_HOOK).toContain('exit 1');
+  });
+});
+
+describe('GITLEAKS_VERSION constant', () => {
+  it('is pinned to a specific version', () => {
+    expect(GITLEAKS_VERSION).toBe('8.21.2');
+  });
+});
+
+describe('tryInstallGitleaks (#119 item 6)', () => {
+  beforeEach(() => {
+    vi.mocked(shell).mockReset();
+  });
+
+  it('returns true immediately when gitleaks is already on PATH', async () => {
+    vi.mocked(shell).mockResolvedValueOnce({ stdout: 'v8.21.2', stderr: '' });
+    const result = await tryInstallGitleaks();
+    expect(result).toBe(true);
+    // Only the version check should have been called — no download
+    expect(vi.mocked(shell)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(shell)).toHaveBeenCalledWith('gitleaks', ['version']);
+  });
+
+  it('returns false gracefully when download fails (no throw)', async () => {
+    // gitleaks not on PATH
+    vi.mocked(shell).mockRejectedValueOnce(new Error('Command not found: gitleaks'));
+    // curl download fails
+    vi.mocked(shell).mockRejectedValueOnce(new Error('curl: (22) 404 Not Found'));
+    const result = await tryInstallGitleaks();
+    expect(result).toBe(false);
+  });
+
+  it('never throws even on unexpected errors', async () => {
+    vi.mocked(shell).mockRejectedValueOnce(new Error('Command not found: gitleaks'));
+    vi.mocked(shell).mockRejectedValueOnce(new Error('Unexpected error'));
+    // Must resolve (not reject), returning false
+    await expect(tryInstallGitleaks()).resolves.toBe(false);
   });
 });

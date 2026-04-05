@@ -135,6 +135,41 @@ export function buildMcpHealthProbeScript(installDir: string): string {
 }
 
 /**
+ * Patterns that indicate a transient SSH / IAP tunnel drop worth retrying.
+ * Sourced from real install failures and the gcloud / OpenSSH error corpus.
+ * Matched against the full error message (case-insensitive).
+ */
+const RETRYABLE_SSH_PATTERNS: readonly RegExp[] = [
+  /Remote side unexpectedly closed/i,
+  /Connection reset by peer/i,
+  /ECONNRESET/,
+  /kex_exchange_identification/i,
+  /Connection closed by remote host/i,
+  // GCP IAP tunnel closed by the relay (4003 = idle, 4033 = peer-closed).
+  // Anchor the IAP codes to avoid matching bare numbers in unrelated output.
+  /4003: The connection to the (instance|remote host) ended/i,
+  /\b4033\b.*tunnel|IAP.*\b4033\b/i,
+  /IAP Desktop.*tunnel/i,
+  /Operation timed out/i,
+  /Handshake failed/i,
+  // NOTE: "Connection refused" is deliberately NOT in this set. It
+  // usually means sshd is genuinely unavailable (VM stopped / booting /
+  // SSH disabled), and retrying 3× would just waste ~6s before surfacing
+  // the real problem to the user.
+];
+
+/**
+ * Return true if `err` looks like a transient SSH/IAP drop that's safe to
+ * retry. Exported for unit testing.
+ */
+export function isRetryableSshError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return RETRYABLE_SSH_PATTERNS.some((re) => re.test(msg));
+}
+
+const RETRY_DELAYS_MS: readonly number[] = [2_000, 4_000];
+
+/**
  * Write `script` to a local temp file, scp it to the VM via IAP, execute it
  * with `bash /tmp/lox-deploy-<phase>.sh`, and clean the local temp file.
  *
@@ -142,6 +177,10 @@ export function buildMcpHealthProbeScript(installDir: string): string {
  * metacharacters leak through cmd.exe on Windows (#61). The local path lives
  * in os.tmpdir() and is always absolute (#64). Returns captured stdout so
  * callers can inspect script output (used by the MCP health probe).
+ *
+ * Retries up to 3 times on transient IAP tunnel drops (#87). Each retry
+ * re-scps the script (cheap) and re-runs the ssh command. Non-transient
+ * errors (script bugs, auth failures, quota) fail immediately without retry.
  */
 async function runRemoteScript(
   projectId: string,
@@ -171,23 +210,42 @@ async function runRemoteScript(
   writeFileSync(localPath, scriptWithCleanup, { mode: 0o600 });
 
   try {
-    await shell('gcloud', [
-      'compute', 'scp',
-      '--project', projectId,
-      '--zone', zone,
-      '--tunnel-through-iap',
-      localPath, `${vmName}:${remotePath}`,
-    ], { timeout });
+    let lastErr: unknown;
+    for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+      try {
+        await shell('gcloud', [
+          'compute', 'scp',
+          '--project', projectId,
+          '--zone', zone,
+          '--tunnel-through-iap',
+          localPath, `${vmName}:${remotePath}`,
+        ], { timeout });
 
-    const { stdout } = await shell('gcloud', [
-      'compute', 'ssh', vmName,
-      '--project', projectId,
-      '--zone', zone,
-      '--tunnel-through-iap',
-      '--command', `bash ${remotePath}`,
-    ], { timeout });
+        const { stdout } = await shell('gcloud', [
+          'compute', 'ssh', vmName,
+          '--project', projectId,
+          '--zone', zone,
+          '--tunnel-through-iap',
+          '--command', `bash ${remotePath}`,
+        ], { timeout });
 
-    return stdout;
+        return stdout;
+      } catch (err) {
+        lastErr = err;
+        if (!isRetryableSshError(err) || attempt >= RETRY_DELAYS_MS.length) {
+          throw err;
+        }
+        const delay = RETRY_DELAYS_MS[attempt]!;
+        console.log(
+          chalk.yellow(
+            `  ⚠ SSH/IAP drop on phase "${phaseName}" (attempt ${attempt + 1}). Retrying in ${delay / 1000}s...`,
+          ),
+        );
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+    // Unreachable — the loop either returns or throws, but TS cannot infer it.
+    throw lastErr;
   } finally {
     try { rmSync(localPath, { force: true }); } catch { /* best-effort */ }
   }

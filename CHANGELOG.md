@@ -4,7 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [0.6.14] — 2026-04-05
+## [0.6.15] — 2026-04-05
+
+### Fixed
+- **Final security audit reported 4 false-negative check bugs on clean installs (#119, partial — PR-A).** Four gates in `packages/installer/src/security/gates.ts` were reporting failure even when the installer had delivered the promised security posture:
+  - **Branch protection (gate #2)**: threw on GitHub Free's "Upgrade to Pro" HTTP 403 for private repos. Step 9 already skips branch protection gracefully on Free accounts with a visible warning; the audit now recognises the Pro-gate 403 (via `isProPlanGate`) and counts it as N/A → pass, matching the installer's behaviour.
+  - **SSH key permissions (gate #6)**: had no Windows code path, always returned false on Windows because `stat -f %Lp` / `stat -c %a` don't exist there. Added a Windows branch using `icacls /findsid` against the four well-known loose-group SIDs (Everyone, Authenticated Users, BUILTIN\Users, CREATOR OWNER) — locale-independent, mirrors the four principals `utils/windows-acl.ts` removes in step 7.
+  - **Remote URL HTTPS (gate #14)**: checked `config.vault.repo.startsWith('https://')`, but `vault.repo` is stored as the GitHub short format `owner/repo` which never starts with `https://`, so the check always failed. Now queries the actual git remote via `git -C <local_path> remote get-url origin`.
+  - **.gitignore sensitive patterns (gate #16)**: invoked `cat ${repoPath}/.gitignore`, which (a) doesn't exist on Windows and (b) never shell-expanded the `~` in `vault.local_path='~/Obsidian/Lox'`, so the path resolved to a literal `~/Obsidian/Lox/.gitignore`. Now reads via Node `fs.readFileSync` with explicit tilde expansion.
+
+  Remaining #119 items (VM public IP, sshd hardening, gitleaks hook propagation) are installer-side gaps and will ship as separate PRs.
+
+
 
 ### Fixed
 - **Step 9 — vault remained empty after install on Windows (#122).** The installer copied template files via `cpSync` without verifying the copy succeeded, and never ran `git add/commit/push` after the template copy. Three failure modes resulted: (a) silent `cpSync` failures produced an empty vault with no error; (b) templates landed locally but the GitHub `lox-vault` remote stayed empty because no initial commit was ever made; (c) the VM's `sync-vault.sh` cron (every 2 min) pulled from an empty remote, so the VM's vault clone also stayed empty. Fix adds post-copy verification (throws with `templatesSrc`, `vaultDir`, missing entries, and actual entries when the expected template structure is absent for the selected preset) and a git `add -A` → porcelain dirty-check → `commit` → `push origin main` sequence after `.gitignore` + gitleaks hook install. Idempotent: re-runs over an already-committed vault are a no-op. For users already on v0.6.13 or earlier with an empty vault: `cd lox-vault && git add -A && git commit -m "chore: initialize template" && git push origin main` (run from the directory where the installer was executed, after manually copying templates from `lox-brain/templates/<preset>/` if the local vault is also empty).

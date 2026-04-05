@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import path from 'node:path';
 import chalk from 'chalk';
 import { shell } from '../utils/shell.js';
+import { activateWireGuard, renderActivationResult } from '../utils/wireguard-activate.js';
 import { t } from '../i18n/index.js';
 import { renderStepHeader } from '../ui/box.js';
 import { withSpinner } from '../ui/spinner.js';
@@ -276,6 +277,16 @@ export async function stepVpn(ctx: InstallerContext): Promise<StepResult> {
 
   console.log(chalk.green(`  ✓ WireGuard VPN configured (${staticIp}:${VPN_LISTEN_PORT})`));
   console.log(chalk.dim(`    Client config: ${clientConfPath}`));
-  console.log(chalk.dim(`    Activate: sudo wg-quick up ${clientConfPath}`));
+
+  // Attempt to auto-activate the client tunnel so step 12 can scp over
+  // the VPN without the user manually importing the config into the
+  // WireGuard GUI (#98). Never blocks on failure — the step 12 preflight
+  // (#93) is the real gate, and resume (#96) lets the user fix and retry.
+  console.log(chalk.dim('  Activating WireGuard tunnel...'));
+  const activation = await activateWireGuard(clientConfPath, VPN_SERVER_IP);
+  const rendered = renderActivationResult(activation, VPN_SERVER_IP);
+  const paint = rendered.level === 'success' ? chalk.green : chalk.yellow;
+  for (const line of rendered.lines) console.log(`  ${paint(line)}`);
+
   return { success: true };
 }

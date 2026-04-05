@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.13] — 2026-04-05
+
+### Added
+- Step 8 now auto-activates the WireGuard client tunnel after writing `wg0.conf` so step 12 can scp over the VPN without the user manually importing the config into the WireGuard GUI (#98). Probes `VPN_SERVER_IP:22` first and short-circuits as "already active" if reachable; otherwise runs `sudo wg-quick up` on Unix or `wireguard.exe /installtunnelservice` on Windows (with `net session` elevation check and fallback probing of `C:\Program Files\WireGuard\wireguard.exe` when `wireguard` isn't on PATH), then verifies reachability via a paced 10s probe loop. Never blocks step 8: failures print the verbatim manual command plus a resume hint and fall through to step 12's preflight (#93), which is the real VPN gate.
+
 ## [0.6.12] — 2026-04-05
 
 ### Fixed

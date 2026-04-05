@@ -50,37 +50,12 @@ export function buildMcpLauncherScript(installDir: string): string {
 }
 
 /**
- * On Windows, OpenSSH refuses to read a config file whose NTFS ACLs
- * include inherited permissions beyond the owner (e.g. the "Owner Rights"
- * SID S-1-3-4 that new files inherit from `%USERPROFILE%`). POSIX-style
- * `chmod 0600` does NOT strip those ACLs — it only maps loosely to the
- * file mode bits, and scp/ssh still fail with "Bad owner or permissions"
- * (#83).
- *
- * Strip inheritance and grant only the current user Full control using
- * the built-in `icacls` command. Returns without error on non-Windows.
- * Best-effort: on failure we log-and-continue so a partial fix does not
- * block the install — the subsequent scp will surface the real error.
+ * Back-compat re-export: earlier versions exported `fixWindowsSshAcl`
+ * from step-mcp.ts. The implementation moved to `utils/windows-acl.ts`
+ * so step-deploy can reuse it for the OpenAI secret tmp file (#84).
  */
-export async function fixWindowsSshAcl(targetPath: string): Promise<void> {
-  if (process.platform !== 'win32') return;
-  // `||` instead of `??` — an empty-string USERNAME must also fall through
-  // (some CI / restricted shells set it blank, which would otherwise
-  // produce a syntactically invalid `:F` principal for icacls).
-  const username = (process.env.USERNAME?.trim() || process.env.USER?.trim());
-  if (!username) return; // cannot grant without a principal
-  // NOTE: For domain users, icacls resolves 'alice' to the domain account
-  // if no local account with that name exists. Explicit DOMAIN\user is
-  // unnecessary for the typical single-user install scenario.
-  try {
-    // /inheritance:r  — remove all inherited ACEs.
-    // /grant:r "<user>":F  — grant Full control, replacing prior grants
-    //   for the same principal (idempotent on re-runs).
-    await shell('icacls', [targetPath, '/inheritance:r', '/grant:r', `${username}:F`]);
-  } catch {
-    // Surfaced by the downstream scp/ssh error if it still fails.
-  }
-}
+export { fixWindowsAcl as fixWindowsSshAcl } from '../utils/windows-acl.js';
+import { fixWindowsAcl as fixWindowsSshAcl } from '../utils/windows-acl.js';
 
 /**
  * Ensure ~/.ssh/config exists and append the lox-vm entry if not present.

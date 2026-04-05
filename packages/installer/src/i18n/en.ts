@@ -102,6 +102,20 @@ export interface I18nStrings {
   vm_phase_fetching_logs: string;
   vm_ssh_warmup: string;
 
+  // OpenAI API key prompt
+  openai_explain_title: string;
+  openai_explain_body: string;
+  openai_paste_prompt: string;
+  openai_invalid_format: string;
+  openai_skipping_after_retries: string;
+  openai_existing_prompt: string;
+  openai_option_reuse: string;
+  openai_option_replace: string;
+  openai_option_skip: string;
+  openai_saved_to_secret_manager: string;
+  openai_keep_trying_prompt: string;
+  openai_skipped_warning: string;
+
   // Resume installer
   resume_found_title: string;
   resume_found_subtitle: string;
@@ -227,6 +241,20 @@ export const en: I18nStrings = {
   vm_phase_wireguard: 'Installing WireGuard',
   vm_phase_fetching_logs: 'Fetching VM logs for diagnosis',
   vm_ssh_warmup: 'Establishing SSH connection to VM',
+
+  // OpenAI API key prompt
+  openai_explain_title: 'OpenAI API key required',
+  openai_explain_body: 'Lox uses OpenAI embeddings to index your vault. Create an API key at:',
+  openai_paste_prompt: 'Paste your OpenAI API key (input will be hidden):',
+  openai_invalid_format: 'That does not look like a valid OpenAI API key',
+  openai_skipping_after_retries: 'Too many invalid attempts — skipping. You can set the key manually later.',
+  openai_existing_prompt: 'An openai-api-key secret already exists in this project. What do you want to do?',
+  openai_option_reuse: 'Reuse the existing key from Secret Manager',
+  openai_option_replace: 'Replace with a new key',
+  openai_option_skip: 'Skip (I will inject the key manually)',
+  openai_saved_to_secret_manager: 'OpenAI API key saved to GCP Secret Manager',
+  openai_keep_trying_prompt: 'That was 5 invalid attempts. Keep trying?',
+  openai_skipped_warning: 'OpenAI API key NOT set. The watcher will not be able to embed notes until you set it manually.',
 
   // Resume installer
   resume_found_title: 'A previous installation was found',

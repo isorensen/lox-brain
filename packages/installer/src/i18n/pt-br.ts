@@ -104,6 +104,20 @@ export const ptBr: I18nStrings = {
   vm_phase_fetching_logs: 'Buscando logs da VM para diagnostico',
   vm_ssh_warmup: 'Estabelecendo conexao SSH com a VM',
 
+  // OpenAI API key prompt
+  openai_explain_title: 'Chave da API OpenAI necessaria',
+  openai_explain_body: 'O Lox usa embeddings da OpenAI para indexar seu vault. Crie uma chave em:',
+  openai_paste_prompt: 'Cole sua chave da API OpenAI (a entrada ficara oculta):',
+  openai_invalid_format: 'Isto nao parece uma chave valida da API OpenAI',
+  openai_skipping_after_retries: 'Muitas tentativas invalidas — pulando. Voce pode configurar manualmente depois.',
+  openai_existing_prompt: 'Ja existe um secret openai-api-key neste projeto. O que voce quer fazer?',
+  openai_option_reuse: 'Reutilizar a chave existente do Secret Manager',
+  openai_option_replace: 'Substituir por uma chave nova',
+  openai_option_skip: 'Pular (vou injetar a chave manualmente)',
+  openai_saved_to_secret_manager: 'Chave da API OpenAI salva no GCP Secret Manager',
+  openai_keep_trying_prompt: 'Foram 5 tentativas invalidas. Continuar tentando?',
+  openai_skipped_warning: 'Chave da API OpenAI NAO configurada. O watcher nao conseguira embedar notas ate voce configurar manualmente.',
+
   // Resume installer
   resume_found_title: 'Uma instalacao anterior foi encontrada',
   resume_found_subtitle: 'Voce pode continuar de onde parou, escolher um passo especifico ou comecar do zero.',

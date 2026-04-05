@@ -162,19 +162,36 @@ export const securityGates: SecurityGate[] = [
   },
 
   // 5. SSH: no password auth, no root login
+  //
+  // Step 7 (vm_phase_ssh_hardening) runs sed to set both
+  // PasswordAuthentication and PermitRootLogin to "no" in
+  // /etc/ssh/sshd_config. Previously this gate verified both settings
+  // in a single `--command "grep ... && grep ..."` call. On Windows,
+  // cmd.exe interprets `&&` as its own chain operator instead of passing
+  // it to gcloud — same class of bug fixed in sshExecScript() for step 7.
+  // Now uses two separate SSH calls, each with a single grep (#119 item 3).
   {
     name: 'SSH: no password auth, no root login',
     blocking: true,
     async check(config) {
+      const sshBase = [
+        'compute', 'ssh', config.gcp.vm_name,
+        '--zone', config.gcp.zone,
+        '--project', config.gcp.project,
+        '--tunnel-through-iap',
+      ];
       try {
-        const { stdout } = await shell('gcloud', [
-          'compute', 'ssh', config.gcp.vm_name,
-          '--zone', config.gcp.zone,
-          '--project', config.gcp.project,
-          '--command', 'grep -c "^PasswordAuthentication no" /etc/ssh/sshd_config && grep -c "^PermitRootLogin no" /etc/ssh/sshd_config',
+        const { stdout: pwAuth } = await shell('gcloud', [
+          ...sshBase,
+          '--command', "grep -c '^PasswordAuthentication no' /etc/ssh/sshd_config",
         ]);
-        const lines = stdout.trim().split('\n');
-        return lines.every(l => parseInt(l, 10) >= 1);
+        if (parseInt(pwAuth.trim(), 10) < 1) return false;
+
+        const { stdout: rootLogin } = await shell('gcloud', [
+          ...sshBase,
+          '--command', "grep -c '^PermitRootLogin no' /etc/ssh/sshd_config",
+        ]);
+        return parseInt(rootLogin.trim(), 10) >= 1;
       } catch {
         return false;
       }

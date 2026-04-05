@@ -4,7 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [0.6.16] — 2026-04-05
+## [0.6.17] — 2026-04-05
+
+### Fixed
+- **Final audit gate "SSH: no password auth, no root login" failed on Windows due to `&&` in `--command` (#119, PR-C).** The check ran `gcloud compute ssh --command "grep ... && grep ..."` which broke on Windows because `cmd.exe` interprets `&&` as its own chain operator instead of passing it to gcloud — the same class of bug already fixed in step-vm-setup.ts's `sshExecScript()`. Step 7 (`vm_phase_ssh_hardening`) already correctly hardens sshd_config via the file-upload SSH pattern; only the audit verification was broken. Split into two separate `gcloud compute ssh` calls, each with a single `grep`. No installer-step or VM-side change needed — existing installs already have the hardened sshd_config.
+
+
 
 ### Fixed
 - **Final audit gate "VM has no public IP" contradicted the actual architecture and always failed on working installs (#119, PR-B).** The check asserted the VM must have zero public IPs, but step 8 (`step-vpn.ts`) intentionally attaches a static IP to the VM via `gcloud compute instances add-access-config --access-config-name=vpn-only` because WireGuard needs a reachable UDP endpoint on the internet. The check has been rewritten and renamed to **"VM public IP restricted to VPN endpoint"**: passes when the VM has zero access configs OR exactly one access config named `vpn-only` (the name the installer sets). Fails if any access config has a different name (e.g. the GCP default `external-nat`) or if more than one access config is attached. Combined with gate #4 (firewall deny-all except UDP 51820 to 0.0.0.0/0), this matches the real security posture: public IP exists, but only WireGuard responds on it. Existing installs don't need any VM-side change — their `vpn-only` access config already matches.

@@ -426,17 +426,30 @@ export const securityGates: SecurityGate[] = [
     },
   },
 
-  // 15. Pre-commit: gitleaks active (non-blocking)
+  // 15. Pre-commit: gitleaks active
   {
     name: 'Pre-commit: gitleaks active',
-    blocking: false,
-    async check() {
+    blocking: true,
+    async check(config) {
       try {
-        const { stdout } = await shell('git', ['config', '--get', 'core.hooksPath']);
-        // If hooks path is set, check for gitleaks
-        const hooksPath = stdout.trim() || '.git/hooks';
-        const { stdout: hookContent } = await shell('cat', [`${hooksPath}/pre-commit`]);
-        return hookContent.includes('gitleaks');
+        const localPath = expandTilde(config.vault.local_path ?? '');
+        if (!localPath) return false;
+
+        // Read the hook file cross-platform via Node fs (not `cat`)
+        const hookPath = join(localPath, '.git', 'hooks', 'pre-commit');
+        if (!existsSync(hookPath)) return false;
+        const hookContent = readFileSync(hookPath, 'utf-8');
+        if (!hookContent.includes('gitleaks')) return false;
+
+        // Verify gitleaks binary is reachable (PATH or ~/.lox/bin/)
+        try {
+          await shell('gitleaks', ['version']);
+          return true;
+        } catch {
+          // Fallback: check ~/.lox/bin/gitleaks
+          const binaryName = process.platform === 'win32' ? 'gitleaks.exe' : 'gitleaks';
+          return existsSync(join(homedir(), '.lox', 'bin', binaryName));
+        }
       } catch {
         return false;
       }

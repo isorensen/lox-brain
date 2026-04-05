@@ -64,18 +64,91 @@ desktop.ini
 .obsidian/cache
 `;
 
-const GITLEAKS_HOOK = `#!/usr/bin/env bash
+export const GITLEAKS_HOOK = `#!/usr/bin/env bash
 # gitleaks pre-commit hook — blocks secrets from being committed
+LOX_GITLEAKS="\${HOME}/.lox/bin/gitleaks"
 if command -v gitleaks &> /dev/null; then
-  gitleaks protect --staged --verbose
-  if [ $? -ne 0 ]; then
-    echo "ERROR: gitleaks detected secrets. Commit blocked."
-    exit 1
-  fi
+  GITLEAKS_CMD="gitleaks"
+elif [ -x "$LOX_GITLEAKS" ]; then
+  GITLEAKS_CMD="$LOX_GITLEAKS"
 else
   echo "WARNING: gitleaks not installed. Skipping secret scan."
+  exit 0
+fi
+$GITLEAKS_CMD protect --staged --verbose
+if [ $? -ne 0 ]; then
+  echo "ERROR: gitleaks detected secrets. Commit blocked."
+  exit 1
 fi
 `;
+
+/** Pinned gitleaks release version — known stable. */
+export const GITLEAKS_VERSION = '8.21.2';
+
+/**
+ * Attempt to install the gitleaks binary into `~/.lox/bin/`.
+ * Best-effort: returns true on success, false on any failure. Never throws.
+ *
+ * 1. Check if gitleaks is already on PATH.
+ * 2. If not, download the pinned release from GitHub and extract to ~/.lox/bin/.
+ * 3. chmod +x on non-Windows.
+ */
+export async function tryInstallGitleaks(): Promise<boolean> {
+  const { join } = await import('node:path');
+  const { mkdirSync, chmodSync, existsSync: fsExists } = await import('node:fs');
+  const { homedir: osHomedir, tmpdir } = await import('node:os');
+
+  try {
+    // Already available on PATH — nothing to do.
+    await shell('gitleaks', ['version']);
+    return true;
+  } catch {
+    // Not on PATH — proceed to download.
+  }
+
+  try {
+    const home = osHomedir();
+    const binDir = join(home, '.lox', 'bin');
+    mkdirSync(binDir, { recursive: true });
+
+    // Map Node.js values to gitleaks release naming conventions.
+    const osMap: Record<string, string> = { darwin: 'darwin', linux: 'linux', win32: 'windows' };
+    const archMap: Record<string, string> = { x64: 'x64', arm64: 'arm64' };
+    const os = osMap[process.platform];
+    const arch = archMap[process.arch];
+    if (!os || !arch) return false;
+
+    const ext = process.platform === 'win32' ? 'zip' : 'tar.gz';
+    const url = `https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_${os}_${arch}.${ext}`;
+    const tmpFile = join(tmpdir(), `gitleaks-${Date.now()}.${ext}`);
+
+    await shell('curl', ['-fsSL', '-o', tmpFile, url], { timeout: 120_000 });
+
+    if (process.platform === 'win32') {
+      await shell('powershell', [
+        '-Command',
+        `Expand-Archive -Path '${tmpFile}' -DestinationPath '${binDir}' -Force`,
+      ]);
+    } else {
+      await shell('tar', ['-xzf', tmpFile, '-C', binDir, 'gitleaks']);
+    }
+
+    // chmod +x on POSIX
+    if (process.platform !== 'win32') {
+      const binaryPath = join(binDir, 'gitleaks');
+      if (fsExists(binaryPath)) {
+        chmodSync(binaryPath, 0o755);
+      }
+    }
+
+    // Cleanup temp file (best-effort)
+    try { (await import('node:fs')).rmSync(tmpFile, { force: true }); } catch { /* ignore */ }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Get the GitHub username from the authenticated gh CLI.
@@ -638,6 +711,23 @@ export async function stepVault(ctx: InstallerContext): Promise<StepResult> {
   const hookPath = join(hooksDir, 'pre-commit');
   writeFileSync(hookPath, GITLEAKS_HOOK, { mode: 0o755 });
   console.log(chalk.green('  ✓ gitleaks pre-commit hook installed'));
+
+  // 8b. Install gitleaks binary (best-effort — never fails the step)
+  const gitleaksInstalled = await withSpinner(
+    'Installing gitleaks binary...',
+    () => tryInstallGitleaks(),
+  );
+  if (gitleaksInstalled) {
+    console.log(chalk.green('  ✓ gitleaks binary available'));
+  } else {
+    console.log(chalk.yellow(
+      '  ⚠ Could not auto-install gitleaks. Install manually:\n'
+      + '    brew install gitleaks          # macOS\n'
+      + '    sudo apt install gitleaks      # Debian/Ubuntu\n'
+      + '    choco install gitleaks         # Windows\n'
+      + '    https://github.com/gitleaks/gitleaks/releases',
+    ));
+  }
 
   // 9. Initial commit + push (#122). Without this, templates + .gitignore +
   // hook land locally but the GitHub remote stays empty — the VM cron pulls

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { securityGates } from '../../src/security/gates.js';
 import { shell } from '../../src/utils/shell.js';
-import { mkdirSync, writeFileSync, rmSync, existsSync as existsSyncReal } from 'node:fs';
+import { mkdirSync, writeFileSync, rmSync, existsSync as existsSyncReal, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir, homedir } from 'node:os';
 import type { LoxConfig } from '@lox-brain/shared';
@@ -416,5 +416,102 @@ describe('SSH hardening gate (#119 PR-C)', () => {
       const commandArg = args[args.indexOf('--command') + 1] ?? '';
       expect(commandArg).not.toContain('&&');
     }
+  });
+});
+
+describe('Pre-commit gitleaks gate (#119 item 6)', () => {
+  const gate = findGate('Pre-commit: gitleaks active');
+  let workDir: string;
+
+  beforeEach(() => {
+    vi.mocked(shell).mockReset();
+    workDir = join(tmpdir(), `lox-gitleaks-gate-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    mkdirSync(join(workDir, '.git', 'hooks'), { recursive: true });
+  });
+
+  afterEach(() => {
+    try { rmSync(workDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+  });
+
+  it('is a blocking gate', () => {
+    expect(gate.blocking).toBe(true);
+  });
+
+  it('passes when hook exists with gitleaks content AND binary is on PATH', async () => {
+    writeFileSync(join(workDir, '.git', 'hooks', 'pre-commit'), '#!/bin/bash\ngitleaks protect --staged\n');
+    // shell('gitleaks', ['version']) succeeds
+    vi.mocked(shell).mockResolvedValueOnce({ stdout: 'v8.21.2', stderr: '' });
+    expect(await gate.check(buildConfig({
+      vault: { repo: 'a/b', local_path: workDir, preset: 'para' } as any,
+    }))).toBe(true);
+  });
+
+  it('passes when hook exists AND binary is in ~/.lox/bin/ (PATH check fails)', async () => {
+    writeFileSync(join(workDir, '.git', 'hooks', 'pre-commit'), '#!/bin/bash\ngitleaks protect --staged\n');
+    // shell('gitleaks', ['version']) fails — not on PATH
+    vi.mocked(shell).mockRejectedValueOnce(new Error('Command not found: gitleaks'));
+
+    // Create the binary in ~/.lox/bin/ so existsSync finds it
+    const binaryName = process.platform === 'win32' ? 'gitleaks.exe' : 'gitleaks';
+    const loxBinDir = join(homedir(), '.lox', 'bin');
+    const binaryPath = join(loxBinDir, binaryName);
+    const binaryExisted = existsSyncReal(binaryPath);
+    if (!binaryExisted) {
+      mkdirSync(loxBinDir, { recursive: true });
+      writeFileSync(binaryPath, 'placeholder');
+    }
+    try {
+      expect(await gate.check(buildConfig({
+        vault: { repo: 'a/b', local_path: workDir, preset: 'para' } as any,
+      }))).toBe(true);
+    } finally {
+      if (!binaryExisted) {
+        try { rmSync(binaryPath, { force: true }); } catch { /* best-effort */ }
+      }
+    }
+  });
+
+  it('fails when hook exists but gitleaks binary not found anywhere', async () => {
+    writeFileSync(join(workDir, '.git', 'hooks', 'pre-commit'), '#!/bin/bash\ngitleaks protect --staged\n');
+    // shell('gitleaks', ['version']) fails
+    vi.mocked(shell).mockRejectedValueOnce(new Error('Command not found: gitleaks'));
+
+    // Ensure ~/.lox/bin/gitleaks does NOT exist
+    const binaryName = process.platform === 'win32' ? 'gitleaks.exe' : 'gitleaks';
+    const binaryPath = join(homedir(), '.lox', 'bin', binaryName);
+    const binaryExisted = existsSyncReal(binaryPath);
+    if (binaryExisted) {
+      // Cannot safely remove user's real binary — skip test
+      return;
+    }
+    expect(await gate.check(buildConfig({
+      vault: { repo: 'a/b', local_path: workDir, preset: 'para' } as any,
+    }))).toBe(false);
+  });
+
+  it('fails when hook file does not exist', async () => {
+    // workDir exists but no pre-commit hook file
+    rmSync(join(workDir, '.git', 'hooks', 'pre-commit'), { force: true });
+    expect(await gate.check(buildConfig({
+      vault: { repo: 'a/b', local_path: workDir, preset: 'para' } as any,
+    }))).toBe(false);
+  });
+
+  it('fails when hook exists but does not contain gitleaks', async () => {
+    writeFileSync(join(workDir, '.git', 'hooks', 'pre-commit'), '#!/bin/bash\necho "no secret scan"\n');
+    expect(await gate.check(buildConfig({
+      vault: { repo: 'a/b', local_path: workDir, preset: 'para' } as any,
+    }))).toBe(false);
+  });
+
+  it('expands ~ in local_path before reading the hook', async () => {
+    const home = process.env.HOME ?? process.env.USERPROFILE ?? '';
+    if (!home || !workDir.startsWith(home)) return; // skip if can't simulate tilde
+    writeFileSync(join(workDir, '.git', 'hooks', 'pre-commit'), '#!/bin/bash\ngitleaks protect\n');
+    vi.mocked(shell).mockResolvedValueOnce({ stdout: 'v8.21.2', stderr: '' });
+    const tildePath = '~' + workDir.slice(home.length);
+    expect(await gate.check(buildConfig({
+      vault: { repo: 'a/b', local_path: tildePath, preset: 'para' } as any,
+    }))).toBe(true);
   });
 });

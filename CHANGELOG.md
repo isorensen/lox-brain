@@ -4,7 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [0.6.17] — 2026-04-05
+## [0.6.18] — 2026-04-05
+
+### Added
+- **Auto-install gitleaks binary during step 9 (#119, PR-D).** The pre-commit hook was already installed in the vault but `gitleaks` binary was never shipped, making the hook a no-op. Step 9 now downloads gitleaks v8.21.2 from GitHub Releases to `~/.lox/bin/` — platform-aware (linux/darwin/windows, x64/arm64), extracts via `tar` or `Expand-Archive`, best-effort (prints manual-install instructions on failure, never blocks the step). The hook script was updated to check `~/.lox/bin/gitleaks` as a fallback when gitleaks is not on global PATH.
+
+### Fixed
+- **Audit gate "Pre-commit: gitleaks active" was broken on Windows and always failed (#119, PR-D).** Used `cat` (doesn't exist on Windows) and read from CWD instead of the vault local_path. Rewritten to use `fs.readFileSync` with `expandTilde`, verify hook content includes 'gitleaks', and confirm the binary exists (PATH or `~/.lox/bin/`). Promoted from `blocking: false` to `blocking: true` since gitleaks is now auto-installed.
+
+
 
 ### Fixed
 - **Final audit gate "SSH: no password auth, no root login" failed on Windows due to `&&` in `--command` (#119, PR-C).** The check ran `gcloud compute ssh --command "grep ... && grep ..."` which broke on Windows because `cmd.exe` interprets `&&` as its own chain operator instead of passing it to gcloud — the same class of bug already fixed in step-vm-setup.ts's `sshExecScript()`. Step 7 (`vm_phase_ssh_hardening`) already correctly hardens sshd_config via the file-upload SSH pattern; only the audit verification was broken. Split into two separate `gcloud compute ssh` calls, each with a single `grep`. No installer-step or VM-side change needed — existing installs already have the hardened sshd_config.

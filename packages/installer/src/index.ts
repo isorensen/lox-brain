@@ -2,25 +2,28 @@
 
 import { renderSplash } from './ui/splash.js';
 import { stepLanguage } from './steps/step-language.js';
-import { stepPrerequisites } from './steps/step-prerequisites.js';
-import { stepGcpAuth } from './steps/step-gcp-auth.js';
-import { stepGcpProject } from './steps/step-gcp-project.js';
-import { stepBilling } from './steps/step-billing.js';
-import { stepNetwork } from './steps/step-network.js';
-import { stepVm } from './steps/step-vm.js';
-import { stepVmSetup } from './steps/step-vm-setup.js';
-import { stepVpn } from './steps/step-vpn.js';
-import { stepVault } from './steps/step-vault.js';
-import { stepObsidian } from './steps/step-obsidian.js';
-import { stepDeploy } from './steps/step-deploy.js';
-import { stepMcp } from './steps/step-mcp.js';
 import { runPostInstall } from './steps/step-post-install.js';
+import { STEPS } from './steps/registry.js';
 import { offerErrorReport, extractSubPhase, sourceFileForStep } from './utils/error-report.js';
 import { formatFatalError } from './utils/format-error.js';
 import { LOX_VERSION } from '@lox-brain/shared';
+import { setLocale, t } from './i18n/index.js';
+import { loadState, saveState, clearState } from './state.js';
+import { promptResume, stepLabel } from './ui/resume-prompt.js';
 import type { InstallerContext } from './steps/types.js';
 
-async function handleStepFailure(stepName: string, message: string | undefined): Promise<never> {
+async function handleStepFailure(
+  stepName: string,
+  stepNum: number,
+  message: string | undefined,
+  ctx: InstallerContext,
+): Promise<never> {
+  // Persist state so the user can resume from this step on the next run.
+  try {
+    saveState(ctx, stepNum - 1, stepNum, LOX_VERSION);
+  } catch {
+    // Non-fatal: state write is a convenience, not a correctness requirement.
+  }
   console.error(`\n${message ?? 'Unknown error'}`);
   await offerErrorReport({
     stepName,
@@ -47,64 +50,59 @@ async function main(): Promise<void> {
     return;
   }
 
-  const ctx: InstallerContext = { config: {}, locale: 'en' };
+  let ctx: InstallerContext = { config: {}, locale: 'en' };
+  let startFromStep = 1;
+  let runLanguageStep = true;
 
-  // Step 0: Language
-  const langResult = await stepLanguage(ctx);
-  if (!langResult.success) process.exit(1);
+  // Check for a resumable previous installation before asking for language —
+  // we reuse the saved locale so the resume prompt appears in the user's
+  // chosen language without re-asking (#81).
+  const savedState = loadState(LOX_VERSION);
+  if (savedState) {
+    setLocale(savedState.ctx.locale);
+    ctx = savedState.ctx;
+    console.log(renderSplash());
+    const decision = await promptResume(savedState);
+    if (decision === 'restart') {
+      clearState();
+      console.log(`\n${t().resume_cleared}\n`);
+      ctx = { config: {}, locale: 'en' };
+      // runLanguageStep stays true — fresh install re-asks language.
+    } else {
+      startFromStep = decision;
+      runLanguageStep = false;
+      console.log(`\n  ${t().resume_starting_from} ${stepLabel(startFromStep)}\n`);
+    }
+  }
 
-  console.log(renderSplash());
+  if (runLanguageStep) {
+    // Step 0: Language
+    const langResult = await stepLanguage(ctx);
+    if (!langResult.success) process.exit(1);
+    console.log(renderSplash());
+  }
 
-  // Step 1: Prerequisites
-  const prereqResult = await stepPrerequisites(ctx);
-  if (!prereqResult.success) await handleStepFailure('Prerequisites', prereqResult.message);
+  for (const step of STEPS) {
+    if (step.num < startFromStep) continue;
+    const result = await step.fn(ctx);
+    if (!result.success) {
+      await handleStepFailure(step.name, step.num, result.message, ctx);
+    }
+    // Persist progress after every successful step so a crash mid-run
+    // leaves a resumable state file.
+    try {
+      saveState(ctx, step.num, null, LOX_VERSION);
+    } catch { /* best-effort */ }
+  }
 
-  // Step 2: GCP Auth
-  const authResult = await stepGcpAuth(ctx);
-  if (!authResult.success) await handleStepFailure('GCP Auth', authResult.message);
-
-  // Step 3: GCP Project
-  const projectResult = await stepGcpProject(ctx);
-  if (!projectResult.success) await handleStepFailure('GCP Project', projectResult.message);
-
-  // Step 4: Billing
-  const billingResult = await stepBilling(ctx);
-  if (!billingResult.success) await handleStepFailure('Billing', billingResult.message);
-
-  // Step 5: VPC Network
-  const networkResult = await stepNetwork(ctx);
-  if (!networkResult.success) await handleStepFailure('VPC Network', networkResult.message);
-
-  // Step 6: VM Instance
-  const vmResult = await stepVm(ctx);
-  if (!vmResult.success) await handleStepFailure('VM Instance', vmResult.message);
-
-  // Step 7: VM Setup (Node.js, PostgreSQL, pgvector)
-  const vmSetupResult = await stepVmSetup(ctx);
-  if (!vmSetupResult.success) await handleStepFailure('VM Setup', vmSetupResult.message);
-
-  // Step 8: WireGuard VPN
-  const vpnResult = await stepVpn(ctx);
-  if (!vpnResult.success) await handleStepFailure('WireGuard VPN', vpnResult.message);
-
-  // Step 9: Vault Setup
-  const vaultResult = await stepVault(ctx);
-  if (!vaultResult.success) await handleStepFailure('Vault Setup', vaultResult.message);
-
-  // Step 10: Obsidian
-  const obsidianResult = await stepObsidian(ctx);
-  if (!obsidianResult.success) await handleStepFailure('Obsidian', obsidianResult.message);
-
-  // Step 11: Deploy Lox Core
-  const deployResult = await stepDeploy(ctx);
-  if (!deployResult.success) await handleStepFailure('Deploy', deployResult.message);
-
-  // Step 12: Claude Code MCP
-  const mcpResult = await stepMcp(ctx);
-  if (!mcpResult.success) await handleStepFailure('MCP Server', mcpResult.message);
-
-  // Post-install: Security audit + success screen
-  await runPostInstall(ctx);
+  // Post-install: Security audit + success screen. Clear state regardless of
+  // whether post-install throws — the 12 numbered steps all succeeded, so a
+  // downstream crash must not leave a "resumable" state file behind.
+  try {
+    await runPostInstall(ctx);
+  } finally {
+    clearState();
+  }
 }
 
 main().catch(async (err) => {

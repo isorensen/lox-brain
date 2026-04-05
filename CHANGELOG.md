@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-04-05
+
+### Added
+- Installer can now resume a partial installation (#81). State is persisted to `~/.lox/installer-state.json` (mode 0600) after every successful step and after any failure. On re-run, if saved state is found, the installer shows a summary (last completed step, failed step, timestamp) and offers three choices: continue from where it stopped, pick a specific step to restart from, or start a fresh installation. The saved locale is reused so the resume prompt appears in the user's language. State is cleared automatically when the installation finishes end-to-end, and is rejected if it came from a different Lox version or a stale schema.
+
+### Changed
+- The 12 post-language installer steps are now declared in a single `STEPS` registry (`packages/installer/src/steps/registry.ts`) instead of being wired one-by-one in `index.ts`. Makes the step loop resumable and lets the resume prompt label choices with real step names.
+
+
 ## [0.4.6] — 2026-04-05
 
 ### Fixed

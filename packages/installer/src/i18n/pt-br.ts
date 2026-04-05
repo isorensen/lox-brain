@@ -104,6 +104,20 @@ export const ptBr: I18nStrings = {
   vm_phase_fetching_logs: 'Buscando logs da VM para diagnostico',
   vm_ssh_warmup: 'Estabelecendo conexao SSH com a VM',
 
+  // Resume installer
+  resume_found_title: 'Uma instalacao anterior foi encontrada',
+  resume_found_subtitle: 'Voce pode continuar de onde parou, escolher um passo especifico ou comecar do zero.',
+  resume_last_completed: 'Ultimo passo concluido',
+  resume_failed_at: 'Falhou no passo',
+  resume_saved_at: 'Salvo em',
+  resume_prompt: 'Como voce quer prosseguir?',
+  resume_option_continue: 'Continuar de onde parou',
+  resume_option_pick_step: 'Escolher um passo especifico para reiniciar',
+  resume_option_restart: 'Comecar uma instalacao do zero (descartar estado salvo)',
+  resume_pick_step_prompt: 'Selecione o passo para reiniciar:',
+  resume_starting_from: 'Retomando a partir do passo',
+  resume_cleared: 'Estado anterior do instalador descartado.',
+
   // Error reporting
   error_report_prompt: 'Would you like to report this issue on GitHub?',
   error_report_creating: 'Creating issue report...',

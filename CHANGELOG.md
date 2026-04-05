@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.5] — 2026-04-05
+
+### Fixed
+- User-actionable step failures (like the VPN-not-active check from #93) no longer trigger the "Would you like to report this issue on GitHub?" prompt (#96). Previously any `{success: false}` return from a step caused `handleStepFailure` to offer an auto-report, even for conditions the user could fix themselves (WireGuard not activated, missing prerequisite, etc.), leading to GitHub issues being filed for expected recoverable states. Steps can now mark failures with `actionable: true` to skip the bug-report prompt while still persisting state for resume and printing the guidance message. Applied to the step 12 VPN preflight for now; a follow-up pass will audit other `{success: false}` returns (prerequisites, GCP config missing, etc.).
+
+### Changed
+- Extracted `handleStepFailure` from `src/index.ts` into `src/step-failure.ts` with injected dependencies so the failure-handling logic is directly unit-testable.
+
+
 ## [0.6.4] — 2026-04-05
 
 ### Fixed

@@ -204,7 +204,13 @@ export async function stepMcp(ctx: InstallerContext): Promise<StepResult> {
     () => isVpnReachable(vpnServerIp),
   );
   if (!vpnUp) {
-    return { success: false, message: buildVpnUnreachableMessage(vpnServerIp, process.platform) };
+    // actionable=true so the installer doesn't ask the user to file a
+    // GitHub bug report for a user-fixable condition (#96).
+    return {
+      success: false,
+      message: buildVpnUnreachableMessage(vpnServerIp, process.platform),
+      actionable: true,
+    };
   }
   console.log(chalk.green(`  ✓ VPN reachable (${vpnServerIp}:22)`));
 

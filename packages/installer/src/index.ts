@@ -4,7 +4,8 @@ import { renderSplash } from './ui/splash.js';
 import { stepLanguage } from './steps/step-language.js';
 import { runPostInstall } from './steps/step-post-install.js';
 import { STEPS } from './steps/registry.js';
-import { offerErrorReport, extractSubPhase, sourceFileForStep } from './utils/error-report.js';
+import { offerErrorReport } from './utils/error-report.js';
+import { handleStepFailure as handleStepFailureExternal } from './step-failure.js';
 import { formatFatalError } from './utils/format-error.js';
 import { LOX_VERSION } from '@lox-brain/shared';
 import { setLocale, t } from './i18n/index.js';
@@ -12,29 +13,19 @@ import { loadState, saveState, clearState } from './state.js';
 import { promptResume, stepLabel } from './ui/resume-prompt.js';
 import type { InstallerContext } from './steps/types.js';
 
-async function handleStepFailure(
+function handleStepFailure(
   stepName: string,
   stepNum: number,
   message: string | undefined,
   ctx: InstallerContext,
+  actionable: boolean = false,
 ): Promise<never> {
-  // Persist state so the user can resume from this step on the next run.
-  try {
-    saveState(ctx, stepNum - 1, stepNum, LOX_VERSION);
-  } catch {
-    // Non-fatal: state write is a convenience, not a correctness requirement.
-  }
-  console.error(`\n${message ?? 'Unknown error'}`);
-  await offerErrorReport({
-    stepName,
-    errorMessage: message ?? 'Unknown error',
-    subPhase: extractSubPhase(message ?? ''),
-    sourceFile: sourceFileForStep(stepName),
+  return handleStepFailureExternal(stepName, stepNum, message, ctx, actionable, {
     loxVersion: LOX_VERSION,
-    os: `${process.platform} ${process.arch}`,
+    platform: process.platform,
+    arch: process.arch,
     nodeVersion: process.version,
   });
-  process.exit(1);
 }
 
 async function main(): Promise<void> {
@@ -99,7 +90,7 @@ async function main(): Promise<void> {
       throw err;
     }
     if (!result.success) {
-      await handleStepFailure(step.name, step.num, result.message, ctx);
+      await handleStepFailure(step.name, step.num, result.message, ctx, result.actionable);
     }
     // Persist progress after every successful step so a crash mid-run
     // leaves a resumable state file.

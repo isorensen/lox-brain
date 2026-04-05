@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 import { shell, getPlatform } from '../utils/shell.js';
+import { withExtendableTimeout } from '../utils/extendable-timeout.js';
 import { t } from '../i18n/index.js';
 import { renderStepHeader, renderBox } from '../ui/box.js';
 import { withSpinner } from '../ui/spinner.js';
@@ -7,29 +8,86 @@ import type { InstallerContext, StepResult } from './types.js';
 
 const TOTAL_STEPS = 12;
 
+/** Initial timeout for package-manager installs (5 min). */
+const INSTALL_TIMEOUT_MS = 300_000;
+/** Upper-bound timeout when the user chooses to keep waiting (10 min). */
+const INSTALL_MAX_TIMEOUT_MS = 600_000;
+
+type Platform = 'windows' | 'macos' | 'linux';
+
+/**
+ * Detect whether Obsidian is already installed via the platform's package
+ * manager. Returns false when the check itself fails (command missing,
+ * unknown platform) so the installer falls through to the install path.
+ */
+export async function isObsidianInstalled(platform: Platform): Promise<boolean> {
+  try {
+    switch (platform) {
+      case 'macos': {
+        const { stdout } = await shell('brew', ['list', '--cask', 'obsidian']);
+        return stdout.length > 0;
+      }
+      case 'windows': {
+        const { stdout } = await shell('winget', ['list', '--id', 'Obsidian.Obsidian', '-e']);
+        return stdout.includes('Obsidian.Obsidian');
+      }
+      case 'linux': {
+        const { stdout } = await shell('snap', ['list', 'obsidian']);
+        return stdout.includes('obsidian');
+      }
+    }
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Install Obsidian using the platform-appropriate package manager.
+ * Idempotent: skips install when Obsidian is already present. The package
+ * manager call runs with a 5-minute timeout; if it still times out, the user
+ * is prompted (default=yes) to extend to 10 minutes.
  */
-async function installObsidian(): Promise<void> {
+async function installObsidian(): Promise<boolean> {
+  const strings = t();
   const platform = getPlatform();
-  switch (platform) {
-    case 'macos':
-      await shell('brew', ['install', '--cask', 'obsidian']);
-      break;
-    case 'windows':
-      await shell('winget', ['install', 'Obsidian.Obsidian', '--accept-source-agreements', '--accept-package-agreements']);
-      break;
-    case 'linux':
-      try {
-        await shell('snap', ['install', 'obsidian', '--classic']);
-      } catch {
-        throw new Error(
-          'Could not install Obsidian via snap. ' +
-          'Please install manually: https://obsidian.md/download',
-        );
-      }
-      break;
+
+  if (await isObsidianInstalled(platform)) {
+    return false; // already installed — nothing to do
   }
+
+  await withExtendableTimeout(
+    async (timeout) => {
+      switch (platform) {
+        case 'macos':
+          await shell('brew', ['install', '--cask', 'obsidian'], { timeout });
+          break;
+        case 'windows':
+          await shell(
+            'winget',
+            ['install', 'Obsidian.Obsidian', '--accept-source-agreements', '--accept-package-agreements'],
+            { timeout },
+          );
+          break;
+        case 'linux':
+          try {
+            await shell('snap', ['install', 'obsidian', '--classic'], { timeout });
+          } catch {
+            throw new Error(
+              'Could not install Obsidian via snap. ' +
+              'Please install manually: https://obsidian.md/download',
+            );
+          }
+          break;
+      }
+    },
+    {
+      label: 'Obsidian install',
+      initialTimeout: INSTALL_TIMEOUT_MS,
+      maxTimeout: INSTALL_MAX_TIMEOUT_MS,
+      promptMessage: strings.install_timeout_extend,
+    },
+  );
+  return true;
 }
 
 /**
@@ -42,12 +100,12 @@ export async function stepObsidian(ctx: InstallerContext): Promise<StepResult> {
   const strings = t();
   console.log(renderStepHeader(10, TOTAL_STEPS, 'Obsidian'));
 
-  // 1. Install Obsidian
-  await withSpinner(
+  // 1. Install Obsidian (skips when already present)
+  const installed = await withSpinner(
     `${strings.installing} Obsidian...`,
     () => installObsidian(),
   );
-  console.log(chalk.green('  ✓ Obsidian installed'));
+  console.log(chalk.green(installed ? '  ✓ Obsidian installed' : '  ✓ Obsidian already installed'));
 
   // 2. Clone vault repo locally to ~/Obsidian/Lox
   const vaultRepo = ctx.config.vault?.repo;
@@ -70,19 +128,30 @@ export async function stepObsidian(ctx: InstallerContext): Promise<StepResult> {
       if (!existsSync(parentDir)) {
         mkdirSync(parentDir, { recursive: true });
       }
+      // Idempotency: if the target path already contains a clone from a
+      // prior run, skip clone. `gh repo clone` fails on an existing dir,
+      // which would break re-runs of the installer.
+      if (existsSync(expandedPath)) {
+        return;
+      }
       await shell('gh', ['repo', 'clone', vaultRepo, expandedPath]);
     },
   );
 
-  // 3. Copy .obsidian/ config with plugins
+  // 3. Copy .obsidian/ config with plugins (use Node fs so Windows works too —
+  //    `cp -r` does not exist on Windows).
   await withSpinner(
     'Copying Obsidian plugin configuration...',
     async () => {
-      try {
-        await shell('cp', ['-r', 'templates/obsidian-plugins/.', `${expandedPath}/.obsidian`]);
-      } catch {
+      const { cpSync, existsSync } = await import('node:fs');
+      const { join } = await import('node:path');
+      const src = join('templates', 'obsidian-plugins');
+      if (!existsSync(src)) {
         console.log(chalk.yellow('  → Plugin templates not found, skipping plugin copy.'));
+        return;
       }
+      const dest = join(expandedPath, '.obsidian');
+      cpSync(src, dest, { recursive: true });
     },
   );
 

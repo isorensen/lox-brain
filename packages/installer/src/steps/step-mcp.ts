@@ -57,6 +57,24 @@ async function configureSshConfig(vpnServerIp: string, sshUser: string): Promise
 }
 
 /**
+ * Check whether an MCP server is already registered with Claude Code at the
+ * user scope. `claude mcp list` returns non-zero in some environments, so we
+ * treat any failure as "not registered" and let the downstream add call run.
+ */
+export async function isMcpServerRegistered(name: string): Promise<boolean> {
+  try {
+    const { stdout } = await shell('claude', ['mcp', 'list']);
+    // `claude mcp list` prints one server per line. Match on a word boundary
+    // so we don't false-positive on `lox-brain-foo` when looking for `lox-brain`.
+    const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pattern = new RegExp(`(^|\\s)${escapedName}(\\s|:|$)`, 'm');
+    return pattern.test(stdout);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Step 12: Configure Claude Code MCP
  *
  * Generates SSH config entry, registers the MCP server with Claude Code,
@@ -79,6 +97,18 @@ export async function stepMcp(ctx: InstallerContext): Promise<StepResult> {
   // 2. Register MCP server with Claude Code
   const installDir = ctx.config.install_dir ?? '/home/' + sshUser + '/lox-brain';
   const mcpCommand = `cd ${installDir} && set -a && source /etc/lox/secrets.env && set +a && node packages/core/dist/mcp/index.js`;
+
+  // Idempotency: `claude mcp add` fails when a server with the same name is
+  // already registered. Detect that and remove the prior entry so re-runs
+  // re-register cleanly (picks up changed installDir / lox-vm config).
+  const alreadyRegistered = await isMcpServerRegistered('lox-brain');
+  if (alreadyRegistered) {
+    try {
+      await shell('claude', ['mcp', 'remove', '--scope', 'user', 'lox-brain']);
+    } catch {
+      // Fall through: if remove fails we still try add; add's own error will surface.
+    }
+  }
 
   await withSpinner(
     'Registering lox-brain MCP server with Claude Code...',

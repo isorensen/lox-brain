@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.11] — 2026-04-05
+
+### Fixed
+- **Step 11 — MCP health probe sourced no environment variables (#116).** The post-deploy probe invoked `node packages/core/dist/mcp/index.js` without loading `/etc/lox/secrets.env`, so `VAULT_PATH`, `OPENAI_API_KEY`, `PG_PASSWORD`, and other required env vars were absent. The MCP server aborted at startup with "VAULT_PATH environment variable is required", causing a false-negative `⚠ MCP server did not respond` warning on every install. The systemd watcher service was unaffected (it loads the env file via `EnvironmentFile=`). Fix prepends `[ -f /etc/lox/secrets.env ] && { set -a; source /etc/lox/secrets.env; set +a; }` before the node invocation. The file-existence guard ensures that a missing secrets.env (e.g. installer aborted before step 11) falls through to reporting unhealthy rather than aborting the script before the probe runs.
+
+
 ## [0.6.10] — 2026-04-05
 
 ### Fixed

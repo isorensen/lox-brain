@@ -1,6 +1,6 @@
 {
   "name": "lox",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "private": true,
   "description": "Lox installer \u2014 set up your personal AI-powered Second Brain",
   "bin": {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { isMcpServerRegistered, buildMcpLauncherScript, fixWindowsSshAcl } from '../../src/steps/step-mcp.js';
+import { isMcpServerRegistered, buildMcpLauncherScript, fixWindowsSshAcl, buildVpnUnreachableMessage } from '../../src/steps/step-mcp.js';
 import { shell } from '../../src/utils/shell.js';
 
 vi.mock('../../src/utils/shell.js', () => ({
@@ -74,6 +74,52 @@ describe('buildMcpLauncherScript', () => {
   it('ends with a trailing newline', () => {
     const script = buildMcpLauncherScript('/home/lox/lox-brain');
     expect(script.endsWith('\n')).toBe(true);
+  });
+});
+
+describe('buildVpnUnreachableMessage (#93)', () => {
+  it('names the unreachable VPN endpoint so the user knows what to activate', () => {
+    const msg = buildVpnUnreachableMessage('10.10.0.1', 'linux');
+    expect(msg).toContain('10.10.0.1:22');
+    expect(msg).toContain('WireGuard VPN');
+  });
+
+  it('gives Windows users GUI-flavored activation instructions', () => {
+    const msg = buildVpnUnreachableMessage('10.10.0.1', 'win32');
+    expect(msg).toContain('WireGuard app');
+    expect(msg).toContain('Activate');
+    // Reference the Windows-native path using env var, not a user-absolute path.
+    expect(msg).toContain('%USERPROFILE%');
+    // Must not leak a Unix-style activation command to Windows users.
+    expect(msg).not.toContain('wg-quick up');
+  });
+
+  it('tells Linux users to run wg-quick up', () => {
+    const msg = buildVpnUnreachableMessage('10.10.0.1', 'linux');
+    expect(msg).toContain('wg-quick up');
+    expect(msg).toContain('~/.config/lox/wireguard/wg0.conf');
+  });
+
+  it('tells macOS users about both the GUI and wg-quick', () => {
+    const msg = buildVpnUnreachableMessage('10.10.0.1', 'darwin');
+    expect(msg).toMatch(/WireGuard app/);
+    expect(msg).toContain('wg-quick up');
+  });
+
+  it('falls through to the Unix wg-quick message on unknown platforms', () => {
+    // process.platform is typed as NodeJS.Platform (freebsd, openbsd, etc.).
+    // Anything that isn't win32/darwin must use the wg-quick fallback —
+    // don't let the darwin branch accidentally become the catch-all.
+    const msg = buildVpnUnreachableMessage('10.10.0.1', 'freebsd' as NodeJS.Platform);
+    expect(msg).toContain('sudo wg-quick up');
+    expect(msg).not.toContain('WireGuard app');
+  });
+
+  it('points the user at the resume prompt for recovery (#81/#92)', () => {
+    const msg = buildVpnUnreachableMessage('10.10.0.1', 'win32');
+    expect(msg).toMatch(/re-run the installer/i);
+    expect(msg).toMatch(/resume/i);
+    expect(msg).toContain('step 12');
   });
 });
 

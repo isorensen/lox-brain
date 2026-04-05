@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.4] — 2026-04-05
+
+### Fixed
+- Step 12 (MCP Server) now detects an inactive WireGuard VPN tunnel before attempting the launcher upload (#93). Previously the raw `scp lox-vm:...` would hang until its 60s timeout and then surface as an unhandled exception ("Connection timed out" to the VPN IP), leaving the user with a stack trace. A fast TCP preflight probe to `vpn_server_ip:22` now runs first: if the tunnel isn't up, step 12 returns a clean failure with platform-aware activation guidance (Windows: WireGuard GUI app → import client config → Activate; macOS: GUI or `sudo wg-quick up ~/.config/lox/wireguard/wg0.conf`; Linux: `sudo wg-quick up …`). Combined with the resume feature (#81/#92), the user activates WireGuard and re-runs — step 12 picks up where it left off.
+
+
 ## [0.6.3] — 2026-04-05
 
 ### Fixed

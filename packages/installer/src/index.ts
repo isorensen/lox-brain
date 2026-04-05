@@ -57,7 +57,7 @@ async function main(): Promise<void> {
   // Check for a resumable previous installation before asking for language —
   // we reuse the saved locale so the resume prompt appears in the user's
   // chosen language without re-asking (#81).
-  const savedState = loadState(LOX_VERSION);
+  const savedState = loadState();
   if (savedState) {
     setLocale(savedState.ctx.locale);
     ctx = savedState.ctx;

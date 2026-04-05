@@ -66,6 +66,13 @@ describe('renderResumeSummary', () => {
     expect(out).toContain('Step 11');
   });
 
+  it('includes the lox_version so the user sees when state is cross-release', () => {
+    // After #92 state is no longer version-gated; surfacing the version
+    // in the summary lets the user notice 0.5.0 state loaded into 0.6.x.
+    const out = renderResumeSummary(makeState({ lox_version: '0.5.0' })).join('\n');
+    expect(out).toContain('Lox v0.5.0');
+  });
+
   it('omits the "failed at" line when there is no failure', () => {
     const out = renderResumeSummary(makeState({ last_completed_step: 5, failed_step: null })).join('\n');
     // English label — the test runs with default locale 'en'.

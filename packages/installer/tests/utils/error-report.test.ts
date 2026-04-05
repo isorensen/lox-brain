@@ -33,6 +33,34 @@ describe('sanitize', () => {
     expect(result).not.toContain('Eduardo');
   });
 
+  it('redacts Windows user paths even when the terminator is a forward slash (#83)', () => {
+    // OpenSSH on Windows emits paths with mixed separators, e.g.
+    // `C:\Users\alice/.ssh/config`. The redactor must still match.
+    const input = 'Bad owner or permissions on C:\\Users\\alice/.ssh/config';
+    const result = sanitize(input);
+    expect(result).not.toContain('alice');
+    expect(result).toContain('<REDACTED>');
+  });
+
+  it('redacts Windows usernames containing spaces', () => {
+    // Windows permits usernames with spaces like "First Last"; the
+    // redactor must not leak the surname after the space boundary.
+    const input = 'Bad owner or permissions on C:\\Users\\First Last\\.ssh\\config';
+    const result = sanitize(input);
+    expect(result).not.toContain('First');
+    expect(result).not.toContain('Last');
+    expect(result).toContain('<REDACTED>');
+  });
+
+  it('redacts Windows user paths from OpenSSH icacls hints', () => {
+    const input = 'Try removing permissions... on file C:/Users/bob/.ssh/config.';
+    const result = sanitize(input);
+    // Forward-slash-only C:/Users/... is covered by the unix home regex;
+    // the important assertion is that the username is gone.
+    expect(result).not.toContain('bob');
+    expect(result).toContain('<REDACTED>');
+  });
+
   it('redacts Windows user paths case-insensitively', () => {
     const input = 'c:\\users\\Lara\\Documents\\vault';
     const result = sanitize(input);

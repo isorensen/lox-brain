@@ -70,9 +70,14 @@ export function sanitize(text: string): string {
     '<REDACTED>@<REDACTED>.iam.gserviceaccount.com',
   );
 
-  // Windows user paths: C:\Users\<name>\
+  // Windows user paths: C:\Users\<name>\  OR  C:\Users\<name>/ (OpenSSH
+  // on Windows mixes separators, e.g. "C:\Users\alice/.ssh/config" in
+  // `scp` error output, so the terminator can be either \ or /).
+  // Usernames can contain spaces ("First Last"), so the class excludes
+  // only separators, not whitespace — the terminator `[\\/]` bounds the
+  // match so the greedy `+` cannot overshoot the username segment.
   result = result.replace(
-    /C:\\Users\\[^\\]+\\/gi,
+    /C:\\Users\\[^\\/]+[\\/]/gi,
     'C:\\Users\\<REDACTED>\\',
   );
 

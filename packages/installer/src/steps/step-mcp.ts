@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 import { shell } from '../utils/shell.js';
+import { probeTcp } from '../utils/net-probe.js';
 import { t } from '../i18n/index.js';
 import { renderStepHeader } from '../ui/box.js';
 import { withSpinner } from '../ui/spinner.js';
@@ -7,6 +8,39 @@ import type { InstallerContext, StepResult } from './types.js';
 import { ensureVmIdentity } from './step-deploy.js';
 
 const TOTAL_STEPS = 12;
+
+/**
+ * Build a platform-aware guidance message shown when the VPN preflight
+ * fails. Exported for tests. Kept in English to match other step failure
+ * messages in the installer (`'GCP project... Run step 3 first.'` etc.).
+ */
+export function buildVpnUnreachableMessage(vpnServerIp: string, platform: NodeJS.Platform): string {
+  const activation =
+    platform === 'win32'
+      ? '  • Open the WireGuard app, import your client config from\n'
+        + '    %USERPROFILE%\\.config\\lox\\wireguard\\wg0.conf, then click Activate.'
+      : platform === 'darwin'
+        ? '  • Open the WireGuard app (or run `sudo wg-quick up ~/.config/lox/wireguard/wg0.conf`).'
+        // Unix fallback: Linux, FreeBSD, OpenBSD, etc. all share wg-quick.
+        : '  • Run: sudo wg-quick up ~/.config/lox/wireguard/wg0.conf';
+  return [
+    `Cannot reach the VM over the WireGuard VPN (${vpnServerIp}:22).`,
+    '',
+    'The VPN tunnel is not active. To fix:',
+    activation,
+    '  • Verify the WireGuard client is connected, then re-run the installer.',
+    '    The resume prompt will offer to continue from step 12.',
+  ].join('\n');
+}
+
+/**
+ * Check that the VPN server is reachable on port 22. Kept as a thin
+ * wrapper so callers/tests don't need to hardcode the timeout or port.
+ * Returns true if a TCP handshake completes within 5s.
+ */
+export async function isVpnReachable(vpnServerIp: string): Promise<boolean> {
+  return probeTcp(vpnServerIp, 22, 5000);
+}
 
 /**
  * Build the SSH config entry for the lox-vm host.
@@ -154,7 +188,26 @@ export async function stepMcp(ctx: InstallerContext): Promise<StepResult> {
   const strings = t();
   console.log(renderStepHeader(12, TOTAL_STEPS, strings.step_mcp));
 
+  // VPN preflight FIRST (#93). Everything downstream in this step — the
+  // scp upload and the `ssh lox-vm chmod` call — rides the WireGuard
+  // tunnel to `vpnServerIp`. If the client tunnel isn't active, scp
+  // hangs until its 60s timeout and surfaces as an unhandled exception.
+  // A fast TCP probe converts that into a clean, recoverable
+  // {success: false} — the resume feature then lets the user activate
+  // WireGuard and continue from step 12. Runs before any VM identity
+  // work so the user hits the failure (and VPN guidance) in <5s.
+  // Fallback IP matches VPN_SERVER_IP in step-vpn.ts — used only when
+  // step 12 runs standalone and ctx.config.vpn wasn't populated.
   const vpnServerIp = ctx.config.vpn?.server_ip ?? '10.10.0.1';
+  const vpnUp = await withSpinner(
+    `Verifying VPN connectivity to ${vpnServerIp}...`,
+    () => isVpnReachable(vpnServerIp),
+  );
+  if (!vpnUp) {
+    return { success: false, message: buildVpnUnreachableMessage(vpnServerIp, process.platform) };
+  }
+  console.log(chalk.green(`  ✓ VPN reachable (${vpnServerIp}:22)`));
+
   // Reuse the identity resolved in step-deploy (#79). If this step runs
   // standalone (e.g. re-run after a failed step 12), probe the VM directly —
   // the email-prefix derivation would reintroduce the original bug.

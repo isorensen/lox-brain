@@ -26,6 +26,14 @@ const TOTAL_STEPS = 12;
 const VM_NAME = 'lox-vm';
 const VPN_LISTEN_PORT = 51820;
 const VPN_SERVER_IP = '10.10.0.1';
+/**
+ * Name for the VM's single public-IP access config. The audit gate
+ * `VM public IP restricted to VPN endpoint` imports this constant to
+ * verify the attached public IP is the one we created intentionally
+ * (and not, e.g., the GCP default `external-nat`). Keep the two
+ * call sites in sync via this constant.
+ */
+export const VPN_ACCESS_CONFIG_NAME = 'vpn-only';
 const VPN_CLIENT_IP = '10.10.0.3'; // Mac client (0.2 reserved for Arch)
 const VPN_SUBNET = '10.10.0.0/24';
 const HOST_INTERFACE = 'ens4'; // GCP default NIC
@@ -152,7 +160,7 @@ export async function stepVpn(ctx: InstallerContext): Promise<StepResult> {
         await shell('gcloud', [
           'compute', 'instances', 'add-access-config', VM_NAME,
           '--zone', zone,
-          '--access-config-name=vpn-only',
+          `--access-config-name=${VPN_ACCESS_CONFIG_NAME}`,
           `--address=${staticIp}`,
           '--project', project,
         ]);
@@ -162,13 +170,13 @@ export async function stepVpn(ctx: InstallerContext): Promise<StepResult> {
           await shell('gcloud', [
             'compute', 'instances', 'delete-access-config', VM_NAME,
             '--zone', zone,
-            '--access-config-name=vpn-only',
+            `--access-config-name=${VPN_ACCESS_CONFIG_NAME}`,
             '--project', project,
           ]);
           await shell('gcloud', [
             'compute', 'instances', 'add-access-config', VM_NAME,
             '--zone', zone,
-            '--access-config-name=vpn-only',
+            `--access-config-name=${VPN_ACCESS_CONFIG_NAME}`,
             `--address=${staticIp}`,
             '--project', project,
           ]);

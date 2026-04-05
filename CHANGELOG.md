@@ -14,6 +14,11 @@ All notable changes to this project will be documented in this file.
 - Update README with badges, improved splash, and public install instructions
 - Add CONTRIBUTING.md, CODE_OF_CONDUCT.md, and GitHub issue/PR templates
 
+## [0.4.4] — 2026-04-04
+
+### Changed
+- Step 12 (MCP) now uploads a small VM-side launcher script (`/home/<user>/lox-mcp.sh`) and registers Claude Code to invoke `ssh lox-vm /home/<user>/lox-mcp.sh`. Previously the full command body (`cd ... && set -a && source /etc/lox/secrets.env && set +a && node ...`) was passed as a single SSH argument, which Claude Code on Windows would re-spawn through `cmd.exe` and cmd.exe reinterprets `&&` as its own separator — breaking the MCP server startup. The registered command is now metachar-free, so spawning it works on every host Claude Code runs on (#71)
+
 ## [0.4.3] — 2026-04-04
 
 ### Fixed

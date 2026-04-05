@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.9] — 2026-04-05
+
+### Fixed
+- Step 12 now tightens the gcloud `~/.ssh/google_compute_engine` private key ACLs on every re-run (#109). v0.6.7's `tightenGcloudSshKey` call was placed AFTER an early-return path in `configureSshConfig` that fires whenever `~/.ssh/config` already has the `Host lox-vm` entry — i.e. on every re-run. Meanwhile `ensureVmIdentity` (which runs earlier in step 12) calls `gcloud compute ssh`, which regenerates the key with fresh inherited loose Windows ACLs every single time. Net result: re-runs always failed with "UNPROTECTED PRIVATE KEY FILE! CREATOR OWNER (S-1-3-4)" — the fix from v0.6.7/v0.6.8 was unreachable. Restructured the branch so `tightenGcloudSshKey` runs unconditionally at the end. Exported `configureSshConfig` and added 2 regression tests (both branches invoke the tightening).
+
+
 ## [0.6.8] — 2026-04-05
 
 ### Fixed

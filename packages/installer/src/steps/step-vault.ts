@@ -4,7 +4,7 @@ import { t } from '../i18n/index.js';
 import { renderStepHeader, renderBox } from '../ui/box.js';
 import { withSpinner } from '../ui/spinner.js';
 import type { InstallerContext, StepResult } from './types.js';
-import { cpSync, existsSync } from 'node:fs';
+import { cpSync, existsSync, readdirSync } from 'node:fs';
 import { resolve as pathResolve } from 'node:path';
 
 /**
@@ -210,6 +210,97 @@ export function isValidPatFormat(token: string): boolean {
 }
 
 /**
+ * Top-level entries each template preset MUST produce after `cpSync` (#122).
+ *
+ * Kept as a static list (not derived from `readdirSync(templatesSrc)`) because
+ * the check's job is to catch a silent cpSync failure — reading the source on
+ * every verify would paper over a bundling regression where `templates/` is
+ * missing from the shipped package entirely. The list is the contract.
+ */
+export const EXPECTED_TEMPLATE_ENTRIES: Record<string, string[]> = {
+  para: [
+    '1 - Inbox',
+    '2 - Projects',
+    '3 - Areas',
+    '4 - Resources',
+    '5 - Archive',
+    'Templates',
+    'Welcome to Lox.md',
+  ],
+  zettelkasten: [
+    '1 - Fleeting Notes',
+    '2 - Projects',
+    '2 - Source Material',
+    '3 - Tags',
+    '5 - Templates',
+    '6 - Atomic Notes',
+    '7 - Meeting Notes',
+    'attachments',
+    'Welcome to Lox.md',
+  ],
+};
+
+/**
+ * Verify that `cpSync(templatesSrc, vaultDir)` actually produced the expected
+ * top-level entries (#122). Throws with a diagnostic that includes the source
+ * path, destination path, what's missing, and what's actually on disk — this
+ * is the information a reporter needs to diagnose why the copy silently
+ * failed (typically path resolution on Windows, or packaging regression).
+ *
+ * Defensive against unknown presets even though the installer's select prompt
+ * already constrains `preset` — an untyped extension would otherwise produce
+ * a silent pass.
+ */
+export function verifyTemplatesCopied(vaultDir: string, preset: string, templatesSrc: string): void {
+  const expected = EXPECTED_TEMPLATE_ENTRIES[preset];
+  if (!expected) {
+    throw new Error(`Template copy verification: unknown preset "${preset}"`);
+  }
+  const actual = readdirSync(vaultDir);
+  const actualSet = new Set(actual);
+  const missing = expected.filter(entry => !actualSet.has(entry));
+  if (missing.length > 0) {
+    throw new Error(
+      `Template copy verification failed for preset "${preset}".\n`
+      + `  templatesSrc: ${templatesSrc}\n`
+      + `  vaultDir: ${vaultDir}\n`
+      + `  missing: ${missing.join(', ')}\n`
+      + `  actual entries: ${actual.length > 0 ? actual.join(', ') : '(empty)'}`,
+    );
+  }
+}
+
+/**
+ * Make the initial commit on a freshly-created vault and push to origin/main
+ * (#122). Without this step, templates land locally but the GitHub remote and
+ * VM clone stay empty — the VM's sync-vault.sh cron has nothing to pull, and
+ * Obsidian opens a vault that is never committed anywhere.
+ *
+ * Idempotent: when nothing is staged (re-run over an already-initialized
+ * vault), returns `'nothing-to-commit'` without calling `git commit` or
+ * `git push`. Callers should treat both return values as success.
+ */
+export async function commitInitialVaultTemplate(
+  vaultDir: string,
+  preset: string,
+): Promise<'pushed' | 'nothing-to-commit'> {
+  await shell('git', ['-C', vaultDir, 'add', '-A']);
+  const { stdout } = await shell('git', ['-C', vaultDir, 'status', '--porcelain']);
+  if (stdout.trim() === '') {
+    return 'nothing-to-commit';
+  }
+  // Set a local git identity so `git commit` doesn't fail with
+  // "Author identity unknown" on hosts where the user has never set a
+  // global git config (fresh Windows installs, CI runners). Scoped to the
+  // vault repo — doesn't touch the user's global config.
+  await shell('git', ['-C', vaultDir, 'config', 'user.email', 'installer@lox.local']);
+  await shell('git', ['-C', vaultDir, 'config', 'user.name', 'Lox Installer']);
+  await shell('git', ['-C', vaultDir, 'commit', '-m', `chore: initialize ${preset} template`]);
+  await shell('git', ['-C', vaultDir, 'push', 'origin', 'main']);
+  return 'pushed';
+}
+
+/**
  * Check whether a GCP Secret Manager secret already exists in the given project.
  * Returns true on success, false when the secret is not found, and rethrows on
  * other failures (auth, billing, API disabled) so real problems surface.
@@ -317,24 +408,28 @@ export async function stepVault(ctx: InstallerContext): Promise<StepResult> {
   }
 
   const fullRepo = `${ghUser}/${repoName}`;
-  const vaultDir = repoName;
+  // Resolve to an absolute path at creation (#122 review): makes subsequent
+  // readdirSync / `git -C` calls CWD-independent and ensures diagnostic
+  // error messages from verifyTemplatesCopied show an actionable path
+  // instead of a bare relative name.
+  const vaultDir = pathResolve(process.cwd(), repoName);
 
   // Handle a stale local clone directory from a prior run.
   if (fsExistsSync(vaultDir)) {
-    console.log(chalk.yellow(`  ⚠ Local directory ./${vaultDir} already exists.`));
+    console.log(chalk.yellow(`  ⚠ Local directory ./${repoName} already exists.`));
     const removeIt = await confirm({
-      message: `Remove ./${vaultDir} and continue? (choose No to abort)`,
+      message: `Remove ./${repoName} and continue? (choose No to abort)`,
       default: false,
     });
     if (!removeIt) {
-      return { success: false, message: `Aborted: ./${vaultDir} already exists.` };
+      return { success: false, message: `Aborted: ./${repoName} already exists.` };
     }
     try {
       rmSync(vaultDir, { recursive: true, force: true });
     } catch (err) {
       return {
         success: false,
-        message: `Failed to remove ./${vaultDir}: ${(err as Error).message}`,
+        message: `Failed to remove ./${repoName}: ${(err as Error).message}`,
       };
     }
   }
@@ -374,6 +469,10 @@ export async function stepVault(ctx: InstallerContext): Promise<StepResult> {
         );
       }
       cpSync(templatesSrc, vaultDir, { recursive: true, force: true });
+      // #122: verify the copy landed — previously a silent cpSync failure
+      // (path resolution, permissions, packaging regression) produced an
+      // empty vault with no error signal anywhere.
+      verifyTemplatesCopied(vaultDir, preset, templatesSrc);
     },
   );
 
@@ -539,6 +638,21 @@ export async function stepVault(ctx: InstallerContext): Promise<StepResult> {
   const hookPath = join(hooksDir, 'pre-commit');
   writeFileSync(hookPath, GITLEAKS_HOOK, { mode: 0o755 });
   console.log(chalk.green('  ✓ gitleaks pre-commit hook installed'));
+
+  // 9. Initial commit + push (#122). Without this, templates + .gitignore +
+  // hook land locally but the GitHub remote stays empty — the VM cron pulls
+  // nothing, Obsidian opens a vault that is never committed anywhere, and
+  // the user ends up with three disconnected copies. Idempotent: a re-run
+  // over an already-committed vault is a no-op.
+  const commitResult = await withSpinner(
+    'Committing initial vault template and pushing to origin/main...',
+    () => commitInitialVaultTemplate(vaultDir, preset),
+  );
+  if (commitResult === 'pushed') {
+    console.log(chalk.green('  ✓ Initial vault template committed and pushed'));
+  } else {
+    console.log(chalk.green('  ✓ Vault already in sync with origin/main'));
+  }
 
   // Security gate: validate repo is private
   const isPrivate = await isRepoPrivate(fullRepo);

@@ -4,7 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [0.6.13] — 2026-04-05
+## [0.6.14] — 2026-04-05
+
+### Fixed
+- **Step 9 — vault remained empty after install on Windows (#122).** The installer copied template files via `cpSync` without verifying the copy succeeded, and never ran `git add/commit/push` after the template copy. Three failure modes resulted: (a) silent `cpSync` failures produced an empty vault with no error; (b) templates landed locally but the GitHub `lox-vault` remote stayed empty because no initial commit was ever made; (c) the VM's `sync-vault.sh` cron (every 2 min) pulled from an empty remote, so the VM's vault clone also stayed empty. Fix adds post-copy verification (throws with `templatesSrc`, `vaultDir`, missing entries, and actual entries when the expected template structure is absent for the selected preset) and a git `add -A` → porcelain dirty-check → `commit` → `push origin main` sequence after `.gitignore` + gitleaks hook install. Idempotent: re-runs over an already-committed vault are a no-op. For users already on v0.6.13 or earlier with an empty vault: `cd lox-vault && git add -A && git commit -m "chore: initialize template" && git push origin main` (run from the directory where the installer was executed, after manually copying templates from `lox-brain/templates/<preset>/` if the local vault is also empty).
+
+
 
 ### Added
 - Step 8 now auto-activates the WireGuard client tunnel after writing `wg0.conf` so step 12 can scp over the VPN without the user manually importing the config into the WireGuard GUI (#98). Probes `VPN_SERVER_IP:22` first and short-circuits as "already active" if reachable; otherwise runs `sudo wg-quick up` on Unix or `wireguard.exe /installtunnelservice` on Windows (with `net session` elevation check and fallback probing of `C:\Program Files\WireGuard\wireguard.exe` when `wireguard` isn't on PATH), then verifies reachability via a paced 10s probe loop. Never blocks step 8: failures print the verbatim manual command plus a resume hint and fall through to step 12's preflight (#93), which is the real VPN gate.

@@ -55,7 +55,7 @@ Skip this phase if you already have this context loaded from earlier in the conv
 
 ### Phase 1 — Understand
 
-1. **Read the issue**: `gh issue view <number> --comments` — understand the bug/feature, environment, steps to reproduce. **Always include `--comments`** to see the full conversation.
+1. **Read the issue**: run `gh issue view <number>` first — this always returns the body, metadata, and a `comments: <N>` line. If `N > 0`, follow up with `gh issue view <number> --comments` to see the thread. **Do not start with `--comments`** — when an issue has zero comments, `gh issue view N --comments` returns only the (empty) comments section and silently hides the body, which hides reproduction info and wastes a round-trip.
 2. **Scan for private data in comments**: Check every comment for sensitive information:
    - GCP project numbers, project IDs, billing account IDs
    - Service account emails, API keys, tokens, Help Tokens

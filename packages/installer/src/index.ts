@@ -37,7 +37,9 @@ async function main(): Promise<void> {
     return;
   }
   if (args[0] === 'status') {
-    console.log('lox status: coming soon');
+    console.log('lox status is not yet implemented. Verify your setup with:');
+    console.log('  1. ping 10.10.0.1          (VPN tunnel)');
+    console.log('  2. Ask Claude Code to search your notes (full stack)');
     return;
   }
 

@@ -4,7 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [0.6.18] — 2026-04-05
+## [0.6.19] — 2026-04-05
+
+### Fixed
+- **Success screen told users to run `lox status` but the command was a stub and the binary wasn't on PATH (#121).** Replaced the `lox status` hints with actionable instructions that work today: verify the VPN tunnel via `ping 10.10.0.1`, then ask Claude Code to search notes (verifies the full stack — VPN + MCP server + vault indexing). Updated both en and pt-BR strings. The `lox status` stub now prints the same actionable steps instead of "coming soon". A proper `lox` CLI is tracked as a separate enhancement (#85).
+
+
 
 ### Added
 - **Auto-install gitleaks binary during step 9 (#119, PR-D).** The pre-commit hook was already installed in the vault but `gitleaks` binary was never shipped, making the hook a no-op. Step 9 now downloads gitleaks v8.21.2 from GitHub Releases to `~/.lox/bin/` — platform-aware (linux/darwin/windows, x64/arm64), extracts via `tar` or `Expand-Archive`, best-effort (prints manual-install instructions on failure, never blocks the step). The hook script was updated to check `~/.lox/bin/gitleaks` as a fallback when gitleaks is not on global PATH.

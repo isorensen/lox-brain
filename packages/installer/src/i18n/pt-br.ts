@@ -45,9 +45,9 @@ export const ptBr: I18nStrings = {
   success_claude: 'Claude Code conectado',
   success_next_steps: 'Proximos Passos',
   success_step_1: 'Abra o Obsidian e verifique a sincronizacao do vault.',
-  success_step_2: 'Execute "lox status" para verificar todos os servicos.',
-  success_step_3: 'Peca ao Claude Code para buscar em suas notas.',
-  success_status_hint: 'Execute "lox status" a qualquer momento para verificar a saude do sistema.',
+  success_step_2: 'Verifique o tunel VPN: ping 10.10.0.1',
+  success_step_3: 'Peca ao Claude Code para buscar em suas notas — isso verifica a stack completa.',
+  success_status_hint: 'VPN nao conecta? Verifique se o WireGuard esta ativo e tente o ping novamente.',
 
   // Prompts
   press_enter: 'Pressione Enter para continuar...',

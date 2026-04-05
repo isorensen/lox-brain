@@ -42,3 +42,6 @@ coverage/
 
 # Git worktrees
 .worktrees/
+
+# Internal strategy docs (not for public repo)
+docs/internal/

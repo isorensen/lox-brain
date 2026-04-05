@@ -52,7 +52,12 @@ describe('installer state persistence', () => {
   });
 
   it('getStatePath resolves to ~/.lox/installer-state.json', () => {
-    expect(getStatePath()).toBe(path.join(tmp, '.lox/installer-state.json'));
+    // getStatePath() appends `/.lox/installer-state.json` via template
+    // literal (Node accepts forward slashes on Windows too), so the
+    // expected path keeps HOME's native separators but uses `/` for the
+    // appended tail. Do NOT use path.join here — it would normalize to
+    // `\` on Windows and the comparison would fail.
+    expect(getStatePath()).toBe(`${tmp}/.lox/installer-state.json`);
   });
 
   it('saveState creates ~/.lox/ if missing and round-trips with loadState', () => {

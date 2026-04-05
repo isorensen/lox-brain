@@ -71,6 +71,41 @@ export function buildBuildScript(installDir: string): string {
 }
 
 /**
+ * Build the literal contents of /etc/lox/secrets.env — every line the
+ * lox-watcher and MCP server need at runtime.
+ *
+ * Exported so tests can lock the invariants that every field is present
+ * (PG_PASSWORD, VAULT_PATH, etc.) and uses the VM-side absolute paths
+ * rather than the user's local config. See #103 (missing PG_PASSWORD)
+ * and #104 (VAULT_PATH was using Obsidian local path).
+ */
+export interface SecretsEnvInput {
+  dbUser: string;
+  dbPassword: string;
+  dbHost: string;
+  dbPort: number;
+  dbName: string;
+  openaiKey: string;
+  /** MUST be an absolute POSIX path on the VM (e.g. /home/user/lox-vault) —
+   * systemd's EnvironmentFile doesn't expand `~`, and the user's local
+   * Obsidian path is irrelevant on the VM. */
+  vaultPath: string;
+}
+
+export function buildSecretsEnvContent(input: SecretsEnvInput): string {
+  return [
+    `DATABASE_URL=postgresql://${input.dbUser}@${input.dbHost}:${input.dbPort}/${input.dbName}?sslmode=require`,
+    // Plain password env var — node-postgres reads process.env.PG_PASSWORD
+    // via createPool() in packages/core/src/lib/create-pool.ts.
+    `PG_PASSWORD=${input.dbPassword}`,
+    `OPENAI_API_KEY=${input.openaiKey}`,
+    `VAULT_PATH=${input.vaultPath}`,
+    'NODE_ENV=production',
+    'LOG_LEVEL=info',
+  ].join('\n');
+}
+
+/**
  * Write /etc/lox/secrets.env with tight perms. The env content is embedded
  * verbatim via a quoted heredoc — the local temp script owns the whole
  * payload so we never pass multi-line content through `gcloud --command`.
@@ -351,7 +386,11 @@ export async function stepDeploy(ctx: InstallerContext): Promise<StepResult> {
     () => ensureVmIdentity(ctx, projectId, zone, vmName),
   );
   const installDir = ctx.config.install_dir ?? `${vmHome}/lox-brain`;
-  const vaultPath = ctx.config.vault?.local_path ?? `${vmHome}/lox-vault`;
+  // VM-side absolute path — NEVER reuse ctx.config.vault.local_path, which
+  // is the user's LOCAL Obsidian folder (e.g. ~/Obsidian/Lox on Windows).
+  // systemd's EnvironmentFile doesn't expand `~`, and the VM doesn't have
+  // the user's local Obsidian layout anyway. See #104.
+  const vaultPath = `${vmHome}/lox-vault`;
 
   // 1. Clone lox-brain repo on VM
   await withSpinner(
@@ -374,6 +413,38 @@ export async function stepDeploy(ctx: InstallerContext): Promise<StepResult> {
     console.log(chalk.green(`  ✓ ${strings.openai_saved_to_secret_manager}`));
   }
 
+  // Fetch the DB password from Secret Manager BEFORE building secrets.env (#103).
+  // Step 7 (VM Setup) generated a random password, created the postgres user
+  // with it, and stored it as the `lox-db-password` secret. Without this line,
+  // /etc/lox/secrets.env never gets PG_PASSWORD and the watcher crash-loops on
+  // startup ("PG_PASSWORD environment variable or explicit password is required").
+  const dbPassword = await withSpinner(
+    'Fetching database password from Secret Manager...',
+    async () => {
+      const { stdout } = await shell('gcloud', [
+        'secrets', 'versions', 'access', 'latest',
+        '--secret', 'lox-db-password',
+        '--project', projectId,
+      ]);
+      return stdout.trim();
+    },
+  ).catch((err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    return { error: message };
+  });
+  if (typeof dbPassword !== 'string') {
+    return {
+      success: false,
+      actionable: true,
+      message:
+        `Could not read the DB password from Secret Manager (secret "lox-db-password").\n`
+        + `  ${dbPassword.error}\n\n`
+        + `This is populated by step 7 (VM Setup). To recover:\n`
+        + `  • Re-run the installer and pick "Step 7 (VM Setup)" in the resume prompt, OR\n`
+        + `  • Manually create it: gcloud secrets create lox-db-password --data-file=<file> --project=${projectId}`,
+    };
+  }
+
   // 4. Create .env on VM from config (NOT in repo — in /etc/lox/secrets.env)
   await withSpinner(
     `${strings.configuring} secrets on VM...`,
@@ -383,13 +454,15 @@ export async function stepDeploy(ctx: InstallerContext): Promise<StepResult> {
       const dbHost = ctx.config.database?.host ?? '127.0.0.1';
       const dbPort = ctx.config.database?.port ?? 5432;
 
-      const envContent = [
-        `DATABASE_URL=postgresql://${dbUser}@${dbHost}:${dbPort}/${dbName}?sslmode=require`,
-        `OPENAI_API_KEY=${openaiResult.key ?? OPENAI_KEY_PLACEHOLDER}`,
-        `VAULT_PATH=${vaultPath}`,
-        'NODE_ENV=production',
-        'LOG_LEVEL=info',
-      ].join('\n');
+      const envContent = buildSecretsEnvContent({
+        dbUser,
+        dbPassword,
+        dbHost,
+        dbPort,
+        dbName,
+        openaiKey: openaiResult.key ?? OPENAI_KEY_PLACEHOLDER,
+        vaultPath,
+      });
 
       await runRemoteScript(projectId, zone, vmName, 'secrets', buildSecretsEnvScript(envContent, user));
     },

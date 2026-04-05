@@ -4,6 +4,7 @@ import {
   buildCloneScript,
   buildBuildScript,
   buildSecretsEnvScript,
+  buildSecretsEnvContent,
   buildSystemdInstallScript,
   buildServiceStartScript,
   buildMcpHealthProbeScript,
@@ -60,6 +61,63 @@ describe('buildSecretsEnvScript', () => {
     // Single-quoted heredoc delimiter suppresses variable/command expansion
     expect(s).toContain("<<'LOX_ENV_EOF'");
     expect(s).toContain('PASS=$ecret`bq`');
+  });
+});
+
+describe('buildSecretsEnvContent (#103 + #104-A)', () => {
+  const baseInput = {
+    dbUser: 'lox',
+    dbPassword: 'p@ssw0rd-rand',
+    dbHost: '127.0.0.1',
+    dbPort: 5432,
+    dbName: 'lox_brain',
+    openaiKey: 'sk-test',
+    vaultPath: '/home/alice/lox-vault',
+  };
+
+  it('includes PG_PASSWORD — critical for the watcher (#103)', () => {
+    // Without PG_PASSWORD, createPool() throws on startup and the
+    // lox-watcher systemd service crash-loops. DO NOT ever remove this
+    // line from the env content builder. See #103.
+    const content = buildSecretsEnvContent(baseInput);
+    expect(content).toContain('PG_PASSWORD=p@ssw0rd-rand');
+  });
+
+  it('uses the VM-side absolute VAULT_PATH, not the user local path (#104-A)', () => {
+    // Before #104-A, VAULT_PATH was set to ctx.config.vault.local_path
+    // which is the user's LOCAL Obsidian folder (e.g. ~/Obsidian/Lox).
+    // systemd's EnvironmentFile doesn't expand `~`, and the VM doesn't
+    // have the user's local Obsidian layout anyway. Lock the contract.
+    const content = buildSecretsEnvContent(baseInput);
+    expect(content).toContain('VAULT_PATH=/home/alice/lox-vault');
+    expect(content).not.toContain('~/');
+    expect(content).not.toContain('Obsidian');
+  });
+
+  it('builds the DATABASE_URL with SSL required', () => {
+    const content = buildSecretsEnvContent(baseInput);
+    expect(content).toContain('DATABASE_URL=postgresql://lox@127.0.0.1:5432/lox_brain?sslmode=require');
+  });
+
+  it('includes OPENAI_API_KEY verbatim', () => {
+    const content = buildSecretsEnvContent(baseInput);
+    expect(content).toContain('OPENAI_API_KEY=sk-test');
+  });
+
+  it('sets NODE_ENV=production and LOG_LEVEL=info', () => {
+    const content = buildSecretsEnvContent(baseInput);
+    expect(content).toContain('NODE_ENV=production');
+    expect(content).toContain('LOG_LEVEL=info');
+  });
+
+  it('emits each key on its own line (systemd EnvironmentFile format)', () => {
+    const content = buildSecretsEnvContent(baseInput);
+    const lines = content.split('\n');
+    // 6 env vars = 6 lines, no blanks.
+    expect(lines).toHaveLength(6);
+    for (const line of lines) {
+      expect(line).toMatch(/^[A-Z_]+=/);
+    }
   });
 });
 

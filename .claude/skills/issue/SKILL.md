@@ -62,7 +62,7 @@ Skip this phase if you already have this context loaded from earlier in the conv
    - Windows user paths (`C:\Users\<name>\...`)
    - IP addresses, SSH keys, credentials of any kind
    - If found: **delete the comment** (`gh api repos/OWNER/REPO/issues/comments/ID -X DELETE`) and **create a replacement comment** summarizing the content without the sensitive data. Only repo admins can delete others' comments.
-3. **Read related code**: Explore the files involved before proposing changes. Never modify code you haven't read.
+3. **Read related code**: Explore the files involved before proposing changes. Never modify code you haven't read. While you're in there, watch for *adjacent* bugs — especially in redaction/sanitization/validation code. If the incoming bug exposed a gap next door, ship both fixes in the same PR (seen: #83's ACL fix uncovered a regex gap in the error-report redactor).
 4. **Check for related issues**: `gh issue list --state open` — are there duplicates or related issues?
 
 ### Phase 1.5 — Enrich (only when it adds value)
@@ -81,7 +81,7 @@ Terse issues — especially auto-reported ones that arrive with just a stack tra
 
 **How:**
 
-Post a **new comment** with `gh issue comment <N> --body "..."`. **Never edit the original issue body** — the reporter's words stay intact. Use this structure:
+Post a **new comment** with `gh issue comment <N> --body "..."`. **Never edit the original issue body** — the reporter's words stay intact. *Exception:* if the body is from our auto-reporter (`[Auto-report]` title) AND contains unredacted PII that our redactor missed (user paths, project IDs, tokens), edit the body to genericize the leak — those aren't the reporter's words, they're our tool's output — AND fix the redactor regex in the same PR so future reports don't leak. Use this structure for the comment:
 
 ```
 **Root cause** (found during investigation): <1-2 lines of technical explanation>
@@ -105,8 +105,10 @@ The comment is public and permanent — write it like you're documenting the bug
 
 ### Phase 3 — Implement (TDD)
 
-5. **Write tests first** — cover the bug scenario or new feature behavior.
+5. **Write tests first** — cover the bug scenario or new feature behavior. If you deliberately skip tests for an interactive or heavy-mocking path (retry loops, `@inquirer/prompts` flows), add a one-line comment in the test file documenting the decision — the reviewer WILL flag unexplained gaps.
 6. **Implement the fix** — delegate to `coder-opus` for complex changes, `coder-sonnet` for simple edits.
+   - **Fixing a step-level failure?** Verify the v0.5.0 resume feature handles this path: does state get saved on THROW (not just returned `{success: false}`)? Can the user resume from this step after re-running? Install-time bugs in step-*.ts often have a matching gap in the resume flow (seen: #87).
+   - **Need a helper that already lives in another step file?** Extract it to `packages/installer/src/utils/` in the same PR (keep a back-compat re-export from the original location if it's widely imported). Avoids the "two slightly different copies" drift (seen: #84 extracting `fixWindowsSshAcl` → `utils/windows-acl.ts`).
 7. **Run tests**: `npm run test --workspaces` — all must pass.
 8. **Run type check**: `npx tsc --noEmit --project packages/shared/tsconfig.json && npx tsc --noEmit --project packages/core/tsconfig.json && npx tsc --noEmit --project packages/installer/tsconfig.json`
 
@@ -131,10 +133,11 @@ The comment is public and permanent — write it like you're documenting the bug
 ### Phase 5 — Review
 
 12. **Run tests again** after version bump to confirm nothing broke.
-13. **Code review** — delegate to `code-reviewer` agent (model: sonnet). The goal is **no remaining comments**. If there are findings:
-    - Fix all real issues (not just nits)
+13. **Code review** — delegate to `code-reviewer` agent (model: sonnet). Expect the reviewer to find **2-5 real issues per non-trivial PR** — empty-string env vars, over-broad regexes, magic-number sentinels, missing `try/finally`, missing tests for non-obvious paths. That's the reviewer earning its keep, not noise.
+    - Fix all real issues (security, correctness, maintainability) and apply suggestions that genuinely improve clarity
+    - Defer pure nits (style preferences, cosmetic rename suggestions) — don't let them balloon the PR
     - Re-run tests after fixes
-    - Only proceed when review is clean
+    - Proceed once the real issues are addressed
 
 ### Phase 6 — Ship
 
@@ -170,6 +173,10 @@ The comment is public and permanent — write it like you're documenting the bug
 [ ] Delete branch (local + remote)
 ```
 
+## Scope discipline
+
+If the user raises a related but scope-independent concern mid-issue (e.g. "hey, also this UX is clunky"), don't expand the current PR — file a **new issue** with detailed acceptance criteria, briefly state your opinion on it, and return focus to the issue you're working on. Keeps each PR reviewable, each release coherent, and each issue's title accurate. Seen: #83 stayed focused on Windows SSH ACLs; the OpenAI key UX concern raised mid-session became #84 with its own PR and release.
+
 ## Windows-specific awareness
 
 Many issues in this project stem from Windows compatibility. When fixing installer bugs:
@@ -178,6 +185,10 @@ Many issues in this project stem from Windows compatibility. When fixing install
 - `execFile` with arrays does NOT resolve `.cmd`/`.bat` — that's why `shell()` has the wrapper
 - Always consider: "would this work on Windows?" when touching installer code
 - The reporter (Lara) tests on Windows 11 — she is the primary Windows validation path
+
+**Windows test-side gotchas** (CI catches these, but you can save the round-trip):
+- Production code that builds paths with forward-slash template literals (`` `${home}/.lox/foo` ``) works on Windows — Node accepts `/`. But `path.join()` in tests normalizes to `\` on Windows, so asserting `expect(getPath()).toBe(path.join(tmp, '.lox/foo'))` fails on Windows CI with a mixed-separator mismatch. Build the expected value with the same convention production uses.
+- When a test mocks `shell()` and asserts on call counts / argument arrays, and the code under test calls platform-conditional helpers (like `fixWindowsAcl`), pin `process.platform = 'linux'` in `beforeEach` (and restore in `afterEach`). Otherwise the Windows CI runner will hit the extra `icacls` call and break `toHaveLength(2)` assertions. Seen twice (#84, #87).
 
 ## Anti-patterns to avoid
 

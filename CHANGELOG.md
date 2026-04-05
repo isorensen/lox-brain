@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.2] — 2026-04-05
+
+### Fixed
+- Step 3 (GCP Project) now recovers when the chosen project ID is claimed globally by another account (#90). Previously \`gcloud projects describe\` would return 404 (not accessible to the current account), the installer would call \`gcloud projects create\`, and gcloud would fail with "The project ID you specified is already in use by another project" — crashing the install. This happens routinely when the user previously created the project under a different gcloud login, or when a same-named project was soft-deleted <30 days ago (GCP reserves the ID for the grace period). The installer now catches this specific error, explains the situation, suggests a numeric-suffix variant, and re-prompts. Up to 3 attempts before failing cleanly.
+
+
 ## [0.6.1] — 2026-04-05
 
 ### Fixed

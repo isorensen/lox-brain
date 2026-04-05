@@ -54,6 +54,7 @@ import {
   listBillingAccounts,
   linkBillingAccount,
   ensureBilling,
+  isProjectIdTakenError,
 } from '../../src/steps/step-gcp-project.js';
 import { t } from '../../src/i18n/index.js';
 
@@ -396,5 +397,92 @@ describe('stepGcpProject — API enable error handling', () => {
     for (const call of apiCalls) {
       expect(call[2]).toMatchObject({ timeout: 120_000 });
     }
+  });
+
+  it('re-prompts and retries when project ID is taken globally, then proceeds on second attempt (#90)', async () => {
+    const { stepGcpProject } = await import('../../src/steps/step-gcp-project.js');
+    const { input } = await import('@inquirer/prompts');
+    const inputMock = input as Mock;
+
+    // 1st prompt: taken ID. 2nd prompt: available one. 3rd (if reached):
+    // the billing "press enter" prompt downstream, which we don't care
+    // about in this test but must not hang.
+    inputMock
+      .mockResolvedValueOnce('lox-brain-lara')
+      .mockResolvedValueOnce('lox-brain-lara-472')
+      .mockResolvedValue('');
+
+    // Attempt 1: projectExists (describe) → not accessible.
+    shellMock.mockRejectedValueOnce(new Error('NOT_FOUND'));
+    // Attempt 1: projects create → globally taken.
+    shellMock.mockRejectedValueOnce(new Error(
+      'ERROR: (gcloud.projects.create) The project ID you specified is already in use by another project.',
+    ));
+    // Attempt 2: projectExists → not accessible.
+    shellMock.mockRejectedValueOnce(new Error('NOT_FOUND'));
+    // Attempt 2: projects create → succeeds.
+    shellMock.mockResolvedValueOnce({ stdout: '', stderr: '' });
+    // config set project
+    shellMock.mockResolvedValueOnce({ stdout: '', stderr: '' });
+    // Billing flow below just needs to terminate quickly — we're only
+    // verifying the retry loop, not billing. Make every billing-related
+    // gcloud call return empty so `ensureBilling` falls through to
+    // billing_required_for_apis and returns success:false.
+    shellMock.mockResolvedValue({ stdout: '', stderr: '' });
+
+    const ctx = {
+      config: {},
+      locale: 'en' as const,
+      gcpUsername: 'lara',
+    };
+
+    const result = await stepGcpProject(ctx);
+
+    // The retry loop ran: project-ID input was asked TWICE (and the 3rd
+    // call, if any, is the unrelated billing "press enter" prompt). Key
+    // assertion: ctx was set to the SECOND (successful) ID, proving the
+    // loop continued past the first attempt's failure.
+    expect(inputMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(inputMock.mock.calls[0]![0]).toMatchObject({ message: 'GCP Project ID:' });
+    expect(inputMock.mock.calls[1]![0]).toMatchObject({ message: 'GCP Project ID:' });
+    expect(ctx.gcpProjectId).toBe('lox-brain-lara-472');
+    // The flow proceeded past `create` — billing check is what stopped it.
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('isProjectIdTakenError', () => {
+  it("flags the gcloud projects create globally-taken error", () => {
+    const err = new Error(
+      'Command failed: gcloud projects create lox-brain-lara\n'
+      + 'ERROR: (gcloud.projects.create) Project creation failed. The project ID you specified is already in use by another project. Please try an alternative ID.',
+    );
+    expect(isProjectIdTakenError(err)).toBe(true);
+  });
+
+  it("flags a trimmed variant of the same message", () => {
+    expect(isProjectIdTakenError(new Error("The project ID you specified is already in use"))).toBe(true);
+  });
+
+  it("is case-insensitive", () => {
+    expect(isProjectIdTakenError(new Error("PROJECT ID X IS ALREADY IN USE by another project"))).toBe(true);
+  });
+
+  it("does NOT flag unrelated gcloud errors", () => {
+    expect(isProjectIdTakenError(new Error("PERMISSION_DENIED: caller lacks access"))).toBe(false);
+    expect(isProjectIdTakenError(new Error("ERROR: billing account not found"))).toBe(false);
+  });
+
+  it("does NOT flag a different gcloud already-exists error", () => {
+    // describe (not create) uses different phrasing — we only want to
+    // match the create-time globally-taken case.
+    expect(isProjectIdTakenError(new Error("Project my-project already exists in this organization"))).toBe(false);
+  });
+
+  it("handles non-Error values", () => {
+    expect(isProjectIdTakenError("project ID already in use")).toBe(true);
+    expect(isProjectIdTakenError("some other string")).toBe(false);
+    expect(isProjectIdTakenError(null)).toBe(false);
+    expect(isProjectIdTakenError(undefined)).toBe(false);
   });
 });

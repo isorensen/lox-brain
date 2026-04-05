@@ -177,40 +177,81 @@ function isBillingError(err: unknown): boolean {
   return false;
 }
 
+/**
+ * Return true if the error from `gcloud projects create` indicates the
+ * project ID is claimed globally (e.g. by a different GCP account, an
+ * org we can't see, or a <30d soft-deleted project). Exported for tests.
+ */
+export function isProjectIdTakenError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  // gcloud phrasing: "The project ID you specified is already in use by
+  // another project." Anchor `project ID` with a word boundary and bound
+  // the intervening text so we don't match unrelated output that happens
+  // to contain both fragments far apart (review: too-broad regex risk).
+  return /project ID\b.{0,60}already in use/i.test(msg);
+}
+
 export async function stepGcpProject(ctx: InstallerContext): Promise<StepResult> {
   const strings = t();
   console.log(renderStepHeader(3, TOTAL_STEPS, strings.step_gcp_project));
 
-  const defaultId = `lox-brain-${ctx.gcpUsername ?? 'user'}`;
   const { input } = await import('@inquirer/prompts');
+  const projectIdValidator = (value: string): true | string => {
+    if (!/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(value)) {
+      return 'Project ID must be 6-30 chars, start with a letter, and contain only lowercase letters, digits, and hyphens.';
+    }
+    return true;
+  };
 
-  const projectId = await input({
-    message: 'GCP Project ID:',
-    default: defaultId,
-    validate: (value: string) => {
-      if (!/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(value)) {
-        return 'Project ID must be 6-30 chars, start with a letter, and contain only lowercase letters, digits, and hyphens.';
+  let suggestedDefault = `lox-brain-${ctx.gcpUsername ?? 'user'}`;
+  let projectId = '';
+
+  // Prompt + (describe or create) loop. A globally-taken ID is NOT visible
+  // via `gcloud projects describe` for accounts without access, so we must
+  // catch the create failure and re-prompt (#90).
+  for (let attempt = 0; attempt < 3; attempt++) {
+    projectId = await input({
+      message: 'GCP Project ID:',
+      default: suggestedDefault,
+      validate: projectIdValidator,
+    });
+
+    if (await projectExists(projectId)) {
+      console.log(chalk.yellow(`  → Project ${projectId} already exists, reusing it.`));
+      break;
+    }
+
+    try {
+      await withSpinner(
+        `${strings.creating} project ${projectId}...`,
+        async () => {
+          await shell('gcloud', ['projects', 'create', projectId]);
+        },
+      );
+      break; // created successfully
+    } catch (err) {
+      if (!isProjectIdTakenError(err)) throw err;
+      console.log(chalk.yellow(
+        `\n  ⚠ Project ID "${projectId}" is taken globally — it may belong to a different gcloud account`,
+      ));
+      console.log(chalk.yellow(
+        '    (or was deleted <30 days ago, which reserves the ID for the grace period).',
+      ));
+      console.log(chalk.yellow(
+        `    Pick a different ID, or run "gcloud auth login" in another terminal and re-run if you own it under another account.\n`,
+      ));
+      // Suggest a variant the user can accept or overwrite.
+      suggestedDefault = `${projectId}-${Math.floor(Math.random() * 900 + 100)}`;
+      if (attempt === 2) {
+        return {
+          success: false,
+          message: `Could not secure a GCP project ID after 3 attempts. Last tried: ${projectId}.`,
+        };
       }
-      return true;
-    },
-  });
+    }
+  }
 
   ctx.gcpProjectId = projectId;
-
-  // Check if project already exists
-  const exists = await projectExists(projectId);
-
-  if (exists) {
-    console.log(chalk.yellow(`  → Project ${projectId} already exists, reusing it.`));
-  } else {
-    // Create the project
-    await withSpinner(
-      `${strings.creating} project ${projectId}...`,
-      async () => {
-        await shell('gcloud', ['projects', 'create', projectId]);
-      },
-    );
-  }
 
   // Set as default project
   await withSpinner(

@@ -1,5 +1,28 @@
 import { shell } from '../utils/shell.js';
+import { isProPlanGate } from '../steps/step-vault.js';
 import type { LoxConfig } from '@lox-brain/shared';
+import { readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
+
+/**
+ * Expand a leading `~` in a path to the user's home directory. Only the
+ * bare `~`, `~/...`, or `~\...` forms are expanded — the POSIX `~user/...`
+ * named-user form is intentionally NOT supported (Lox never generates
+ * those paths, and expanding them naively would corrupt them silently).
+ * Any other leading token is passed through unchanged.
+ *
+ * Why we need this at all: `shell()` routes through `execFile`, which
+ * does NOT invoke a shell and therefore does not perform tilde
+ * expansion on arguments. Before this helper, `config.vault.local_path
+ * = '~/Obsidian/Lox'` was passed verbatim to fs calls and never
+ * resolved — part of the #119 item 7 regression.
+ */
+function expandTilde(p: string): string {
+  if (p !== '~' && !p.startsWith('~/') && !p.startsWith('~\\')) return p;
+  const home = homedir() || process.env.HOME || process.env.USERPROFILE || '';
+  return home + p.slice(1);
+}
 
 export interface SecurityGate {
   name: string;
@@ -40,8 +63,14 @@ export const securityGates: SecurityGate[] = [
         ]);
         // If the API call succeeds, protection exists
         return stdout.length > 0 || true;
-      } catch {
-        // 404 means no protection — fail
+      } catch (err) {
+        // GitHub Free rejects branch protection on private repos with
+        // HTTP 403 "Upgrade to GitHub Pro" (#119 item 1). Step 9 already
+        // skipped the setup with a visible warning — counting it as a
+        // failure here would produce a false negative on every Free
+        // install. Treat as N/A, pass. Any other error (404, auth, etc.)
+        // is a real failure.
+        if (isProPlanGate(err)) return true;
         return false;
       }
     },
@@ -139,14 +168,56 @@ export const securityGates: SecurityGate[] = [
     name: 'SSH key permissions validated',
     blocking: true,
     async check() {
+      const keyPath = join(homedir(), '.ssh', 'google_compute_engine');
+      if (process.platform === 'win32') {
+        // Windows has no stat -c/%a equivalent (#119 item 4). Use
+        // `icacls /findsid <SID>` with well-known loose-group SIDs.
+        // Both presence and absence of the SID produce exit code 0, so
+        // we have to parse stdout. But the "not found" message itself
+        // IS localized on pt-BR/Windows ("Nenhum arquivo correspondente..."),
+        // so we can't match that text. What IS stable across locales
+        // is the SID string itself — icacls prints the SID in its
+        // output ONLY when the SID matches the ACL. Check for the
+        // SID substring instead.
+        //
+        // The four SIDs match the four loose principals that
+        // utils/windows-acl.ts removes: Everyone, Authenticated Users,
+        // BUILTIN\Users, CREATOR OWNER.
+        if (!existsSync(keyPath)) return false;
+        const looseSids = [
+          'S-1-1-0',       // Everyone
+          'S-1-5-11',      // Authenticated Users
+          'S-1-5-32-545',  // BUILTIN\Users
+          'S-1-3-0',       // CREATOR OWNER
+        ];
+        try {
+          for (const sid of looseSids) {
+            const { stdout } = await shell('icacls', [keyPath, '/findsid', sid]);
+            // icacls prints the SID string ONLY when it is present in
+            // the ACL (along with the file path and the principal's
+            // localized name). Absence of the SID in stdout = SID not
+            // in the ACL. This works across Windows locales.
+            if (stdout.includes(sid)) {
+              return false;
+            }
+          }
+          return true;
+        } catch {
+          // icacls failing on a file that exists and whose owner is the
+          // current user would be unusual — fixWindowsAcl grants user:F.
+          // Fail-closed: an audit that can't verify should report
+          // failure, not silently trust.
+          return false;
+        }
+      }
+      // POSIX (Linux/macOS): BSD stat first, Linux stat as fallback.
       try {
-        const { stdout } = await shell('stat', ['-f', '%Lp', `${process.env.HOME}/.ssh/google_compute_engine`]);
+        const { stdout } = await shell('stat', ['-f', '%Lp', keyPath]);
         const perm = stdout.trim();
         return perm === '600' || perm === '400';
       } catch {
-        // Try Linux stat format
         try {
-          const { stdout } = await shell('stat', ['-c', '%a', `${process.env.HOME}/.ssh/google_compute_engine`]);
+          const { stdout } = await shell('stat', ['-c', '%a', keyPath]);
           const perm = stdout.trim();
           return perm === '600' || perm === '400';
         } catch {
@@ -302,7 +373,21 @@ export const securityGates: SecurityGate[] = [
     name: 'Remote URL uses HTTPS',
     blocking: true,
     async check(config) {
-      return config.vault.repo.startsWith('https://');
+      // Previously: checked config.vault.repo.startsWith('https://').
+      // But step-vault stores vault.repo as "owner/repo" (the GitHub
+      // short format) — NEVER starting with https:// — so the check
+      // always failed (#119 item 5). Now query the ACTUAL git remote
+      // URL that the local clone uses for fetch/push, which is what
+      // this check's name implies. `git -C <path> remote get-url origin`
+      // is cross-platform and goes through execFile via shell().
+      try {
+        const localPath = expandTilde(config.vault.local_path ?? '');
+        if (!localPath) return false;
+        const { stdout } = await shell('git', ['-C', localPath, 'remote', 'get-url', 'origin']);
+        return stdout.trim().startsWith('https://');
+      } catch {
+        return false;
+      }
     },
   },
 
@@ -328,10 +413,15 @@ export const securityGates: SecurityGate[] = [
     name: '.gitignore covers sensitive patterns',
     blocking: true,
     async check(config) {
+      // Previously: `cat ${repoPath}/.gitignore` (#119 item 7). Two bugs:
+      // (a) `cat` doesn't exist on Windows, (b) `execFile`-based shell()
+      // doesn't expand `~` in path args, so local_path='~/Obsidian/Lox'
+      // was read as a literal path that never resolved. Now read via
+      // Node fs with explicit tilde expansion.
       try {
-        const repoPath = config.vault.local_path;
-        const { stdout } = await shell('cat', [`${repoPath}/.gitignore`]);
-        const content = stdout.toLowerCase();
+        const repoPath = expandTilde(config.vault.local_path ?? '');
+        if (!repoPath) return false;
+        const content = readFileSync(join(repoPath, '.gitignore'), 'utf-8').toLowerCase();
         const requiredPatterns = ['.env', '*.pem', '*.key', 'credentials.json'];
         return requiredPatterns.every(p => content.includes(p.toLowerCase()));
       } catch {

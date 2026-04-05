@@ -104,14 +104,19 @@ export function buildSystemdInstallScript(watcherService: string): string {
   ].join('\n');
 }
 
-/** Reload systemd and enable+start the lox-watcher service. */
+/** Reload systemd and enable+(re)start the lox-watcher service. */
 export function buildServiceStartScript(): string {
   return [
     '#!/bin/bash',
     'set -euo pipefail',
     'sudo systemctl daemon-reload',
     'sudo systemctl enable lox-watcher',
-    'sudo systemctl start lox-watcher',
+    // `restart`, not `start` — same class of bug as #99. If step 11 runs
+    // a second time after the unit file or environment changed (new
+    // VAULT_PATH, new OPENAI_API_KEY, etc.), `start` is a no-op on an
+    // already-active service and the watcher keeps the old env loaded.
+    // `restart` correctly re-reads the unit file every time.
+    'sudo systemctl restart lox-watcher',
     '',
   ].join('\n');
 }

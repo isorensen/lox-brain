@@ -59,16 +59,28 @@ To reconfigure after installation, edit `~/.lox/config.json` directly or re-run 
 ```
 lox-brain/
   packages/
-    core/
+    shared/                # Constants, types, config (consumed by core + installer)
+      src/
+        config.ts
+        constants.ts       # LOX_VERSION (read dynamically from package.json)
+        types.ts
+    core/                  # Runs on the GCP VM
       src/
         lib/               # Embedding service, DB client
         mcp/               # MCP server (stdio transport)
         watcher/           # Vault watcher (chokidar)
+        scripts/           # index-vault, migrations
       tests/
-    cli/                   # CLI tool (lox status, lox migrate)
-    installer/             # Cross-platform installer
+    installer/             # Cross-platform setup wizard (Win/macOS/Linux)
+      src/
+        steps/             # step-*.ts — ordered install steps
+        utils/             # shell(), windows-acl, etc.
   docs/
-    plans/
+    plans/                 # Historical planning docs (pre-monorepo)
+    internal/              # Gitignored (strategy, pricing — not public)
+    zettelkasten/
+    superpowers/
+  ROADMAP.md               # Public roadmap (Phase 0-4)
 ```
 
 ## Security (Zero Trust)

@@ -24,9 +24,22 @@ export async function fixWindowsAcl(targetPath: string): Promise<void> {
   // otherwise produce a syntactically invalid `:F` principal).
   const username = (process.env.USERNAME?.trim() || process.env.USER?.trim());
   if (!username) return;
-  // NOTE: For domain users, icacls resolves the bare name to the
-  // domain account if no local account exists. Explicit DOMAIN\user
-  // is unnecessary for the typical single-user install scenario.
+  // Use DOMAIN\USERNAME format so icacls resolves the principal on
+  // BOTH domain-joined machines (USERDOMAIN = domain name) and
+  // workgroup machines (USERDOMAIN = computer name) (#113).
+  //
+  // Bare `USERNAME` fails SILENTLY on domain-joined boxes: icacls
+  // can't resolve bare `alice` to the full domain account
+  // `CORPNET\alice` (different SID), reports "successfully
+  // processed 1 file", but the ACE is never written.
+  // The user then loses read access to their own SSH key and
+  // OpenSSH rejects with `Load key "...": Permission denied`.
+  //
+  // USERDOMAIN is always set on Windows (standard Microsoft-populated
+  // env var) — fall back to bare USERNAME only if it's missing,
+  // which is the pre-#113 behavior for non-standard environments.
+  const userDomain = process.env.USERDOMAIN?.trim();
+  const principal = userDomain ? `${userDomain}\\${username}` : username;
   //
   // Three-step hardening (#101 follow-up):
   //   1. `/inheritance:r` — strip INHERITED ACEs from the parent dir
@@ -55,7 +68,7 @@ export async function fixWindowsAcl(targetPath: string): Promise<void> {
     } catch { /* principal may not be on this ACL */ }
   }
   try {
-    await shell('icacls', [targetPath, '/grant:r', `${username}:(F)`]);
+    await shell('icacls', [targetPath, '/grant:r', `${principal}:(F)`]);
   } catch {
     // Surfaced by the downstream operation if it still fails.
   }

@@ -462,15 +462,29 @@ export async function stepVault(ctx: InstallerContext): Promise<StepResult> {
     () => getGitHubUser(),
   );
 
+  // In team mode, ask for the GitHub org/owner and suggest an org-suffixed
+  // repo name (#144). Personal mode uses the authenticated user as owner.
+  let repoOwner = ghUser;
+  const orgSlug = ctx.config.license_org?.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-') ?? '';
+  let repoName = 'lox-vault';
+  if (ctx.config.mode === 'team' && orgSlug) {
+    repoName = `lox-vault-${orgSlug}`;
+    const ownerInput = await input({
+      message: 'GitHub org/owner for the vault repo:',
+      default: ghUser,
+      validate: (v: string) => /^[A-Za-z0-9._-]+$/.test(v.trim()) || 'Only letters, digits, dot, underscore, hyphen.',
+    });
+    repoOwner = ownerInput.trim();
+  }
+
   // Resolve a repo name: loop until we have either a missing name (to create)
   // or the user chooses to reuse an existing one. Supports re-runs where
   // lox-vault was already created by a prior attempt (see issue #59).
   // Iteration cap prevents an infinite loop for confused users.
-  let repoName = 'lox-vault';
   let action: 'create' | 'reuse' | 'cancel' = 'create';
   const MAX_ATTEMPTS = 10;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const fullCandidate = `${ghUser}/${repoName}`;
+    const fullCandidate = `${repoOwner}/${repoName}`;
     const exists = await withSpinner(
       `Checking if ${fullCandidate} exists...`,
       () => repoExists(fullCandidate),
@@ -479,7 +493,7 @@ export async function stepVault(ctx: InstallerContext): Promise<StepResult> {
       action = 'create';
       break;
     }
-    console.log(chalk.yellow(`  ⚠ Repo ${fullCandidate} already exists on your account.`));
+    console.log(chalk.yellow(`  ⚠ Repo ${fullCandidate} already exists.`));
     const choice = await select({
       message: 'How would you like to proceed?',
       choices: [
@@ -501,7 +515,7 @@ export async function stepVault(ctx: InstallerContext): Promise<StepResult> {
     return { success: false, message: 'Vault setup cancelled by user.' };
   }
 
-  const fullRepo = `${ghUser}/${repoName}`;
+  const fullRepo = `${repoOwner}/${repoName}`;
   // Resolve to an absolute path at creation (#122 review): makes subsequent
   // readdirSync / `git -C` calls CWD-independent and ensures diagnostic
   // error messages from verifyTemplatesCopied show an actionable path
@@ -688,7 +702,7 @@ export async function stepVault(ctx: InstallerContext): Promise<StepResult> {
       // its own shell metacharacters and fragments the command (#61).
       const { tmpdir } = await import('node:os');
       const setupScript = buildVmSetupScript({
-        githubUser: ghUser,
+        githubUser: repoOwner,
         repoName,
         patSecretName,
       });

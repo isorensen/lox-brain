@@ -4,7 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [0.7.1] — 2026-04-05
+## [0.7.2] — 2026-04-05
+
+### Added
+- **Ship `/sync-calendar` and `/para` Claude Skills (#85, PR 3/3).** `/sync-calendar` syncs Google Calendar events to Obsidian meeting notes with optional Gemini AI summary integration via Gmail. Calendar list, timezone, and folder structure are configurable via `~/.lox/config.json`. `/para` organizes content using the PARA method in three modes: ingest (classify + create), review (suggest reclassifications), and dashboard (generate bucket overviews). Both skills genericized — no hardcoded paths, emails, company names, or personal references. This completes the initial skill set proposed in #85.
+
+
 
 ### Added
 - **Ship `/obsidian-ingest` Claude Skill (#85, PR 2/3).** Ingest URLs, images, PDFs, and text into the Obsidian vault with semantic deduplication, content categorization, and structured note creation. 8-step workflow: read → check tags → check duplicates → categorize → preview → write → create MOCs → confirm. Folder routing adapts per vault preset (zettelkasten vs para). Supports PDF text extraction with fallback chain (pdftotext → pdfminer → pypdf). Genericized from personal skill — no hardcoded paths, company names, or personal references.

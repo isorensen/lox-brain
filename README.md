@@ -49,6 +49,7 @@ Claude Code --VPN--> MCP Server --> tools
 - **Text chunking** for large notes (4000 tokens, 200 overlap)
 - **Zero Trust security** -- no public IPs, VPN-only access, secrets in GCP Secret Manager
 - **Git sync** between local vault and VM (bidirectional, 2-min cron)
+- **Claude Skills** shipped out of the box (`/zettelkasten`, more coming) for day-one workflows
 - **CI/CD** via GitHub Actions (build, test, deploy over IAP tunnel)
 
 ## Quick Start
@@ -88,35 +89,42 @@ bash scripts/install.sh
 
 All search tools return metadata only by default. Use `read_note` to fetch full content after finding notes. Pagination parameters: `limit`, `offset`, `include_content`, `content_preview_length`.
 
-## CLI Commands
+## Claude Skills
 
-```bash
-lox status     # Check VM, database, and watcher health
-lox migrate    # Run pending database migrations
-```
+Lox ships with Claude Skills that provide opinionated workflows on top of the MCP tools. Installed automatically to `~/.claude/skills/` during setup.
+
+| Skill | Description |
+|-------|-------------|
+| `/zettelkasten` | Generate atomic smart notes from project codebases (3 modes: full scan, topic-focused, review) |
+| `/obsidian-ingest` | Ingest URLs, images, PDFs, and text into the vault with semantic deduplication and categorization |
+| `/sync-calendar` | Sync Google Calendar events to meeting notes, with optional Gemini AI summary integration |
+| `/para` | Organize content using the PARA method (Projects, Areas, Resources, Archives) |
 
 ## Monorepo Structure
 
 ```
 lox-brain/
   packages/
-    core/                  # Main application
-      src/
-        lib/               # Embedding service, DB client
-        mcp/               # MCP server (stdio transport)
-        watcher/           # Vault watcher (chokidar)
-      tests/
-    cli/                   # CLI tool (lox status, lox migrate)
-    installer/             # Cross-platform installer (install.sh, install.ps1)
+    shared/                # Constants, types, config
+    core/                  # MCP server, vault watcher, embedding service (runs on VM)
+    installer/             # Cross-platform setup wizard (runs locally)
+  skills/
+    zettelkasten/          # /zettelkasten Claude Skill
+    obsidian-ingest/       # /obsidian-ingest Claude Skill
+    sync-calendar/         # /sync-calendar Claude Skill
+    para/                  # /para Claude Skill
   docs/
     plans/                 # Design docs and implementation plan
+  templates/
+    para/                  # PARA vault template
+    zettelkasten/          # Zettelkasten vault template
   .github/
     workflows/             # CI/CD (build, test, deploy)
 ```
 
 ## Security (Zero Trust)
 
-- VM has **no public IP** -- all access via WireGuard VPN
+- VM public IP **restricted to VPN endpoint** (WireGuard UDP 51820 only)
 - PostgreSQL listens on **localhost only** (127.0.0.1)
 - Firewall: **deny-all** default, only UDP 51820 (WireGuard) open
 - SSH via **IAP tunnel only** (Google range 35.235.240.0/20)
@@ -171,6 +179,21 @@ for corporate teams. It is available under a commercial license.
 Personal mode (single user) is free and open source. Team mode (2+ users)
 requires a commercial license key. Contact eduardo@isorensen.dev for
 licensing inquiries.
+
+## Status
+
+Lox is under active development. The installer and infrastructure setup are being tested and refined. Breaking changes may occur between minor versions. Check the [CHANGELOG](CHANGELOG.md) and [releases](https://github.com/isorensen/lox-brain/releases) for details.
+
+## Disclaimer
+
+This software is provided "as-is" without warranty of any kind. By using Lox, you acknowledge that:
+
+- **You are responsible for your own data.** Lox stores personal notes, credentials, and API keys on infrastructure you provision. The authors are not responsible for any data loss, unauthorized access, or security incidents arising from misconfiguration, vulnerabilities, or misuse.
+- **GCP costs are your responsibility.** The installer provisions cloud resources (VMs, storage, networking) on your GCP account. Monitor your billing to avoid unexpected charges.
+- **No liability for data breaches.** While Lox follows Zero Trust security principles (VPN-only access, encrypted connections, least-privilege IAM), no system is immune to vulnerabilities. The authors disclaim all liability for personal or corporate data exposure.
+- **Review before deploying in production.** This project is designed for personal use. If you use it in a corporate or team environment, conduct your own security review.
+
+See the [MIT License](LICENSE) for the full legal terms.
 
 ## Contributing
 

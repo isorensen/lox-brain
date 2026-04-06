@@ -71,6 +71,19 @@ async function checkGh(): Promise<PrerequisiteResult> {
   }
 }
 
+async function checkClaudeCode(): Promise<PrerequisiteResult> {
+  try {
+    const { stdout } = await shell('claude', ['--version']);
+    return { name: 'Claude Code', installed: true, version: stdout };
+  } catch {
+    return {
+      name: 'Claude Code',
+      installed: false,
+      installCommand: 'npm install -g @anthropic-ai/claude-code',
+    };
+  }
+}
+
 async function checkWireGuard(): Promise<PrerequisiteResult> {
   try {
     const { stdout } = await shell('wg', ['--version']);
@@ -89,6 +102,7 @@ export async function checkAllPrerequisites(): Promise<PrerequisiteResult[]> {
     checkGit(),
     checkGcloud(),
     checkGh(),
+    checkClaudeCode(),
     checkWireGuard(),
   ]);
 }

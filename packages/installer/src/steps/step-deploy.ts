@@ -3,28 +3,17 @@ import { shell } from '../utils/shell.js';
 import { t } from '../i18n/index.js';
 import { renderStepHeader } from '../ui/box.js';
 import { withSpinner } from '../ui/spinner.js';
+import { promptForOpenAiKey, OPENAI_SECRET_NAME } from '../utils/openai-key.js';
 import type { InstallerContext, StepResult } from './types.js';
 
-const TOTAL_STEPS = 12;
-
 /**
- * Execute a command on the VM via SSH through IAP tunnel.
+ * Placeholder kept only as a last-resort fallback if the user skips the
+ * OpenAI API key prompt. The watcher cannot embed notes until this is
+ * replaced with a real key (see #84).
  */
-async function sshCommand(
-  vmName: string,
-  projectId: string,
-  zone: string,
-  command: string,
-): Promise<string> {
-  const { stdout } = await shell('gcloud', [
-    'compute', 'ssh', vmName,
-    '--project', projectId,
-    '--zone', zone,
-    '--tunnel-through-iap',
-    '--command', command,
-  ]);
-  return stdout;
-}
+export const OPENAI_KEY_PLACEHOLDER = '__REPLACE_FROM_SECRET_MANAGER__';
+
+const TOTAL_STEPS = 12;
 
 /**
  * Build the systemd unit file for the vault watcher service.
@@ -52,6 +41,338 @@ WantedBy=multi-user.target
 }
 
 /**
+ * Clone or update the lox-brain repo on the VM. Uses anonymous HTTPS against
+ * the public upstream so `gh` isn't required (see #73).
+ */
+export function buildCloneScript(installDir: string): string {
+  return [
+    '#!/bin/bash',
+    'set -euo pipefail',
+    `if [ -d "${installDir}" ]; then`,
+    `  cd "${installDir}"`,
+    '  git pull',
+    'else',
+    `  git clone https://github.com/isorensen/lox-brain.git "${installDir}"`,
+    'fi',
+    '',
+  ].join('\n');
+}
+
+/** Run npm ci + workspace build inside the install dir. */
+export function buildBuildScript(installDir: string): string {
+  return [
+    '#!/bin/bash',
+    'set -euo pipefail',
+    `cd "${installDir}"`,
+    'npm ci',
+    'npm run build --workspaces',
+    '',
+  ].join('\n');
+}
+
+/**
+ * Build the literal contents of /etc/lox/secrets.env — every line the
+ * lox-watcher and MCP server need at runtime.
+ *
+ * Exported so tests can lock the invariants that every field is present
+ * (PG_PASSWORD, VAULT_PATH, etc.) and uses the VM-side absolute paths
+ * rather than the user's local config. See #103 (missing PG_PASSWORD)
+ * and #104 (VAULT_PATH was using Obsidian local path).
+ */
+export interface SecretsEnvInput {
+  dbUser: string;
+  dbPassword: string;
+  dbHost: string;
+  dbPort: number;
+  dbName: string;
+  openaiKey: string;
+  /** MUST be an absolute POSIX path on the VM (e.g. /home/user/lox-vault) —
+   * systemd's EnvironmentFile doesn't expand `~`, and the user's local
+   * Obsidian path is irrelevant on the VM. */
+  vaultPath: string;
+}
+
+export function buildSecretsEnvContent(input: SecretsEnvInput): string {
+  return [
+    `DATABASE_URL=postgresql://${input.dbUser}@${input.dbHost}:${input.dbPort}/${input.dbName}?sslmode=require`,
+    // Plain password env var — node-postgres reads process.env.PG_PASSWORD
+    // via createPool() in packages/core/src/lib/create-pool.ts.
+    `PG_PASSWORD=${input.dbPassword}`,
+    `OPENAI_API_KEY=${input.openaiKey}`,
+    `VAULT_PATH=${input.vaultPath}`,
+    'NODE_ENV=production',
+    'LOG_LEVEL=info',
+  ].join('\n');
+}
+
+/**
+ * Write /etc/lox/secrets.env with tight perms. The env content is embedded
+ * verbatim via a quoted heredoc — the local temp script owns the whole
+ * payload so we never pass multi-line content through `gcloud --command`.
+ */
+export function buildSecretsEnvScript(envContent: string, user: string): string {
+  return [
+    '#!/bin/bash',
+    'set -euo pipefail',
+    'sudo mkdir -p /etc/lox',
+    "sudo tee /etc/lox/secrets.env > /dev/null <<'LOX_ENV_EOF'",
+    envContent,
+    'LOX_ENV_EOF',
+    'sudo chmod 600 /etc/lox/secrets.env',
+    `sudo chown ${user}:${user} /etc/lox/secrets.env`,
+    '',
+  ].join('\n');
+}
+
+/** Install the lox-watcher systemd unit. */
+export function buildSystemdInstallScript(watcherService: string): string {
+  // buildWatcherService() always ends with a newline; join('\n') adds another
+  // between content and LOX_UNIT_EOF, which produces a safe blank line
+  // before the delimiter. No trimming needed.
+  return [
+    '#!/bin/bash',
+    'set -euo pipefail',
+    "sudo tee /etc/systemd/system/lox-watcher.service > /dev/null <<'LOX_UNIT_EOF'",
+    watcherService,
+    'LOX_UNIT_EOF',
+    '',
+  ].join('\n');
+}
+
+/** Reload systemd and enable+(re)start the lox-watcher service. */
+export function buildServiceStartScript(): string {
+  return [
+    '#!/bin/bash',
+    'set -euo pipefail',
+    'sudo systemctl daemon-reload',
+    'sudo systemctl enable lox-watcher',
+    // `restart`, not `start` — same class of bug as #99. If step 11 runs
+    // a second time after the unit file or environment changed (new
+    // VAULT_PATH, new OPENAI_API_KEY, etc.), `start` is a no-op on an
+    // already-active service and the watcher keeps the old env loaded.
+    // `restart` correctly re-reads the unit file every time.
+    'sudo systemctl restart lox-watcher',
+    '',
+  ].join('\n');
+}
+
+/**
+ * Smoke-test the MCP server by sending it a `tools/list` JSON-RPC request
+ * and echoing the first response line. All pipes and redirects live inside
+ * the script, not in `gcloud --command`.
+ */
+export function buildMcpHealthProbeScript(installDir: string): string {
+  // Deliberately NO `set -euo pipefail` — a failing MCP server (pipefail)
+  // would abort before `head -1` reads any output, hiding diagnostic info
+  // from the caller which inspects stdout to decide health. The enclosing
+  // TypeScript wraps this call in try/catch and treats any throw as unhealthy.
+  //
+  // Load secrets so VAULT_PATH, OPENAI_API_KEY, PG_PASSWORD, etc. are present
+  // when the MCP server starts. The watcher gets these via systemd's
+  // EnvironmentFile= — this one-off probe must source them explicitly (#116).
+  // Guard with [ -f ] so a missing secrets.env falls through to "unhealthy"
+  // rather than aborting the script before the probe even runs.
+  return [
+    '#!/bin/bash',
+    `cd "${installDir}" || exit 1`,
+    '[ -f /etc/lox/secrets.env ] && { set -a; source /etc/lox/secrets.env; set +a; }',
+    'echo \'{"jsonrpc":"2.0","method":"tools/list","id":1}\' | timeout 10 node packages/core/dist/mcp/index.js 2>/dev/null | head -1',
+    '',
+  ].join('\n');
+}
+
+/**
+ * Patterns that indicate a transient SSH / IAP tunnel drop worth retrying.
+ * Sourced from real install failures and the gcloud / OpenSSH error corpus.
+ * Matched against the full error message (case-insensitive).
+ */
+const RETRYABLE_SSH_PATTERNS: readonly RegExp[] = [
+  /Remote side unexpectedly closed/i,
+  /Connection reset by peer/i,
+  /ECONNRESET/,
+  /kex_exchange_identification/i,
+  /Connection closed by remote host/i,
+  // GCP IAP tunnel closed by the relay (4003 = idle, 4033 = peer-closed).
+  // Anchor the IAP codes to avoid matching bare numbers in unrelated output.
+  /4003: The connection to the (instance|remote host) ended/i,
+  /\b4033\b.*tunnel|IAP.*\b4033\b/i,
+  /IAP Desktop.*tunnel/i,
+  /Operation timed out/i,
+  /Handshake failed/i,
+  // NOTE: "Connection refused" is deliberately NOT in this set. It
+  // usually means sshd is genuinely unavailable (VM stopped / booting /
+  // SSH disabled), and retrying 3× would just waste ~6s before surfacing
+  // the real problem to the user.
+];
+
+/**
+ * Return true if `err` looks like a transient SSH/IAP drop that's safe to
+ * retry. Exported for unit testing.
+ */
+export function isRetryableSshError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return RETRYABLE_SSH_PATTERNS.some((re) => re.test(msg));
+}
+
+const RETRY_DELAYS_MS: readonly number[] = [2_000, 4_000];
+
+/**
+ * Write `script` to a local temp file, scp it to the VM via IAP, execute it
+ * with `bash /tmp/lox-deploy-<phase>.sh`, and clean the local temp file.
+ *
+ * The remote `--command` value is always `bash <absolute-path>` — no shell
+ * metacharacters leak through cmd.exe on Windows (#61). The local path lives
+ * in os.tmpdir() and is always absolute (#64). Returns captured stdout so
+ * callers can inspect script output (used by the MCP health probe).
+ *
+ * Retries up to 3 times on transient IAP tunnel drops (#87). Each retry
+ * re-scps the script (cheap) and re-runs the ssh command. Non-transient
+ * errors (script bugs, auth failures, quota) fail immediately without retry.
+ */
+async function runRemoteScript(
+  projectId: string,
+  zone: string,
+  vmName: string,
+  phaseName: string,
+  script: string,
+  opts?: { timeout?: number },
+): Promise<string> {
+  const { writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const timeout = opts?.timeout ?? 300_000;
+
+  const localPath = join(tmpdir(), `lox-deploy-${phaseName}-${Date.now()}.sh`);
+  const remotePath = `/tmp/lox-deploy-${phaseName}.sh`;
+  // Append a self-delete line so the script removes itself from the VM
+  // after running — important for the secrets phase whose body embeds
+  // DATABASE_URL credentials. Doing it inside the script keeps the
+  // --command argument metachar-free (a separate `; rm ...` would defeat
+  // the whole point of this refactor on Windows cmd.exe).
+  const scriptWithCleanup = script.endsWith('\n')
+    ? `${script}rm -- "$0"\n`
+    : `${script}\nrm -- "$0"\n`;
+  // mode 0600 — the secrets phase embeds DATABASE_URL credentials into the
+  // script body, so the local tmp file must not be world-readable.
+  writeFileSync(localPath, scriptWithCleanup, { mode: 0o600 });
+
+  try {
+    let lastErr: unknown;
+    for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+      try {
+        await shell('gcloud', [
+          'compute', 'scp',
+          '--project', projectId,
+          '--zone', zone,
+          '--tunnel-through-iap',
+          localPath, `${vmName}:${remotePath}`,
+        ], { timeout });
+
+        const { stdout } = await shell('gcloud', [
+          'compute', 'ssh', vmName,
+          '--project', projectId,
+          '--zone', zone,
+          '--tunnel-through-iap',
+          '--command', `bash ${remotePath}`,
+        ], { timeout });
+
+        return stdout;
+      } catch (err) {
+        lastErr = err;
+        if (!isRetryableSshError(err) || attempt >= RETRY_DELAYS_MS.length) {
+          throw err;
+        }
+        const delay = RETRY_DELAYS_MS[attempt]!;
+        console.log(
+          chalk.yellow(
+            `  ⚠ SSH/IAP drop on phase "${phaseName}" (attempt ${attempt + 1}). Retrying in ${delay / 1000}s...`,
+          ),
+        );
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+    // Unreachable — the loop either returns or throws, but TS cannot infer it.
+    throw lastErr;
+  } finally {
+    try { rmSync(localPath, { force: true }); } catch { /* best-effort */ }
+  }
+}
+
+/**
+ * Parse `$USER:$HOME` output from the VM identity probe. Returns null if the
+ * output does not match the expected `user:/path` format.
+ */
+export function parseVmIdentity(output: string): { user: string; home: string } | null {
+  // Match `username:/absolute/path` — gcloud SSH may prepend MOTD banners or
+  // warnings, so we scan lines and pick the first one that matches the
+  // strict `user:/home/...` shape.
+  const re = /^([a-zA-Z0-9._-]+):(\/[^\s]*)$/;
+  for (const raw of output.split('\n')) {
+    const m = raw.trim().match(re);
+    if (m) {
+      return { user: m[1]!, home: m[2]! };
+    }
+  }
+  return null;
+}
+
+/** Script that echoes the VM's POSIX user and $HOME in `user:/home/path` form. */
+export function buildIdentityProbeScript(): string {
+  return [
+    '#!/bin/bash',
+    'set -euo pipefail',
+    'echo "${USER}:${HOME}"',
+    '',
+  ].join('\n');
+}
+
+/**
+ * SSH to the VM and capture `$USER:$HOME` via the scp+bash pattern (same as
+ * #70). Throws if the probe output cannot be parsed.
+ *
+ * Why: `ctx.gcpUsername` is derived from the email prefix, but GCP OS Login
+ * creates POSIX users as `<email-prefix>_<domain>_<tld>` (dots → underscores).
+ * Guessing the /home path from the email prefix makes `git clone` fail with
+ * "could not create leading directories" (see #79). We cannot pass
+ * `echo "$USER:$HOME"` via `--command` directly because on Windows cmd.exe
+ * reinterprets `$` and `"`, producing literal `$USER:$HOME` back — the exact
+ * class of bug the scp+bash refactor in #70 was introduced to prevent.
+ */
+async function resolveVmIdentity(
+  projectId: string,
+  zone: string,
+  vmName: string,
+): Promise<{ user: string; home: string }> {
+  const stdout = await runRemoteScript(
+    projectId, zone, vmName, 'identity', buildIdentityProbeScript(), { timeout: 60_000 },
+  );
+  const parsed = parseVmIdentity(stdout);
+  if (!parsed) {
+    throw new Error(`Could not parse VM identity from SSH probe output: ${JSON.stringify(stdout)}`);
+  }
+  return parsed;
+}
+
+/**
+ * Ensure `ctx.vmUser` and `ctx.vmHome` are set, resolving them via SSH if
+ * needed. Safe to call from any step — idempotent, caches on context.
+ */
+export async function ensureVmIdentity(
+  ctx: InstallerContext,
+  projectId: string,
+  zone: string,
+  vmName: string,
+): Promise<{ user: string; home: string }> {
+  if (ctx.vmUser && ctx.vmHome) {
+    return { user: ctx.vmUser, home: ctx.vmHome };
+  }
+  const identity = await resolveVmIdentity(projectId, zone, vmName);
+  ctx.vmUser = identity.user;
+  ctx.vmHome = identity.home;
+  return identity;
+}
+
+/**
  * Step 11: Deploy Lox Core to VM
  *
  * Clones the repo, builds, creates env file, installs systemd service,
@@ -64,31 +385,74 @@ export async function stepDeploy(ctx: InstallerContext): Promise<StepResult> {
   const projectId = ctx.gcpProjectId ?? 'lox-project';
   const vmName = ctx.config.gcp?.vm_name ?? 'lox-vm';
   const zone = ctx.config.gcp?.zone ?? 'us-east1-b';
-  const user = ctx.gcpUsername ?? 'lox';
-  const installDir = ctx.config.install_dir ?? `/home/${user}/lox-brain`;
-  const vaultPath = ctx.config.vault?.local_path ?? `/home/${user}/lox-vault`;
+
+  // Resolve the actual POSIX user + $HOME on the VM. Must not derive from the
+  // email — OS Login POSIX names differ from email prefixes (#79).
+  const { user, home: vmHome } = await withSpinner(
+    'Resolving VM user identity...',
+    () => ensureVmIdentity(ctx, projectId, zone, vmName),
+  );
+  const installDir = ctx.config.install_dir ?? `${vmHome}/lox-brain`;
+  // VM-side absolute path — NEVER reuse ctx.config.vault.local_path, which
+  // is the user's LOCAL Obsidian folder (e.g. ~/Obsidian/Lox on Windows).
+  // systemd's EnvironmentFile doesn't expand `~`, and the VM doesn't have
+  // the user's local Obsidian layout anyway. See #104.
+  const vaultPath = `${vmHome}/lox-vault`;
 
   // 1. Clone lox-brain repo on VM
   await withSpinner(
     'Cloning lox-brain repo on VM...',
-    async () => {
-      await sshCommand(vmName, projectId, zone,
-        `test -d ${installDir} && (cd ${installDir} && git pull) || gh repo clone lox-brain ${installDir}`,
-      );
-    },
+    () => runRemoteScript(projectId, zone, vmName, 'clone', buildCloneScript(installDir)),
   );
 
   // 2. Build on VM
   await withSpinner(
     'Building lox-brain on VM (npm ci && npm run build)...',
-    async () => {
-      await sshCommand(vmName, projectId, zone,
-        `cd ${installDir} && npm ci && npm run build --workspaces`,
-      );
-    },
+    () => runRemoteScript(projectId, zone, vmName, 'build', buildBuildScript(installDir), { timeout: 600_000 }),
   );
 
-  // 3. Create .env on VM from config (NOT in repo — in /etc/lox/secrets.env)
+  // 3. Collect the OpenAI API key interactively and upload to Secret
+  //    Manager (unless the user chose to skip or reuse an existing one).
+  //    Doing this BEFORE writing /etc/lox/secrets.env means the watcher
+  //    is ready to embed notes the moment the service starts (#84).
+  const openaiResult = await promptForOpenAiKey(projectId);
+  if (openaiResult.key !== null && openaiResult.source === 'new') {
+    console.log(chalk.green(`  ✓ ${strings.openai_saved_to_secret_manager}`));
+  }
+
+  // Fetch the DB password from Secret Manager BEFORE building secrets.env (#103).
+  // Step 7 (VM Setup) generated a random password, created the postgres user
+  // with it, and stored it as the `lox-db-password` secret. Without this line,
+  // /etc/lox/secrets.env never gets PG_PASSWORD and the watcher crash-loops on
+  // startup ("PG_PASSWORD environment variable or explicit password is required").
+  const dbPassword = await withSpinner(
+    'Fetching database password from Secret Manager...',
+    async () => {
+      const { stdout } = await shell('gcloud', [
+        'secrets', 'versions', 'access', 'latest',
+        '--secret', 'lox-db-password',
+        '--project', projectId,
+      ]);
+      return stdout.trim();
+    },
+  ).catch((err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    return { error: message };
+  });
+  if (typeof dbPassword !== 'string') {
+    return {
+      success: false,
+      actionable: true,
+      message:
+        `Could not read the DB password from Secret Manager (secret "lox-db-password").\n`
+        + `  ${dbPassword.error}\n\n`
+        + `This is populated by step 7 (VM Setup). To recover:\n`
+        + `  • Re-run the installer and pick "Step 7 (VM Setup)" in the resume prompt, OR\n`
+        + `  • Manually create it: gcloud secrets create lox-db-password --data-file=<file> --project=${projectId}`,
+    };
+  }
+
+  // 4. Create .env on VM from config (NOT in repo — in /etc/lox/secrets.env)
   await withSpinner(
     `${strings.configuring} secrets on VM...`,
     async () => {
@@ -97,43 +461,38 @@ export async function stepDeploy(ctx: InstallerContext): Promise<StepResult> {
       const dbHost = ctx.config.database?.host ?? '127.0.0.1';
       const dbPort = ctx.config.database?.port ?? 5432;
 
-      const envContent = [
-        `DATABASE_URL=postgresql://${dbUser}@${dbHost}:${dbPort}/${dbName}?sslmode=require`,
-        'OPENAI_API_KEY=__REPLACE_FROM_SECRET_MANAGER__',
-        `VAULT_PATH=${vaultPath}`,
-        'NODE_ENV=production',
-        'LOG_LEVEL=info',
-      ].join('\n');
+      const envContent = buildSecretsEnvContent({
+        dbUser,
+        dbPassword,
+        dbHost,
+        dbPort,
+        dbName,
+        openaiKey: openaiResult.key ?? OPENAI_KEY_PLACEHOLDER,
+        vaultPath,
+      });
 
-      // Create /etc/lox directory and write secrets.env (requires sudo)
-      await sshCommand(vmName, projectId, zone,
-        `sudo mkdir -p /etc/lox && cat > /tmp/lox-env <<'ENVEOF'\n${envContent}\nENVEOF\nsudo mv /tmp/lox-env /etc/lox/secrets.env && sudo chmod 600 /etc/lox/secrets.env && sudo chown ${user}:${user} /etc/lox/secrets.env`,
-      );
+      await runRemoteScript(projectId, zone, vmName, 'secrets', buildSecretsEnvScript(envContent, user));
     },
   );
 
-  console.log(chalk.yellow('  → IMPORTANT: Replace OPENAI_API_KEY in /etc/lox/secrets.env'));
-  console.log(chalk.yellow('    Use: gcloud secrets versions access latest --secret=openai-api-key'));
+  if (openaiResult.key === null) {
+    console.log(chalk.yellow(`  ⚠ ${strings.openai_skipped_warning}`));
+    console.log(chalk.yellow(`    Use: gcloud secrets versions access latest --secret=${OPENAI_SECRET_NAME}`));
+  }
 
   // 4. Install systemd service
   await withSpinner(
     'Installing lox-watcher systemd service...',
     async () => {
       const watcherService = buildWatcherService(user, installDir);
-      await sshCommand(vmName, projectId, zone,
-        `echo '${watcherService}' | sudo tee /etc/systemd/system/lox-watcher.service > /dev/null`,
-      );
+      await runRemoteScript(projectId, zone, vmName, 'systemd-install', buildSystemdInstallScript(watcherService));
     },
   );
 
   // 5. Enable and start watcher service
   await withSpinner(
     'Starting lox-watcher service...',
-    async () => {
-      await sshCommand(vmName, projectId, zone,
-        'sudo systemctl daemon-reload && sudo systemctl enable lox-watcher && sudo systemctl start lox-watcher',
-      );
-    },
+    () => runRemoteScript(projectId, zone, vmName, 'service-start', buildServiceStartScript()),
   );
 
   // 6. Test MCP server with a JSON-RPC test call
@@ -141,9 +500,7 @@ export async function stepDeploy(ctx: InstallerContext): Promise<StepResult> {
     'Testing MCP server...',
     async () => {
       try {
-        const result = await sshCommand(vmName, projectId, zone,
-          `echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | timeout 10 node ${installDir}/packages/core/dist/mcp/index.js 2>/dev/null | head -1`,
-        );
+        const result = await runRemoteScript(projectId, zone, vmName, 'mcp-probe', buildMcpHealthProbeScript(installDir), { timeout: 60_000 });
         return result.includes('"jsonrpc"');
       } catch {
         return false;

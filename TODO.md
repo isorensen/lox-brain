@@ -16,6 +16,13 @@
 
 ## Future Integrations
 
+### Claude Code Skills examples (bundle with the project)
+- **Priority:** Medium
+- **Complexity:** Low-Medium
+- Evaluate shipping a small set of example Claude Code skills alongside the MCP server so users can install them with a single command.
+- Rationale: Lox already exposes semantic+text search + note write/read via MCP. Skills would add reusable workflows on top (e.g. "daily note", "zettelkasten capture", "inbox triage", "weekly review"), making the combo **MCP Server + Obsidian + Claude Code Skills** a more opinionated Second-Brain toolkit.
+- Deliverables to scope: `examples/skills/` folder with 3-5 starter skills, docs on installing them into `~/.claude/skills/`, optional `lox skills install` CLI command.
+
 ### Telegram Bot (ingestão interativa via celular)
 - **Priority:** Medium
 - **Complexity:** Medium — API oficial, gratuita, sem risco de ban

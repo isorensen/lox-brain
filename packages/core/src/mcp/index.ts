@@ -116,6 +116,13 @@ async function loadTeamFeatures(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  try {
+    await dbClient.reindexEmbeddings();
+    console.error('Reindexed ivfflat embedding index');
+  } catch (err) {
+    console.error('Warning: failed to reindex embedding index:', err instanceof Error ? err.message : err);
+  }
+
   await loadTeamFeatures();
 
   const transportConfig = getTransportConfig();

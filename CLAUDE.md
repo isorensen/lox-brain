@@ -59,16 +59,28 @@ To reconfigure after installation, edit `~/.lox/config.json` directly or re-run 
 ```
 lox-brain/
   packages/
-    core/
+    shared/                # Constants, types, config (consumed by core + installer)
+      src/
+        config.ts
+        constants.ts       # LOX_VERSION (read dynamically from package.json)
+        types.ts
+    core/                  # Runs on the GCP VM
       src/
         lib/               # Embedding service, DB client
         mcp/               # MCP server (stdio transport)
         watcher/           # Vault watcher (chokidar)
+        scripts/           # index-vault, migrations
       tests/
-    cli/                   # CLI tool (lox status, lox migrate)
-    installer/             # Cross-platform installer
+    installer/             # Cross-platform setup wizard (Win/macOS/Linux)
+      src/
+        steps/             # step-*.ts — ordered install steps
+        utils/             # shell(), windows-acl, etc.
   docs/
-    plans/
+    plans/                 # Historical planning docs (pre-monorepo)
+    internal/              # Gitignored (strategy, pricing — not public)
+    zettelkasten/
+    superpowers/
+  ROADMAP.md               # Public roadmap (Phase 0-4)
 ```
 
 ## Security (Zero Trust)
@@ -123,6 +135,8 @@ Table `vault_embeddings`: `id` (UUID PK), `file_path` (TEXT UNIQUE), `title`, `c
 - Commit messages: imperative mood ("Add feature", not "Added feature")
 - TDD cycle: write test first, implement after
 - Update README.md, CHANGELOG.md, TODO.md after each delivery
+- **Versioning (SemVer):** Every PR must include a version bump in all `package.json` files (root + packages/*). Patch for fixes, minor for features, major for breaking changes. Update CHANGELOG.md with the new version entry.
+- **GitHub Releases:** After merging a PR, create a GitHub Release with tag `vX.Y.Z` (e.g., `v0.1.1`). Use the CHANGELOG entry as the release notes body.
 
 ## Contributing
 

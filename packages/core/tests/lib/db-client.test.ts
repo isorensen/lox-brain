@@ -478,6 +478,33 @@ describe('DbClient', () => {
     });
   });
 
+  describe('reindexEmbeddings', () => {
+    it('should look up ivfflat index name and reindex it', async () => {
+      mockPool.query
+        .mockResolvedValueOnce({ rows: [{ indexname: 'idx_embedding' }] })
+        .mockResolvedValueOnce({ rowCount: 0 });
+
+      await client.reindexEmbeddings();
+
+      expect(mockPool.query).toHaveBeenCalledTimes(2);
+      expect(mockPool.query.mock.calls[0][0]).toContain('pg_indexes');
+      expect(mockPool.query.mock.calls[1][0]).toBe('REINDEX INDEX idx_embedding');
+    });
+
+    it('should skip reindex when no ivfflat index exists', async () => {
+      mockPool.query.mockResolvedValueOnce({ rows: [] });
+
+      await client.reindexEmbeddings();
+
+      expect(mockPool.query).toHaveBeenCalledTimes(1);
+    });
+
+    it('should propagate pool.query rejection', async () => {
+      mockPool.query.mockRejectedValue(new Error('permission denied'));
+      await expect(client.reindexEmbeddings()).rejects.toThrow('permission denied');
+    });
+  });
+
   describe('searchText with SearchOptions', () => {
     it('should accept SearchOptions as third parameter', async () => {
       mockPool.query.mockResolvedValue({ rows: [] });

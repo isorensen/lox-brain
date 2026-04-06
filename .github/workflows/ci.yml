@@ -6,7 +6,10 @@ on:
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -24,8 +27,19 @@ jobs:
           npm run build --workspace=packages/core
           npm run build --workspace=packages/installer
 
-      - name: Test with coverage
+      - name: Type check
+        run: |
+          npx tsc --noEmit --project packages/shared/tsconfig.json
+          npx tsc --noEmit --project packages/core/tsconfig.json
+          npx tsc --noEmit --project packages/installer/tsconfig.json
+
+      - name: Test
+        run: npm run test --workspaces
+
+      - name: Test with coverage (ubuntu only)
+        if: matrix.os == 'ubuntu-latest'
         run: npm run test:coverage --workspace=packages/core
 
-      - name: Security audit
+      - name: Security audit (ubuntu only)
+        if: matrix.os == 'ubuntu-latest'
         run: npm audit --audit-level=high

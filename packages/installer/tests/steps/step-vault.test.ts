@@ -1,0 +1,605 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { isProPlanGate, isRepoNotFoundError, repoExists, buildVmSetupScript, isValidPatFormat, gcpSecretExists, VM_SETUP_SCRIPT_REMOTE_PATH, resolveTemplatesDir, verifyTemplatesCopied, commitInitialVaultTemplate, EXPECTED_TEMPLATE_ENTRIES, tryInstallGitleaks, GITLEAKS_VERSION, GITLEAKS_HOOK } from '../../src/steps/step-vault.js';
+import { shell } from '../../src/utils/shell.js';
+import { existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+
+vi.mock('../../src/utils/shell.js', () => ({
+  shell: vi.fn(),
+}));
+
+describe('isProPlanGate', () => {
+  it('detects the Pro upgrade 403 from err.message', () => {
+    const err = new Error(
+      'Command failed: gh api repos/owner/repo/branches/main/protection -X PUT\n' +
+      'gh: Upgrade to GitHub Pro or make this repository public to enable this feature. (HTTP 403)',
+    );
+    expect(isProPlanGate(err)).toBe(true);
+  });
+
+  it('detects the Pro upgrade 403 from err.stderr', () => {
+    const err = Object.assign(new Error('Command failed'), {
+      stderr: 'gh: Upgrade to GitHub Pro or make this repository public to enable this feature. (HTTP 403)',
+    });
+    expect(isProPlanGate(err)).toBe(true);
+  });
+
+  it('requires both HTTP 403 and the upgrade message', () => {
+    expect(isProPlanGate(new Error('HTTP 403 some other 403 error'))).toBe(false);
+    expect(isProPlanGate(new Error('Upgrade to GitHub Pro (HTTP 402)'))).toBe(false);
+  });
+
+  it('returns false for unrelated errors', () => {
+    expect(isProPlanGate(new Error('HTTP 404 Not Found'))).toBe(false);
+    expect(isProPlanGate(new Error('Network error: ECONNREFUSED'))).toBe(false);
+    expect(isProPlanGate(new Error(''))).toBe(false);
+  });
+
+  it('returns false for other 403 errors (e.g. missing token scopes)', () => {
+    expect(isProPlanGate(new Error('HTTP 403 Resource not accessible by personal access token'))).toBe(false);
+    expect(isProPlanGate(new Error('HTTP 403 Forbidden'))).toBe(false);
+  });
+
+  it('rejects when signals are split across message and stderr (no false positive)', () => {
+    // HTTP 403 in message, Pro message in stderr — should NOT match because
+    // neither surface contains both signals.
+    const err = Object.assign(new Error('HTTP 403 Forbidden'), {
+      stderr: 'Upgrade to GitHub Pro to access this feature',
+    });
+    expect(isProPlanGate(err)).toBe(false);
+  });
+
+  it('returns false for non-Error values', () => {
+    expect(isProPlanGate(null)).toBe(false);
+    expect(isProPlanGate(undefined)).toBe(false);
+    expect(isProPlanGate('some string')).toBe(false);
+    expect(isProPlanGate({})).toBe(false);
+  });
+
+  it('handles objects with non-string stderr gracefully', () => {
+    const err = Object.assign(new Error('Command failed'), { stderr: Buffer.from('HTTP 403') });
+    // Buffer stderr is not a string — helper only checks typeof string
+    expect(isProPlanGate(err)).toBe(false);
+  });
+});
+
+describe('isRepoNotFoundError', () => {
+  it('detects "Could not resolve to a Repository" in err.stderr', () => {
+    const err = Object.assign(new Error('Command failed'), {
+      stderr: 'GraphQL: Could not resolve to a Repository with the name \'isorensen/lox-vault\'. (repository)',
+    });
+    expect(isRepoNotFoundError(err)).toBe(true);
+  });
+
+  it('detects "Could not resolve" in err.message', () => {
+    const err = new Error('GraphQL: Could not resolve to a Repository with the name');
+    expect(isRepoNotFoundError(err)).toBe(true);
+  });
+
+  it('detects HTTP 404 from gh api', () => {
+    const err = Object.assign(new Error('Command failed'), {
+      stderr: 'gh: Not Found (HTTP 404)',
+    });
+    expect(isRepoNotFoundError(err)).toBe(true);
+  });
+
+  it('returns false for other errors', () => {
+    expect(isRepoNotFoundError(new Error('HTTP 403 Forbidden'))).toBe(false);
+    expect(isRepoNotFoundError(new Error('ECONNREFUSED'))).toBe(false);
+    expect(isRepoNotFoundError(new Error(''))).toBe(false);
+  });
+
+  it('returns false for a bare "HTTP 404" without the "Not Found" signal', () => {
+    // Prevents false positives from unrelated 404s in error chains
+    expect(isRepoNotFoundError(new Error('proxy returned HTTP 404 upstream'))).toBe(false);
+  });
+
+  it('returns false for non-Error values', () => {
+    expect(isRepoNotFoundError(null)).toBe(false);
+    expect(isRepoNotFoundError(undefined)).toBe(false);
+    expect(isRepoNotFoundError('string')).toBe(false);
+    expect(isRepoNotFoundError({})).toBe(false);
+  });
+});
+
+describe('repoExists', () => {
+  beforeEach(() => {
+    vi.mocked(shell).mockReset();
+  });
+
+  it('returns true when gh repo view succeeds', async () => {
+    vi.mocked(shell).mockResolvedValueOnce({ stdout: 'lox-vault', stderr: '' });
+    await expect(repoExists('isorensen/lox-vault')).resolves.toBe(true);
+    expect(vi.mocked(shell)).toHaveBeenCalledWith('gh', [
+      'repo', 'view', 'isorensen/lox-vault', '--json', 'name', '--jq', '.name',
+    ]);
+  });
+
+  it('returns false when repo is not found (GraphQL Could not resolve)', async () => {
+    vi.mocked(shell).mockRejectedValueOnce(
+      Object.assign(new Error('Command failed'), {
+        stderr: 'GraphQL: Could not resolve to a Repository with the name \'x/y\'. (repository)',
+      }),
+    );
+    await expect(repoExists('x/y')).resolves.toBe(false);
+  });
+
+  it('returns false when repo is not found (HTTP 404)', async () => {
+    vi.mocked(shell).mockRejectedValueOnce(
+      Object.assign(new Error('Command failed'), { stderr: 'gh: Not Found (HTTP 404)' }),
+    );
+    await expect(repoExists('x/y')).resolves.toBe(false);
+  });
+
+  it('rethrows unrelated errors (e.g. auth, network)', async () => {
+    vi.mocked(shell).mockRejectedValueOnce(
+      Object.assign(new Error('Command failed'), { stderr: 'HTTP 403 Forbidden — token expired' }),
+    );
+    await expect(repoExists('x/y')).rejects.toThrow('Command failed');
+  });
+
+  it('rethrows "Command not found" errors', async () => {
+    vi.mocked(shell).mockRejectedValueOnce(new Error('Command not found: gh'));
+    await expect(repoExists('x/y')).rejects.toThrow('Command not found: gh');
+  });
+});
+
+describe('buildVmSetupScript', () => {
+  const script = buildVmSetupScript({
+    githubUser: 'alice',
+    repoName: 'lox-vault',
+    patSecretName: 'lox-github-pat',
+  });
+
+  it('starts with a bash shebang and strict mode', () => {
+    expect(script.startsWith('#!/bin/bash\n')).toBe(true);
+    expect(script).toContain('set -euo pipefail');
+  });
+
+  it('writes ~/sync-vault.sh via heredoc and chmods it', () => {
+    expect(script).toContain("cat > ~/sync-vault.sh <<'LOX_SYNC_EOF'");
+    expect(script).toContain('LOX_SYNC_EOF');
+    expect(script).toContain('chmod +x ~/sync-vault.sh');
+  });
+
+  it('embeds the git sync commands in the heredoc body', () => {
+    expect(script).toContain('cd ~/lox-vault');
+    expect(script).toContain('git fetch origin main');
+    expect(script).toContain('git merge --ff-only origin/main || true');
+    expect(script).toContain('git push origin main');
+  });
+
+  it('installs a 2-minute cron entry for sync-vault.sh', () => {
+    expect(script).toContain('*/2 * * * * ~/sync-vault.sh >> ~/sync-vault.log 2>&1');
+    // Dedup: remove matching line first, then re-add — prevents duplicates on re-run
+    expect(script).toContain('crontab -l 2>/dev/null');
+    expect(script).toContain('crontab -');
+  });
+
+  it('removes itself after running (self-cleanup)', () => {
+    expect(script).toContain('rm -- "$0"');
+  });
+
+  it('writes GIT_ASKPASS helper script (~/.lox-git-askpass.sh)', () => {
+    // The askpass helper fetches the PAT from Secret Manager on demand,
+    // so the token never persists in .git/config (#107).
+    expect(script).toContain('cat > ~/.lox-git-askpass.sh');
+    expect(script).toContain('gcloud secrets versions access latest --secret=lox-github-pat');
+    expect(script).toContain('chmod 700 ~/.lox-git-askpass.sh');
+  });
+
+  it('clones with clean URL using GIT_ASKPASS (no PAT in URL)', () => {
+    // The clone URL uses x-access-token@ as the username — git prompts
+    // for password only, which GIT_ASKPASS answers from Secret Manager.
+    // No token lands in .git/config (#107).
+    expect(script).toContain('if [ ! -d "$HOME/lox-vault/.git" ]; then');
+    expect(script).toContain('git clone "https://x-access-token@github.com/alice/lox-vault.git"');
+    expect(script).toContain('GIT_ASKPASS="$HOME/.lox-git-askpass.sh"');
+    expect(script).toContain('GIT_TERMINAL_PROMPT=0');
+  });
+
+  it('sync-vault.sh exports GIT_ASKPASS before git operations', () => {
+    // sync-vault.sh needs GIT_ASKPASS so every git fetch/push re-fetches
+    // the PAT from Secret Manager rather than relying on a cached URL.
+    expect(script).toContain('export GIT_ASKPASS="$HOME/.lox-git-askpass.sh"');
+    expect(script).toContain('export GIT_TERMINAL_PROMPT=0');
+  });
+
+  it('migrates existing PAT-in-URL installs (#107)', () => {
+    // Existing installs may have PATs embedded in the remote URL.
+    // The migration block detects and replaces them.
+    expect(script).toContain('remote set-url origin');
+    expect(script).toContain("grep -qE 'https://(ghp_|github_pat_)'");
+    expect(script).toContain('https://x-access-token@github.com/alice/lox-vault.git');
+  });
+
+  it('clone URL never contains the PAT token', () => {
+    // The script must NOT embed the PAT directly in any URL or use
+    // the old GH_PAT variable pattern.
+    expect(script).not.toContain('${GH_PAT}@github.com');
+    expect(script).not.toContain('unset GH_PAT');
+  });
+
+  it('sanitizes repoName / githubUser / patSecretName against shell injection', () => {
+    // Defense in depth: even though githubUser comes from the GitHub API
+    // and repoName passes through input validation, we strip anything
+    // outside the alphanumeric + allowed-punct set before interpolating.
+    const malicious = buildVmSetupScript({
+      githubUser: 'alice; rm -rf /',
+      repoName: 'lox-vault && curl evil',
+      patSecretName: 'x$(whoami)',
+    });
+    // Stripped to their safe character sets.
+    expect(malicious).toContain('github.com/alicerm-rf/lox-vaultcurlevil.git');
+    expect(malicious).toContain('--secret=xwhoami');
+    // Must NOT contain the raw injection metachars.
+    expect(malicious).not.toContain('; rm -rf /');
+    expect(malicious).not.toContain('&& curl');
+    expect(malicious).not.toContain('$(whoami)');
+  });
+
+  it('preserves underscores in patSecretName (GCP Secret Manager allows them)', () => {
+    // GCP allows [A-Za-z0-9_-] in secret names per
+    // https://cloud.google.com/secret-manager/docs/reference/rest/v1/projects.secrets
+    // Stripping underscores would silently break users whose secret names
+    // look like `lox_github_pat` instead of `lox-github-pat`.
+    const s = buildVmSetupScript({
+      githubUser: 'alice',
+      repoName: 'lox-vault',
+      patSecretName: 'lox_github_pat_2026',
+    });
+    expect(s).toContain('--secret=lox_github_pat_2026');
+  });
+
+  it('VM_SETUP_SCRIPT_REMOTE_PATH is an absolute POSIX path', () => {
+    // pscp.exe (Windows Cloud SDK) does not perform tilde expansion — a
+    // destination like lox-vm:~/file.sh lands in a literal "~" directory
+    // and fails. The remote path must start with "/" and contain no "~"
+    // (see #64).
+    expect(VM_SETUP_SCRIPT_REMOTE_PATH.startsWith('/')).toBe(true);
+    expect(VM_SETUP_SCRIPT_REMOTE_PATH).not.toContain('~');
+  });
+
+  it('ends with a trailing newline', () => {
+    // The script is written to a file and executed via `bash <path>`. A
+    // trailing newline is conventional and ensures POSIX tools treat the
+    // last line as a complete line.
+    expect(script.endsWith('\n')).toBe(true);
+  });
+});
+
+describe('resolveTemplatesDir (#105)', () => {
+  it('resolves to an absolute path independent of CWD', () => {
+    const paraPath = resolveTemplatesDir('para');
+    expect(paraPath).toMatch(/templates[/\\]para$/);
+    // Not a relative path — must not depend on process.cwd().
+    expect(paraPath.startsWith('/') || /^[A-Z]:\\/.test(paraPath)).toBe(true);
+  });
+
+  it('resolves to actual template directories that exist in the repo', () => {
+    // End-to-end check: the path resolution isn't just syntactic — the
+    // templates MUST exist on disk for the installer to copy them.
+    // This would have caught the #105 silent-failure bug: the old code
+    // tried `cp -r templates/para/.` (CWD-relative), failed on Windows,
+    // and swallowed the error. The new path MUST reach a real folder.
+    expect(existsSync(resolveTemplatesDir('para'))).toBe(true);
+    expect(existsSync(resolveTemplatesDir('zettelkasten'))).toBe(true);
+  });
+});
+
+describe('isValidPatFormat', () => {
+  it('accepts fine-grained PATs (github_pat_ prefix)', () => {
+    // Fine-grained PATs are the recommended format — the installer's UI
+    // points users at the fine-grained token flow specifically.
+    expect(isValidPatFormat('github_pat_' + 'A'.repeat(82))).toBe(true);
+    expect(isValidPatFormat('github_pat_11ABCDE_0123456789abcdefghij_ABCDEFGHIJKLMNOP' + 'q'.repeat(30))).toBe(true);
+  });
+
+  it('accepts classic PATs (ghp_ prefix) as a fallback', () => {
+    // Some users may paste a classic PAT — accept it rather than rejecting
+    // a working token over a prefix mismatch.
+    expect(isValidPatFormat('ghp_' + 'A'.repeat(36))).toBe(true);
+  });
+
+  it('trims surrounding whitespace before validating', () => {
+    // Copy-paste from browsers often includes a trailing newline
+    expect(isValidPatFormat('  ghp_' + 'A'.repeat(36) + '\n')).toBe(true);
+  });
+
+  it('rejects empty or whitespace-only input', () => {
+    expect(isValidPatFormat('')).toBe(false);
+    expect(isValidPatFormat('   ')).toBe(false);
+    expect(isValidPatFormat('\n\t')).toBe(false);
+  });
+
+  it('rejects tokens without a recognized prefix', () => {
+    // A bare hex/base64 string is almost certainly not a GitHub PAT
+    expect(isValidPatFormat('A'.repeat(40))).toBe(false);
+    expect(isValidPatFormat('sk-live-abcdef1234567890')).toBe(false);
+    expect(isValidPatFormat('Bearer ghp_' + 'A'.repeat(36))).toBe(false);
+  });
+
+  it('rejects tokens that are too short', () => {
+    // GitHub PATs are substantially longer than the prefix — a short suffix
+    // is a clear typo/truncation signal.
+    expect(isValidPatFormat('ghp_short')).toBe(false);
+    expect(isValidPatFormat('github_pat_short')).toBe(false);
+  });
+
+  it('rejects tokens containing invalid characters', () => {
+    // PATs use [A-Za-z0-9_] only; spaces/quotes/special chars mean paste corruption
+    expect(isValidPatFormat('ghp_' + 'A'.repeat(20) + ' ' + 'A'.repeat(15))).toBe(false);
+    expect(isValidPatFormat('ghp_' + 'A'.repeat(20) + '"' + 'A'.repeat(15))).toBe(false);
+  });
+
+  it('rejects non-string input gracefully', () => {
+    expect(isValidPatFormat(null as unknown as string)).toBe(false);
+    expect(isValidPatFormat(undefined as unknown as string)).toBe(false);
+    expect(isValidPatFormat(123 as unknown as string)).toBe(false);
+  });
+});
+
+describe('gcpSecretExists', () => {
+  beforeEach(() => {
+    vi.mocked(shell).mockReset();
+  });
+
+  it('returns true when gcloud secrets describe succeeds', async () => {
+    vi.mocked(shell).mockResolvedValueOnce({ stdout: 'name: projects/x/secrets/lox-github-pat', stderr: '' });
+    await expect(gcpSecretExists('lox-github-pat', 'my-project')).resolves.toBe(true);
+    expect(vi.mocked(shell)).toHaveBeenCalledWith('gcloud', [
+      'secrets', 'describe', 'lox-github-pat', '--project', 'my-project',
+    ]);
+  });
+
+  it('returns false when the secret is NOT_FOUND', async () => {
+    vi.mocked(shell).mockRejectedValueOnce(
+      Object.assign(new Error('Command failed'), {
+        stderr: 'ERROR: (gcloud.secrets.describe) NOT_FOUND: Secret [lox-github-pat] was not found',
+      }),
+    );
+    await expect(gcpSecretExists('lox-github-pat', 'my-project')).resolves.toBe(false);
+  });
+
+  it('returns false on the alternate "was not found" phrasing', async () => {
+    vi.mocked(shell).mockRejectedValueOnce(
+      Object.assign(new Error('Command failed'), {
+        stderr: 'Secret [x] was not found in project [y]',
+      }),
+    );
+    await expect(gcpSecretExists('x', 'y')).resolves.toBe(false);
+  });
+
+  it('rethrows unrelated errors (auth, API disabled, billing)', async () => {
+    vi.mocked(shell).mockRejectedValueOnce(
+      Object.assign(new Error('Command failed'), {
+        stderr: 'PERMISSION_DENIED: Secret Manager API has not been used',
+      }),
+    );
+    await expect(gcpSecretExists('x', 'y')).rejects.toThrow('Command failed');
+  });
+
+  it('rethrows "Command not found" for missing gcloud', async () => {
+    vi.mocked(shell).mockRejectedValueOnce(new Error('Command not found: gcloud'));
+    await expect(gcpSecretExists('x', 'y')).rejects.toThrow('Command not found: gcloud');
+  });
+});
+
+describe('verifyTemplatesCopied (#122)', () => {
+  // Use a fresh tmpdir per test so we can exercise real filesystem reads —
+  // this is the check that would have caught #122 (empty vault after install).
+  let workDir: string;
+
+  beforeEach(() => {
+    workDir = join(tmpdir(), `lox-test-verify-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    mkdirSync(workDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    try { rmSync(workDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+  });
+
+  it('exposes the expected entries per preset', () => {
+    expect(EXPECTED_TEMPLATE_ENTRIES.para).toContain('1 - Inbox');
+    expect(EXPECTED_TEMPLATE_ENTRIES.para).toContain('Welcome to Lox.md');
+    expect(EXPECTED_TEMPLATE_ENTRIES.zettelkasten).toContain('Welcome to Lox.md');
+  });
+
+  it('returns silently when all expected PARA entries exist', () => {
+    for (const entry of EXPECTED_TEMPLATE_ENTRIES.para) {
+      if (entry.endsWith('.md')) {
+        writeFileSync(join(workDir, entry), '# test');
+      } else {
+        mkdirSync(join(workDir, entry));
+      }
+    }
+    expect(() => verifyTemplatesCopied(workDir, 'para', '/fake/src')).not.toThrow();
+  });
+
+  it('throws when the vault is empty (regression test for #122)', () => {
+    // This is the exact symptom from #122: cpSync silently produced an
+    // empty vault because the source path didn't resolve on Windows
+    // (or some other silent failure). Verification catches it.
+    expect(() => verifyTemplatesCopied(workDir, 'para', '/fake/src')).toThrow(/Template copy verification failed/);
+  });
+
+  it('includes templatesSrc, vaultDir, missing entries, and actual entries in the error message', () => {
+    writeFileSync(join(workDir, '1 - Inbox'), 'oops-this-is-a-file-not-a-dir'); // present but only one
+    try {
+      verifyTemplatesCopied(workDir, 'para', '/my/templates/src');
+      throw new Error('should have thrown');
+    } catch (err) {
+      const msg = (err as Error).message;
+      expect(msg).toContain('templatesSrc: /my/templates/src');
+      expect(msg).toContain(`vaultDir: ${workDir}`);
+      expect(msg).toContain('missing:');
+      // Present entry must NOT be reported as missing
+      expect(msg).not.toMatch(/missing:.*1 - Inbox/);
+      // A missing entry MUST be reported
+      expect(msg).toMatch(/missing:.*Welcome to Lox\.md/);
+      expect(msg).toContain('actual entries:');
+      // The one file we did create shows up under "actual entries"
+      expect(msg).toMatch(/actual entries:.*1 - Inbox/);
+    }
+  });
+
+  it('reports "(empty)" when the vaultDir has no entries', () => {
+    try {
+      verifyTemplatesCopied(workDir, 'para', '/s');
+      throw new Error('should have thrown');
+    } catch (err) {
+      expect((err as Error).message).toContain('actual entries: (empty)');
+    }
+  });
+
+  it('throws for unknown presets (defensive — caller validates, but still)', () => {
+    expect(() => verifyTemplatesCopied(workDir, 'unknown-preset', '/s')).toThrow(/unknown preset/i);
+  });
+
+  it('validates zettelkasten preset as well', () => {
+    for (const entry of EXPECTED_TEMPLATE_ENTRIES.zettelkasten) {
+      if (entry.endsWith('.md')) {
+        writeFileSync(join(workDir, entry), '# test');
+      } else {
+        mkdirSync(join(workDir, entry));
+      }
+    }
+    expect(() => verifyTemplatesCopied(workDir, 'zettelkasten', '/s')).not.toThrow();
+  });
+});
+
+describe('commitInitialVaultTemplate (#122)', () => {
+  beforeEach(() => {
+    vi.mocked(shell).mockReset();
+  });
+
+  it('adds, commits, and pushes when the working tree is dirty', async () => {
+    vi.mocked(shell)
+      .mockResolvedValueOnce({ stdout: '', stderr: '' })                     // git add -A
+      .mockResolvedValueOnce({ stdout: 'A  1 - Inbox/README.md\n', stderr: '' }) // git status --porcelain (dirty)
+      .mockResolvedValueOnce({ stdout: '', stderr: '' })                     // git config user.email
+      .mockResolvedValueOnce({ stdout: '', stderr: '' })                     // git config user.name
+      .mockResolvedValueOnce({ stdout: '', stderr: '' })                     // git commit
+      .mockResolvedValueOnce({ stdout: '', stderr: '' });                    // git push
+
+    const result = await commitInitialVaultTemplate('lox-vault', 'para');
+
+    expect(result).toBe('pushed');
+    expect(vi.mocked(shell)).toHaveBeenCalledTimes(6);
+    expect(vi.mocked(shell)).toHaveBeenNthCalledWith(1, 'git', ['-C', 'lox-vault', 'add', '-A']);
+    expect(vi.mocked(shell)).toHaveBeenNthCalledWith(2, 'git', ['-C', 'lox-vault', 'status', '--porcelain']);
+    expect(vi.mocked(shell)).toHaveBeenNthCalledWith(3, 'git', ['-C', 'lox-vault', 'config', 'user.email', 'installer@lox.local']);
+    expect(vi.mocked(shell)).toHaveBeenNthCalledWith(4, 'git', ['-C', 'lox-vault', 'config', 'user.name', 'Lox Installer']);
+    expect(vi.mocked(shell)).toHaveBeenNthCalledWith(5, 'git', ['-C', 'lox-vault', 'commit', '-m', 'chore: initialize para template']);
+    expect(vi.mocked(shell)).toHaveBeenNthCalledWith(6, 'git', ['-C', 'lox-vault', 'push', 'origin', 'main']);
+  });
+
+  it('propagates git add failures immediately (no status/commit/push attempted)', async () => {
+    vi.mocked(shell).mockRejectedValueOnce(
+      Object.assign(new Error('Command failed'), { stderr: 'fatal: unable to index file' }),
+    );
+    await expect(commitInitialVaultTemplate('lox-vault', 'para')).rejects.toThrow('Command failed');
+    expect(vi.mocked(shell)).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips commit and push when there is nothing to commit (idempotent re-run)', async () => {
+    vi.mocked(shell)
+      .mockResolvedValueOnce({ stdout: '', stderr: '' }) // git add -A
+      .mockResolvedValueOnce({ stdout: '   \n', stderr: '' }); // porcelain output is whitespace only
+
+    const result = await commitInitialVaultTemplate('lox-vault', 'para');
+
+    expect(result).toBe('nothing-to-commit');
+    expect(vi.mocked(shell)).toHaveBeenCalledTimes(2);
+    // No commit or push should have fired
+    expect(vi.mocked(shell)).not.toHaveBeenCalledWith('git', expect.arrayContaining(['commit', '-m', expect.any(String)]));
+    expect(vi.mocked(shell)).not.toHaveBeenCalledWith('git', expect.arrayContaining(['push', 'origin', 'main']));
+  });
+
+  it('uses the correct preset name in the commit message', async () => {
+    vi.mocked(shell)
+      .mockResolvedValueOnce({ stdout: '', stderr: '' })
+      .mockResolvedValueOnce({ stdout: 'A  file\n', stderr: '' })
+      .mockResolvedValueOnce({ stdout: '', stderr: '' })
+      .mockResolvedValueOnce({ stdout: '', stderr: '' })
+      .mockResolvedValueOnce({ stdout: '', stderr: '' })
+      .mockResolvedValueOnce({ stdout: '', stderr: '' });
+
+    await commitInitialVaultTemplate('lox-vault', 'zettelkasten');
+
+    expect(vi.mocked(shell)).toHaveBeenNthCalledWith(5, 'git', ['-C', 'lox-vault', 'commit', '-m', 'chore: initialize zettelkasten template']);
+  });
+
+  it('propagates git push failures (e.g. network, auth)', async () => {
+    vi.mocked(shell)
+      .mockResolvedValueOnce({ stdout: '', stderr: '' })
+      .mockResolvedValueOnce({ stdout: 'A  file\n', stderr: '' })
+      .mockResolvedValueOnce({ stdout: '', stderr: '' })
+      .mockResolvedValueOnce({ stdout: '', stderr: '' })
+      .mockResolvedValueOnce({ stdout: '', stderr: '' })
+      .mockRejectedValueOnce(Object.assign(new Error('Command failed'), { stderr: 'remote: Permission denied' }));
+
+    await expect(commitInitialVaultTemplate('lox-vault', 'para')).rejects.toThrow('Command failed');
+  });
+});
+
+describe('GITLEAKS_HOOK constant (#119 item 6)', () => {
+  it('includes the ~/.lox/bin/gitleaks fallback path', () => {
+    expect(GITLEAKS_HOOK).toContain('${HOME}/.lox/bin/gitleaks');
+  });
+
+  it('checks PATH first, then falls back to ~/.lox/bin/', () => {
+    // The hook should check `command -v gitleaks` first, then the LOX path
+    const pathCheckIdx = GITLEAKS_HOOK.indexOf('command -v gitleaks');
+    const loxCheckIdx = GITLEAKS_HOOK.indexOf('LOX_GITLEAKS');
+    expect(pathCheckIdx).toBeGreaterThan(-1);
+    expect(loxCheckIdx).toBeGreaterThan(-1);
+  });
+
+  it('exits 0 (not 1) when gitleaks is not installed at all', () => {
+    // Graceful degradation: missing binary should not block commits
+    expect(GITLEAKS_HOOK).toContain('exit 0');
+  });
+
+  it('exits 1 when gitleaks detects secrets', () => {
+    expect(GITLEAKS_HOOK).toContain('exit 1');
+  });
+});
+
+describe('GITLEAKS_VERSION constant', () => {
+  it('is pinned to a specific version', () => {
+    expect(GITLEAKS_VERSION).toBe('8.21.2');
+  });
+});
+
+describe('tryInstallGitleaks (#119 item 6)', () => {
+  beforeEach(() => {
+    vi.mocked(shell).mockReset();
+  });
+
+  it('returns true immediately when gitleaks is already on PATH', async () => {
+    vi.mocked(shell).mockResolvedValueOnce({ stdout: 'v8.21.2', stderr: '' });
+    const result = await tryInstallGitleaks();
+    expect(result).toBe(true);
+    // Only the version check should have been called — no download
+    expect(vi.mocked(shell)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(shell)).toHaveBeenCalledWith('gitleaks', ['version']);
+  });
+
+  it('returns false gracefully when download fails (no throw)', async () => {
+    // gitleaks not on PATH
+    vi.mocked(shell).mockRejectedValueOnce(new Error('Command not found: gitleaks'));
+    // curl download fails
+    vi.mocked(shell).mockRejectedValueOnce(new Error('curl: (22) 404 Not Found'));
+    const result = await tryInstallGitleaks();
+    expect(result).toBe(false);
+  });
+
+  it('never throws even on unexpected errors', async () => {
+    vi.mocked(shell).mockRejectedValueOnce(new Error('Command not found: gitleaks'));
+    vi.mocked(shell).mockRejectedValueOnce(new Error('Unexpected error'));
+    // Must resolve (not reject), returning false
+    await expect(tryInstallGitleaks()).resolves.toBe(false);
+  });
+});

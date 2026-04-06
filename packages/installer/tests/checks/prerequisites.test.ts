@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { getPlatform } from '../../src/utils/shell.js';
 
 describe('getPlatform', () => {
@@ -16,7 +16,7 @@ describe('PrerequisiteResult interface', () => {
 
     // Should return array of results
     expect(Array.isArray(results)).toBe(true);
-    expect(results.length).toBe(5); // Node, git, gcloud, gh, WireGuard
+    expect(results.length).toBe(6); // Node, git, gcloud, gh, Claude Code, WireGuard
 
     // Each result should have required fields
     for (const r of results) {
@@ -42,6 +42,18 @@ describe('PrerequisiteResult interface', () => {
     const gitResult = results.find(r => r.name === 'git');
     expect(gitResult).toBeDefined();
     expect(gitResult!.installed).toBe(true);
+  });
+
+  it('includes Claude Code in the results', async () => {
+    const { checkAllPrerequisites } = await import('../../src/checks/prerequisites.js');
+    const results = await checkAllPrerequisites();
+    const claudeResult = results.find(r => r.name === 'Claude Code');
+    expect(claudeResult).toBeDefined();
+    expect(typeof claudeResult!.installed).toBe('boolean');
+    // When not installed, it must expose the npm install command
+    if (!claudeResult!.installed) {
+      expect(claudeResult!.installCommand).toBe('npm install -g @anthropic-ai/claude-code');
+    }
   });
 
   it('provides install commands for missing prerequisites', async () => {

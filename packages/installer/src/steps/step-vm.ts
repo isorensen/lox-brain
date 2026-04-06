@@ -17,6 +17,37 @@ const VPC_NAME = 'lox-vpc';
 const SUBNET_NAME = 'lox-subnet';
 
 /**
+ * Retry a function up to `retries` times with a delay between attempts.
+ * Only retries when `retryIf` returns true (or is omitted).
+ */
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  retries: number,
+  delayMs: number,
+  retryIf?: (err: unknown) => boolean,
+): Promise<T> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt === retries || (retryIf && !retryIf(err))) throw err;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  throw new Error('Unreachable');
+}
+
+/**
+ * Extract a clean, single-line error message from a thrown error.
+ */
+function cleanErrorMessage(err: unknown): string {
+  if (err instanceof Error) {
+    return err.message.split('\n')[0];
+  }
+  return String(err).split('\n')[0];
+}
+
+/**
  * Check if the service account already exists.
  */
 async function saExists(project: string): Promise<boolean> {
@@ -83,24 +114,38 @@ export async function stepVm(ctx: InstallerContext): Promise<StepResult> {
     );
   }
 
+  // Allow GCP propagation time after SA creation
+  if (!saAlreadyExists) {
+    await new Promise((resolve) => setTimeout(resolve, 5_000));
+  }
+
   // Grant least-privilege IAM roles
   const roles = [
     'roles/secretmanager.secretAccessor',
     'roles/logging.logWriter',
   ];
 
-  for (const role of roles) {
-    await withSpinner(
-      `Granting ${role.split('/')[1]}...`,
-      async () => {
-        await shell('gcloud', [
-          'projects', 'add-iam-policy-binding', project,
-          `--member=serviceAccount:${saEmail}`,
-          `--role=${role}`,
-          '--condition=None',
-        ]);
-      },
-    );
+  try {
+    for (const role of roles) {
+      await withSpinner(
+        `Granting ${role.split('/')[1]}...`,
+        async () => {
+          await withRetry(
+            () => shell('gcloud', [
+              'projects', 'add-iam-policy-binding', project,
+              `--member=serviceAccount:${saEmail}`,
+              `--role=${role}`,
+            ]),
+            3,
+            5_000,
+            (err) => err instanceof Error && err.message.includes('does not exist'),
+          );
+        },
+      );
+    }
+  } catch (err) {
+    const msg = cleanErrorMessage(err);
+    return { success: false, message: `Failed to grant IAM role: ${msg}` };
   }
 
   // Create VM if it doesn't exist
@@ -108,27 +153,32 @@ export async function stepVm(ctx: InstallerContext): Promise<StepResult> {
   if (vmAlreadyExists) {
     console.log(chalk.yellow(`  → VM ${VM_NAME} already exists, skipping creation.`));
   } else {
-    await withSpinner(
-      `${strings.creating} VM ${VM_NAME} (${MACHINE_TYPE})...`,
-      async () => {
-        await shell('gcloud', [
-          'compute', 'instances', 'create', VM_NAME,
-          '--zone', zone,
-          '--machine-type', MACHINE_TYPE,
-          '--network', VPC_NAME,
-          '--subnet', SUBNET_NAME,
-          '--no-address',
-          '--tags=vpn-server,allow-iap',
-          `--service-account=${saEmail}`,
-          '--scopes=cloud-platform',
-          `--image-family=${IMAGE_FAMILY}`,
-          `--image-project=${IMAGE_PROJECT}`,
-          `--boot-disk-size=${BOOT_DISK_SIZE}`,
-          `--boot-disk-type=${BOOT_DISK_TYPE}`,
-          '--project', project,
-        ]);
-      },
-    );
+    try {
+      await withSpinner(
+        `${strings.creating} VM ${VM_NAME} (${MACHINE_TYPE})...`,
+        async () => {
+          await shell('gcloud', [
+            'compute', 'instances', 'create', VM_NAME,
+            '--zone', zone,
+            '--machine-type', MACHINE_TYPE,
+            '--network', VPC_NAME,
+            '--subnet', SUBNET_NAME,
+            '--no-address',
+            '--tags=vpn-server,allow-iap',
+            `--service-account=${saEmail}`,
+            '--scopes=cloud-platform',
+            `--image-family=${IMAGE_FAMILY}`,
+            `--image-project=${IMAGE_PROJECT}`,
+            `--boot-disk-size=${BOOT_DISK_SIZE}`,
+            `--boot-disk-type=${BOOT_DISK_TYPE}`,
+            '--project', project,
+          ], { timeout: 120_000 });
+        },
+      );
+    } catch (err) {
+      const msg = cleanErrorMessage(err);
+      return { success: false, message: `Failed to create VM ${VM_NAME}: ${msg}` };
+    }
   }
 
   // Store service account in config

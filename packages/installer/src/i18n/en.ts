@@ -75,6 +75,16 @@ export interface I18nStrings {
   preset_para: string;
   preset_para_desc: string;
 
+  // Billing
+  billing_checking: string;
+  billing_not_linked: string;
+  billing_select_account: string;
+  billing_no_accounts: string;
+  billing_press_enter: string;
+  billing_linked_success: string;
+  billing_required_for_apis: string;
+  billing_linking: string;
+
   // Modes
   step_mode: string;
   mode_prompt: string;
@@ -100,6 +110,54 @@ export interface I18nStrings {
   peers_generating: string;
   peers_generated: string;
   peers_conf_written: string;
+
+  // VM setup
+  vm_setup_timeout: string;
+  install_timeout_extend: string;
+  vm_phase_system_update: string;
+  vm_phase_nodejs: string;
+  vm_phase_postgresql: string;
+  vm_phase_pgvector: string;
+  vm_phase_db_setup: string;
+  vm_phase_ssh_hardening: string;
+  vm_phase_wireguard: string;
+  vm_phase_fetching_logs: string;
+  vm_ssh_warmup: string;
+
+  // OpenAI API key prompt
+  openai_explain_title: string;
+  openai_explain_body: string;
+  openai_paste_prompt: string;
+  openai_invalid_format: string;
+  openai_skipping_after_retries: string;
+  openai_existing_prompt: string;
+  openai_option_reuse: string;
+  openai_option_replace: string;
+  openai_option_skip: string;
+  openai_saved_to_secret_manager: string;
+  openai_keep_trying_prompt: string;
+  openai_skipped_warning: string;
+
+  // Resume installer
+  resume_found_title: string;
+  resume_found_subtitle: string;
+  resume_last_completed: string;
+  resume_failed_at: string;
+  resume_saved_at: string;
+  resume_prompt: string;
+  resume_option_continue: string;
+  resume_option_pick_step: string;
+  resume_option_restart: string;
+  resume_pick_step_prompt: string;
+  resume_starting_from: string;
+  resume_cleared: string;
+
+  // Error reporting
+  error_report_prompt: string;
+  error_report_creating: string;
+  error_report_created: string;
+  error_report_failed: string;
+  error_report_note: string;
 }
 
 export const en: I18nStrings = {
@@ -110,7 +168,7 @@ export const en: I18nStrings = {
 
   // Splash
   splash_description: 'Personal AI-powered Second Brain with semantic search.',
-  splash_features: 'Obsidian + pgvector + MCP Server + WireGuard VPN',
+  splash_features: 'Obsidian + pgvector + MCP Server + Claude Skills + WireGuard VPN',
 
   // Steps
   step_prefix: 'Step',
@@ -147,9 +205,9 @@ export const en: I18nStrings = {
   success_claude: 'Claude Code connected',
   success_next_steps: 'Next Steps',
   success_step_1: 'Open Obsidian and verify vault sync.',
-  success_step_2: 'Run "lox status" to check all services.',
-  success_step_3: 'Ask Claude Code to search your notes.',
-  success_status_hint: 'Run "lox status" anytime to check system health.',
+  success_step_2: 'Verify the VPN tunnel: ping 10.10.0.1',
+  success_step_3: 'Ask Claude Code to search your notes — this verifies the full stack.',
+  success_status_hint: 'VPN not connecting? Check WireGuard is active and retry the ping.',
 
   // Prompts
   press_enter: 'Press Enter to continue...',
@@ -179,6 +237,16 @@ export const en: I18nStrings = {
   preset_para: 'PARA',
   preset_para_desc: 'Projects, Areas, Resources, Archives — action-oriented organization.',
 
+  // Billing
+  billing_checking: 'Checking billing account...',
+  billing_not_linked: 'No billing account linked to project',
+  billing_select_account: 'Select a billing account:',
+  billing_no_accounts: 'No billing accounts found. Create one at:',
+  billing_press_enter: 'Press Enter after creating a billing account',
+  billing_linked_success: 'Billing account linked successfully',
+  billing_required_for_apis: 'Billing is required to enable GCP APIs. Please link a billing account and try again.',
+  billing_linking: 'Linking billing account...',
+
   // Modes
   step_mode: 'Mode Selection',
   mode_prompt: 'Choose installation mode:',
@@ -204,4 +272,52 @@ export const en: I18nStrings = {
   peers_generating: 'Generating WireGuard keypairs...',
   peers_generated: 'Keypairs generated for all peers.',
   peers_conf_written: 'WireGuard config files written to output/',
+
+  // VM setup
+  vm_setup_timeout: 'VM setup is taking longer than expected. Continue waiting?',
+  install_timeout_extend: 'taking longer than expected. Continue waiting?',
+  vm_phase_system_update: 'Updating system packages',
+  vm_phase_nodejs: 'Installing Node.js 22',
+  vm_phase_postgresql: 'Installing PostgreSQL 16',
+  vm_phase_pgvector: 'Compiling pgvector extension',
+  vm_phase_db_setup: 'Creating database and schema',
+  vm_phase_ssh_hardening: 'Hardening SSH configuration',
+  vm_phase_wireguard: 'Installing WireGuard',
+  vm_phase_fetching_logs: 'Fetching VM logs for diagnosis',
+  vm_ssh_warmup: 'Establishing SSH connection to VM',
+
+  // OpenAI API key prompt
+  openai_explain_title: 'OpenAI API key required',
+  openai_explain_body: 'Lox uses OpenAI embeddings to index your vault. Create an API key at:',
+  openai_paste_prompt: 'Paste your OpenAI API key (input will be hidden):',
+  openai_invalid_format: 'That does not look like a valid OpenAI API key',
+  openai_skipping_after_retries: 'Too many invalid attempts — skipping. You can set the key manually later.',
+  openai_existing_prompt: 'An openai-api-key secret already exists in this project. What do you want to do?',
+  openai_option_reuse: 'Reuse the existing key from Secret Manager',
+  openai_option_replace: 'Replace with a new key',
+  openai_option_skip: 'Skip (I will inject the key manually)',
+  openai_saved_to_secret_manager: 'OpenAI API key saved to GCP Secret Manager',
+  openai_keep_trying_prompt: 'That was 5 invalid attempts. Keep trying?',
+  openai_skipped_warning: 'OpenAI API key NOT set. The watcher will not be able to embed notes until you set it manually.',
+
+  // Resume installer
+  resume_found_title: 'A previous installation was found',
+  resume_found_subtitle: 'You can continue where it stopped, pick a specific step, or start over.',
+  resume_last_completed: 'Last completed step',
+  resume_failed_at: 'Failed at step',
+  resume_saved_at: 'Saved',
+  resume_prompt: 'How do you want to proceed?',
+  resume_option_continue: 'Continue from where it stopped',
+  resume_option_pick_step: 'Pick a specific step to restart from',
+  resume_option_restart: 'Start a fresh installation (discard saved state)',
+  resume_pick_step_prompt: 'Select the step to restart from:',
+  resume_starting_from: 'Resuming from step',
+  resume_cleared: 'Previous installer state discarded.',
+
+  // Error reporting
+  error_report_prompt: 'Would you like to report this issue on GitHub?',
+  error_report_creating: 'Creating issue report...',
+  error_report_created: 'Issue created:',
+  error_report_failed: 'Could not create issue report',
+  error_report_note: 'Personal data has been redacted from the report',
 };

@@ -36,6 +36,11 @@ describe('shared types exports', () => {
     expect(meta.tags).toEqual(['a']);
   });
 
+  it('should allow NoteMetadata with created_by', () => {
+    const meta: NoteMetadata = { title: 'Test', tags: ['a'], content: 'body', created_by: 'eduardo' };
+    expect(meta.created_by).toBe('eduardo');
+  });
+
   it('should allow creating a NoteRow object', () => {
     const row: NoteRow = {
       id: '1',

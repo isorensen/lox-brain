@@ -2,6 +2,7 @@ export interface NoteMetadata {
   title: string | null;
   tags: string[];
   content: string;
+  created_by?: string;
 }
 
 export interface NoteRow {

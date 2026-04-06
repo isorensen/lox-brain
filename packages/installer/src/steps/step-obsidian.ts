@@ -32,6 +32,12 @@ export async function isObsidianInstalled(platform: Platform): Promise<boolean> 
         return stdout.includes('Obsidian.Obsidian');
       }
       case 'linux': {
+        // Check PATH first (works for AUR, pacman, flatpak, AppImage, etc.),
+        // then fall back to snap. snap-only check missed Arch/Fedora installs (#146).
+        try {
+          const { stdout } = await shell('which', ['obsidian']);
+          if (stdout.trim().length > 0) return true;
+        } catch { /* not on PATH, try snap */ }
         const { stdout } = await shell('snap', ['list', 'obsidian']);
         return stdout.includes('obsidian');
       }
@@ -69,12 +75,20 @@ async function installObsidian(): Promise<boolean> {
           );
           break;
         case 'linux':
+          // Obsidian may have been installed outside snap (AUR, flatpak,
+          // AppImage, etc.) between the isObsidianInstalled check and now.
+          // Re-check PATH before attempting snap install (#146).
+          try {
+            const { stdout: whichOut } = await shell('which', ['obsidian']);
+            if (whichOut.trim().length > 0) break; // already installed
+          } catch { /* not on PATH, try snap */ }
           try {
             await shell('snap', ['install', 'obsidian', '--classic'], { timeout });
           } catch {
             throw new Error(
               'Could not install Obsidian via snap. ' +
-              'Please install manually: https://obsidian.md/download',
+              'If already installed (AUR, flatpak, etc.), this is safe to ignore. ' +
+              'Otherwise install manually: https://obsidian.md/download',
             );
           }
           break;

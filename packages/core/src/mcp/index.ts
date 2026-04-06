@@ -48,6 +48,48 @@ const server = new Server(
 
 let activeTools = tools;
 
+/** Factory: create a fresh MCP Server with tool handlers bound to the shared activeTools array. */
+function createMcpServer(): Server {
+  const srv = new Server(
+    { name: LOX_MCP_SERVER_NAME, version: LOX_VERSION },
+    { capabilities: { tools: {} } },
+  );
+
+  srv.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: activeTools.map((t) => ({
+      name: t.name,
+      description: t.description,
+      inputSchema: t.inputSchema,
+    })),
+  }));
+
+  srv.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const tool = activeTools.find((t) => t.name === request.params.name);
+    if (!tool) {
+      return {
+        content: [{ type: 'text' as const, text: `Unknown tool: ${request.params.name}` }],
+        isError: true,
+      };
+    }
+
+    try {
+      const result = await tool.handler((request.params.arguments ?? {}) as Record<string, unknown>);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${message}` }],
+        isError: true,
+      };
+    }
+  });
+
+  return srv;
+}
+
+// Register handlers on the global server instance (used by stdio mode only).
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: activeTools.map((t) => ({
     name: t.name,
@@ -137,7 +179,7 @@ async function main(): Promise<void> {
     // Stateless mode (sessionIdGenerator: undefined) has a known SDK bug
     // where session validation never succeeds, breaking Claude Code health
     // checks. Session mode fixes this and enables GET-based SSE streaming.
-    const sessions = new Map<string, StreamableHTTPServerTransport>();
+    const sessions = new Map<string, { server: Server; transport: StreamableHTTPServerTransport }>();
 
     const httpServer = createServer(async (req, res) => {
       // Inject the caller's IP so PeerResolver can identify the peer.
@@ -148,29 +190,34 @@ async function main(): Promise<void> {
 
       if (sessionId && sessions.has(sessionId)) {
         // Existing session — route to its transport.
-        const transport = sessions.get(sessionId)!;
+        const session = sessions.get(sessionId)!;
         await clientIpStorage.run(clientIp, async () => {
-          await transport.handleRequest(req, res);
+          await session.transport.handleRequest(req, res);
         });
       } else if (req.method === 'POST') {
-        // New session — create transport, connect, handle.
+        // New session — create a dedicated Server + Transport pair.
+        // Each session gets its own Server instance to avoid the SDK's
+        // "Already connected to a transport" error on concurrent clients.
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => randomUUID(),
         });
 
+        const sessionServer = createMcpServer();
+
         transport.onclose = () => {
           const sid = transport.sessionId;
           if (sid) sessions.delete(sid);
+          sessionServer.close().catch(() => {});
         };
 
-        await server.connect(transport);
+        await sessionServer.connect(transport);
 
         await clientIpStorage.run(clientIp, async () => {
           await transport.handleRequest(req, res);
         });
 
         if (transport.sessionId) {
-          sessions.set(transport.sessionId, transport);
+          sessions.set(transport.sessionId, { server: sessionServer, transport });
         }
       } else {
         // GET/DELETE without a valid session.

@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-04-06
+
+### Added
+- **Team mode: HTTP transport for `created_by` peer attribution (#153).** The MCP server now supports an HTTP transport mode (`MCP_TRANSPORT=http`) alongside the existing stdio mode. In HTTP mode, the server binds to `MCP_HOST` (default `127.0.0.1`; set to a VPN interface IP for multi-user deployments) on `MCP_PORT` (default `3100`). Each client gets a unique session via `StreamableHTTPServerTransport` with `sessionIdGenerator`, which fixes the Claude Code health check issue caused by stateless mode. The caller's VPN IP is extracted from the socket and stored via `AsyncLocalStorage` for downstream peer resolution.
+- **`created_by` field threaded end-to-end (#153).** `NoteMetadata` and `NoteRow` types gained an optional `created_by` field. `parseNote` extracts `created_by` from YAML frontmatter. `write_note` passes `_created_by` through `addFrontmatter`. The vault watcher reads `created_by` from parsed frontmatter and forwards it to `upsertNote`. Anti-spoofing middleware strips `_created_by` from request payloads when the VPN peer is unknown.
+- **`MCP_HOST` env var for VPN-bound HTTP transport (#153).** Configures the bind address for HTTP mode. Emits a warning when set to `0.0.0.0` to flag Zero Trust policy violations.
+- **systemd service for MCP HTTP mode (#153).** `infra/systemd/lox-mcp.service` manages the HTTP MCP server as a systemd unit on the VM. The installer's team mode step installs and enables this service and registers the HTTP endpoint with Claude Code.
+- **`chunk_index` column in installer VM schema (#152).** `step-vm-setup.ts` now includes `chunk_index INTEGER NOT NULL DEFAULT 0` in the `CREATE TABLE` statement and changes the unique constraint from `(file_path)` to `(file_path, chunk_index)`, matching the runtime schema used by the embedding service.
+
+### Fixed
+- **`getConfigPath` respects `LOX_CONFIG_PATH` env var.** The shared config loader now checks `LOX_CONFIG_PATH` before falling back to `~/.lox/config.json`, enabling test isolation and non-default install paths.
+- **Null title coalesced to empty string in `upsertNote`.** Prevents a constraint violation when a note has no title in its frontmatter.
+- **`created_by` anti-spoofing hardened.** Middleware strips the `_created_by` field from incoming write requests when the source IP does not match a known WireGuard peer, preventing identity impersonation in team deployments.
+- **`0.0.0.0` bind warning added.** Binding `MCP_HOST` to `0.0.0.0` now emits a console warning to flag potential Zero Trust violations.
+
 ## [0.7.2] — 2026-04-05
 
 ### Added

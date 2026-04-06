@@ -65,6 +65,9 @@ export const DEFAULT_CONFIG: Partial<LoxConfig> = {
  */
 
 export function getConfigPath(): string {
+  if (process.env.LOX_CONFIG_PATH) {
+    return process.env.LOX_CONFIG_PATH;
+  }
   const home = process.env.HOME ?? process.env.USERPROFILE;
   if (!home) {
     throw new Error('Cannot determine home directory: HOME and USERPROFILE are both unset');

@@ -4,7 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [0.7.0] — 2026-04-05
+## [0.7.1] — 2026-04-05
+
+### Added
+- **Ship `/obsidian-ingest` Claude Skill (#85, PR 2/3).** Ingest URLs, images, PDFs, and text into the Obsidian vault with semantic deduplication, content categorization, and structured note creation. 8-step workflow: read → check tags → check duplicates → categorize → preview → write → create MOCs → confirm. Folder routing adapts per vault preset (zettelkasten vs para). Supports PDF text extraction with fallback chain (pdftotext → pdfminer → pypdf). Genericized from personal skill — no hardcoded paths, company names, or personal references.
+
+
 
 ### Added
 - **Claude Skills are now a first-class feature (#85, PR 1/3).** Lox ships with the `/zettelkasten` skill — generates atomic smart notes from project codebases in three modes (full scan, topic-focused, review). Skills are installed automatically to `~/.claude/skills/` during post-install. The splash screen tagline now includes "Claude Skills" in the stack listing. More skills coming: `/obsidian-ingest`, `/sync-calendar`, `/para`.

@@ -205,7 +205,7 @@ export const en: I18nStrings = {
   success_claude: 'Claude Code connected',
   success_next_steps: 'Next Steps',
   success_step_1: 'Open Obsidian and verify vault sync.',
-  success_step_2: 'Verify the VPN tunnel: ping 10.10.0.1',
+  success_step_2: 'Verify the VPN tunnel: ping your VPN server IP (shown in the config)',
   success_step_3: 'Ask Claude Code to search your notes — this verifies the full stack.',
   success_status_hint: 'VPN not connecting? Check WireGuard is active and retry the ping.',
 

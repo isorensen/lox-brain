@@ -49,7 +49,7 @@ describe('stepPeers', () => {
       config: {
         mode: 'team',
         gcp: { project: 'test-project', region: 'us-east1', zone: 'us-east1-b', vm_name: 'lox-vm', service_account: 'sa' },
-        vpn: { server_ip: '10.10.0.1', subnet: '10.10.0.0/24', listen_port: 51820, peers: [] },
+        vpn: { server_ip: '10.20.0.1', subnet: '10.20.0.0/24', listen_port: 51820, peers: [] },
       },
       locale: 'en',
       gcpProjectId: 'test-project',
@@ -59,8 +59,8 @@ describe('stepPeers', () => {
     expect(result.success).toBe(true);
     expect(ctx.config.vpn!.peers).toHaveLength(2);
     expect(ctx.config.vpn!.peers![0].name).toBe('eduardo');
-    expect(ctx.config.vpn!.peers![0].ip).toBe('10.10.0.2');
-    expect(ctx.config.vpn!.peers![1].ip).toBe('10.10.0.3');
+    expect(ctx.config.vpn!.peers![0].ip).toBe('10.20.0.2');
+    expect(ctx.config.vpn!.peers![1].ip).toBe('10.20.0.3');
     expect(ctx.config.vpn!.peers![0]).not.toHaveProperty('privateKey');
     expect(ctx.config.vpn!.peers![0].email).toBe('eduardo@credifit.com.br');
   });
@@ -76,7 +76,7 @@ describe('stepPeers', () => {
       config: {
         mode: 'team',
         gcp: { project: 'test-project', region: 'us-east1', zone: 'us-east1-b', vm_name: 'lox-vm', service_account: 'sa' },
-        vpn: { server_ip: '10.10.0.1', subnet: '10.10.0.0/24', listen_port: 51820, peers: [] },
+        vpn: { server_ip: '10.20.0.1', subnet: '10.20.0.0/24', listen_port: 51820, peers: [] },
       },
       locale: 'en',
       gcpProjectId: 'test-project',

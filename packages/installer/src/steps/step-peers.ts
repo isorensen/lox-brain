@@ -34,6 +34,7 @@ function generateConfFile(
   serverPublicKey: string,
   serverEndpoint: string,
   serverPort: number,
+  subnet: string,
 ): string {
   return `[Interface]
 PrivateKey = ${peerPrivateKey}
@@ -43,7 +44,7 @@ DNS = 1.1.1.1
 [Peer]
 PublicKey = ${serverPublicKey}
 Endpoint = ${serverEndpoint}:${serverPort}
-AllowedIPs = 10.10.0.0/24
+AllowedIPs = ${subnet}
 PersistentKeepalive = 25
 `;
 }
@@ -83,7 +84,8 @@ export async function stepPeers(ctx: InstallerContext): Promise<StepResult> {
   }
 
   // Store peers in config (without private keys)
-  ctx.config.vpn = ctx.config.vpn ?? { server_ip: '10.10.0.1', subnet, listen_port: serverPort, peers: [] };
+  const serverIp = ctx.config.vpn?.server_ip ?? (ctx.config.mode === 'team' ? '10.20.0.1' : '10.10.0.1');
+  ctx.config.vpn = ctx.config.vpn ?? { server_ip: serverIp, subnet, listen_port: serverPort, peers: [] };
   ctx.config.vpn.peers = peers.map(({ name, email, ip, public_key, added_at }) => ({
     name,
     email,
@@ -119,7 +121,7 @@ export async function stepPeers(ctx: InstallerContext): Promise<StepResult> {
   const serverEndpoint = rawServerEndpoint.trim();
 
   for (const peer of peers) {
-    const conf = generateConfFile(peer.privateKey, peer.ip, serverPublicKey, serverEndpoint, serverPort);
+    const conf = generateConfFile(peer.privateKey, peer.ip, serverPublicKey, serverEndpoint, serverPort, subnet);
     const confPath = path.join(outputDir, `${peer.name}.conf`);
     writeFileSync(confPath, conf);
     chmodSync(confPath, 0o600);

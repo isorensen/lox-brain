@@ -5,14 +5,14 @@ import type { VpnPeer } from '@lox-brain/shared';
 
 describe('wrapToolWithCreatedBy', () => {
   const peers: VpnPeer[] = [
-    { name: 'eduardo', ip: '10.10.0.2', public_key: 'key1', added_at: '2026-04-03' },
+    { name: 'eduardo', ip: '10.20.0.2', public_key: 'key1', added_at: '2026-04-03' },
   ];
   const resolver = new PeerResolver(peers);
 
   it('should inject _created_by into write_note args', async () => {
     const innerHandler = vi.fn().mockResolvedValue({ written: 'test.md' });
     const tool = { name: 'write_note', description: 'Write', inputSchema: {}, handler: innerHandler };
-    const wrapped = wrapToolWithCreatedBy(tool, resolver, () => '10.10.0.2');
+    const wrapped = wrapToolWithCreatedBy(tool, resolver, () => '10.20.0.2');
     await wrapped.handler({ file_path: 'test.md', content: 'hello' });
     expect(innerHandler).toHaveBeenCalledWith({
       file_path: 'test.md', content: 'hello', _created_by: 'eduardo',
@@ -22,7 +22,7 @@ describe('wrapToolWithCreatedBy', () => {
   it('should not inject _created_by for read_note', async () => {
     const innerHandler = vi.fn().mockResolvedValue({ content: 'data' });
     const tool = { name: 'read_note', description: 'Read', inputSchema: {}, handler: innerHandler };
-    const wrapped = wrapToolWithCreatedBy(tool, resolver, () => '10.10.0.2');
+    const wrapped = wrapToolWithCreatedBy(tool, resolver, () => '10.20.0.2');
     await wrapped.handler({ file_path: 'test.md' });
     expect(innerHandler).toHaveBeenCalledWith({ file_path: 'test.md' });
   });
@@ -30,7 +30,7 @@ describe('wrapToolWithCreatedBy', () => {
   it('should not inject when peer is unknown', async () => {
     const innerHandler = vi.fn().mockResolvedValue({ written: 'test.md' });
     const tool = { name: 'write_note', description: 'Write', inputSchema: {}, handler: innerHandler };
-    const wrapped = wrapToolWithCreatedBy(tool, resolver, () => '10.10.0.99');
+    const wrapped = wrapToolWithCreatedBy(tool, resolver, () => '10.20.0.99');
     await wrapped.handler({ file_path: 'test.md', content: 'hello' });
     expect(innerHandler).toHaveBeenCalledWith({ file_path: 'test.md', content: 'hello' });
   });
@@ -46,7 +46,7 @@ describe('wrapToolWithCreatedBy', () => {
   it('should overwrite a pre-existing _created_by in args', async () => {
     const innerHandler = vi.fn().mockResolvedValue({});
     const tool = { name: 'write_note', description: 'W', inputSchema: {}, handler: innerHandler };
-    const wrapped = wrapToolWithCreatedBy(tool, resolver, () => '10.10.0.2');
+    const wrapped = wrapToolWithCreatedBy(tool, resolver, () => '10.20.0.2');
     await wrapped.handler({ file_path: 'f.md', _created_by: 'attacker' });
     expect(innerHandler).toHaveBeenCalledWith({
       file_path: 'f.md', _created_by: 'eduardo',
@@ -55,7 +55,7 @@ describe('wrapToolWithCreatedBy', () => {
 
   it('should preserve all other tool properties', () => {
     const tool = { name: 'write_note', description: 'My desc', inputSchema: { type: 'object' }, handler: vi.fn() };
-    const wrapped = wrapToolWithCreatedBy(tool, resolver, () => '10.10.0.2');
+    const wrapped = wrapToolWithCreatedBy(tool, resolver, () => '10.20.0.2');
     expect(wrapped.name).toBe('write_note');
     expect(wrapped.description).toBe('My desc');
     expect(wrapped.inputSchema).toEqual({ type: 'object' });

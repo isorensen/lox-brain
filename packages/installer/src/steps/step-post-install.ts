@@ -62,6 +62,7 @@ export async function runPostInstall(ctx: InstallerContext): Promise<void> {
   // Success screen
   const strings = t();
   const vaultPath = ctx.config.vault?.local_path ?? '~/Obsidian/Lox';
+  const vpnServerIp = ctx.config.vpn?.server_ip ?? '10.10.0.1';
   console.log('\n');
   console.log(renderBox([
     '',
@@ -75,7 +76,7 @@ export async function runPostInstall(ctx: InstallerContext): Promise<void> {
     '',
     `  ${strings.success_next_steps}`,
     `    1. ${strings.success_step_1}`,
-    `    2. ${strings.success_step_2}`,
+    `    2. Verify the VPN tunnel: ping ${vpnServerIp}`,
     `    3. ${strings.success_step_3}`,
     '',
     `  ${strings.success_status_hint}`,

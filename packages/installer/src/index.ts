@@ -41,7 +41,7 @@ async function main(): Promise<void> {
   }
   if (args[0] === 'status') {
     console.log('lox status is not yet implemented. Verify your setup with:');
-    console.log('  1. ping 10.10.0.1          (VPN tunnel)');
+    console.log('  1. ping <your VPN server IP>  (VPN tunnel — see ~/.lox/config.json)');
     console.log('  2. Ask Claude Code to search your notes (full stack)');
     return;
   }

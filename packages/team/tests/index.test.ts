@@ -25,10 +25,10 @@ describe('registerTeamFeatures', () => {
       gcp: { project: 'test', region: 'us', zone: 'us-a', vm_name: 'vm', service_account: 'sa' },
       database: { host: '127.0.0.1', port: 5432, name: 'lox_brain', user: 'lox' },
       vpn: {
-        server_ip: '10.10.0.1',
-        subnet: '10.10.0.0/24',
+        server_ip: '10.20.0.1',
+        subnet: '10.20.0.0/24',
         listen_port: 51820,
-        peers: [{ name: 'eduardo', ip: '10.10.0.2', public_key: 'k1', added_at: '2026-04-03' }],
+        peers: [{ name: 'eduardo', ip: '10.20.0.2', public_key: 'k1', added_at: '2026-04-03' }],
       },
       vault: { repo: 'repo', local_path: '/vault', preset: 'zettelkasten' },
       install_dir: '/opt/lox',
@@ -126,7 +126,7 @@ describe('registerTeamFeatures', () => {
     const mockTool = { name: 'write_note', description: 'Write', inputSchema: {}, handler: mockHandler };
 
     const result = await registerTeamFeatures({} as any, config, [mockTool], publicKey, {
-      getClientIp: () => '10.10.0.2',
+      getClientIp: () => '10.20.0.2',
     });
 
     expect(result.success).toBe(true);

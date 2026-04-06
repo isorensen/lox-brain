@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildServerDeployScript } from '../../src/steps/step-vpn.js';
+import { buildServerDeployScript, getVpnConfig } from '../../src/steps/step-vpn.js';
 
 const SAMPLE_SERVER_CONF = [
   '[Interface]',
@@ -11,6 +11,30 @@ const SAMPLE_SERVER_CONF = [
   'PublicKey = xyz789==',
   'AllowedIPs = 10.10.0.3/32',
 ].join('\n');
+
+describe('getVpnConfig', () => {
+  it('returns personal subnet and wg0 for personal mode', () => {
+    const cfg = getVpnConfig('personal');
+    expect(cfg.serverIp).toBe('10.10.0.1');
+    expect(cfg.clientIp).toBe('10.10.0.3');
+    expect(cfg.subnet).toBe('10.10.0.0/24');
+    expect(cfg.iface).toBe('wg0');
+  });
+
+  it('returns personal subnet and wg0 when mode is undefined', () => {
+    const cfg = getVpnConfig(undefined);
+    expect(cfg.serverIp).toBe('10.10.0.1');
+    expect(cfg.iface).toBe('wg0');
+  });
+
+  it('returns team subnet and wg1 for team mode', () => {
+    const cfg = getVpnConfig('team');
+    expect(cfg.serverIp).toBe('10.20.0.1');
+    expect(cfg.clientIp).toBe('10.20.0.3');
+    expect(cfg.subnet).toBe('10.20.0.0/24');
+    expect(cfg.iface).toBe('wg1');
+  });
+});
 
 describe('buildServerDeployScript (#99)', () => {
   it('uses systemctl RESTART, not start — critical for re-runs', () => {
@@ -58,5 +82,14 @@ describe('buildServerDeployScript (#99)', () => {
     const script = buildServerDeployScript(SAMPLE_SERVER_CONF);
     expect(script).not.toContain(' && ');
     expect(script.split('\n').length).toBeGreaterThan(4);
+  });
+
+  it('uses the provided iface name for conf path and systemctl units', () => {
+    const script = buildServerDeployScript(SAMPLE_SERVER_CONF, 'wg1');
+    expect(script).toContain('/etc/wireguard/wg1.conf');
+    expect(script).toContain('sudo chmod 600 /etc/wireguard/wg1.conf');
+    expect(script).toContain('sudo systemctl enable wg-quick@wg1');
+    expect(script).toContain('sudo systemctl restart wg-quick@wg1');
+    expect(script).not.toContain('wg0');
   });
 });

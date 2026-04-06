@@ -245,6 +245,18 @@ describe('buildVpnUnreachableMessage (#93)', () => {
     expect(msg).toContain('wg-quick up');
   });
 
+  it('uses the provided iface name in conf file references (team mode)', () => {
+    const msg = buildVpnUnreachableMessage('10.20.0.1', 'linux', 'wg1');
+    expect(msg).toContain('wg1.conf');
+    expect(msg).not.toContain('wg0.conf');
+  });
+
+  it('uses wg1.conf in Windows path for team mode', () => {
+    const msg = buildVpnUnreachableMessage('10.20.0.1', 'win32', 'wg1');
+    expect(msg).toContain('wg1.conf');
+    expect(msg).not.toContain('wg0.conf');
+  });
+
   it('falls through to the Unix wg-quick message on unknown platforms', () => {
     // process.platform is typed as NodeJS.Platform (freebsd, openbsd, etc.).
     // Anything that isn't win32/darwin must use the wg-quick fallback —

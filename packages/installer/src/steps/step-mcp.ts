@@ -6,6 +6,7 @@ import { renderStepHeader } from '../ui/box.js';
 import { withSpinner } from '../ui/spinner.js';
 import type { InstallerContext, StepResult } from './types.js';
 import { ensureVmIdentity } from './step-deploy.js';
+import { getVpnConfig } from './step-vpn.js';
 
 const TOTAL_STEPS = 12;
 
@@ -14,15 +15,16 @@ const TOTAL_STEPS = 12;
  * fails. Exported for tests. Kept in English to match other step failure
  * messages in the installer (`'GCP project... Run step 3 first.'` etc.).
  */
-export function buildVpnUnreachableMessage(vpnServerIp: string, platform: NodeJS.Platform): string {
+export function buildVpnUnreachableMessage(vpnServerIp: string, platform: NodeJS.Platform, iface: string = 'wg0'): string {
+  const confFile = `${iface}.conf`;
   const activation =
     platform === 'win32'
-      ? '  • Open the WireGuard app, import your client config from\n'
-        + '    %USERPROFILE%\\.config\\lox\\wireguard\\wg0.conf, then click Activate.'
+      ? `  • Open the WireGuard app, import your client config from\n`
+        + `    %USERPROFILE%\\.config\\lox\\wireguard\\${confFile}, then click Activate.`
       : platform === 'darwin'
-        ? '  • Open the WireGuard app (or run `sudo wg-quick up ~/.config/lox/wireguard/wg0.conf`).'
+        ? `  • Open the WireGuard app (or run \`sudo wg-quick up ~/.config/lox/wireguard/${confFile}\`).`
         // Unix fallback: Linux, FreeBSD, OpenBSD, etc. all share wg-quick.
-        : '  • Run: sudo wg-quick up ~/.config/lox/wireguard/wg0.conf';
+        : `  • Run: sudo wg-quick up ~/.config/lox/wireguard/${confFile}`;
   return [
     `Cannot reach the VM over the WireGuard VPN (${vpnServerIp}:22).`,
     '',
@@ -230,7 +232,8 @@ export async function stepMcp(ctx: InstallerContext): Promise<StepResult> {
   // work so the user hits the failure (and VPN guidance) in <5s.
   // Fallback IP matches VPN_SERVER_IP in step-vpn.ts — used only when
   // step 12 runs standalone and ctx.config.vpn wasn't populated.
-  const vpnServerIp = ctx.config.vpn?.server_ip ?? '10.10.0.1';
+  const vpnCfg = getVpnConfig(ctx.config.mode);
+  const vpnServerIp = ctx.config.vpn?.server_ip ?? vpnCfg.serverIp;
   const vpnUp = await withSpinner(
     `Verifying VPN connectivity to ${vpnServerIp}...`,
     () => isVpnReachable(vpnServerIp),
@@ -240,7 +243,7 @@ export async function stepMcp(ctx: InstallerContext): Promise<StepResult> {
     // GitHub bug report for a user-fixable condition (#96).
     return {
       success: false,
-      message: buildVpnUnreachableMessage(vpnServerIp, process.platform),
+      message: buildVpnUnreachableMessage(vpnServerIp, process.platform, vpnCfg.iface),
       actionable: true,
     };
   }

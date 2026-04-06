@@ -25,7 +25,6 @@ import type { InstallerContext, StepResult } from './types.js';
 const TOTAL_STEPS = 12;
 const VM_NAME = 'lox-vm';
 const VPN_LISTEN_PORT = 51820;
-const VPN_SERVER_IP = '10.10.0.1';
 /**
  * Name for the VM's single public-IP access config. The audit gate
  * `VM public IP restricted to VPN endpoint` imports this constant to
@@ -34,9 +33,31 @@ const VPN_SERVER_IP = '10.10.0.1';
  * call sites in sync via this constant.
  */
 export const VPN_ACCESS_CONFIG_NAME = 'vpn-only';
-const VPN_CLIENT_IP = '10.10.0.3'; // Mac client (0.2 reserved for Arch)
-const VPN_SUBNET = '10.10.0.0/24';
 const HOST_INTERFACE = 'ens4'; // GCP default NIC
+
+/**
+ * Return mode-aware VPN subnet, IPs, and WireGuard interface name so
+ * personal and team installs can coexist on the same machine.
+ *
+ * Personal: 10.10.0.0/24, wg0
+ * Team:     10.20.0.0/24, wg1
+ */
+export function getVpnConfig(mode: 'personal' | 'team' | undefined) {
+  if (mode === 'team') {
+    return {
+      serverIp: '10.20.0.1',
+      clientIp: '10.20.0.3', // personal admin peer (team peers start at .2)
+      subnet: '10.20.0.0/24',
+      iface: 'wg1',
+    };
+  }
+  return {
+    serverIp: '10.10.0.1',
+    clientIp: '10.10.0.3', // Mac client (0.2 reserved for Arch)
+    subnet: '10.10.0.0/24',
+    iface: 'wg0',
+  };
+}
 
 /**
  * Build the VM-side script that writes `/etc/wireguard/wg0.conf`, enables
@@ -53,15 +74,15 @@ const HOST_INTERFACE = 'ens4'; // GCP default NIC
  * it's executed via cmd.exe on Windows, which mangles `&&` in single-arg
  * forms. See step-vm-setup.ts for the same pattern.
  */
-export function buildServerDeployScript(serverConf: string): string {
+export function buildServerDeployScript(serverConf: string, iface: string = 'wg0'): string {
   return [
-    `echo '${serverConf}' | sudo tee /etc/wireguard/wg0.conf > /dev/null`,
-    'sudo chmod 600 /etc/wireguard/wg0.conf',
+    `echo '${serverConf}' | sudo tee /etc/wireguard/${iface}.conf > /dev/null`,
+    `sudo chmod 600 /etc/wireguard/${iface}.conf`,
     'sudo sysctl -w net.ipv4.ip_forward=1',
     'echo "net.ipv4.ip_forward=1" | sudo tee -a /etc/sysctl.conf > /dev/null',
-    'sudo systemctl enable wg-quick@wg0',
+    `sudo systemctl enable wg-quick@${iface}`,
     // NEVER change to `systemctl start` — see #99.
-    'sudo systemctl restart wg-quick@wg0',
+    `sudo systemctl restart wg-quick@${iface}`,
   ].join('\n');
 }
 
@@ -118,6 +139,9 @@ export async function stepVpn(ctx: InstallerContext): Promise<StepResult> {
   if (!project || !zone || !region) {
     return { success: false, message: 'GCP project, zone, or region not set. Run step 3 first.' };
   }
+
+  // Resolve mode-aware VPN config (personal vs team)
+  const vpnCfg = getVpnConfig(ctx.config.mode);
 
   console.log(renderStepHeader(8, TOTAL_STEPS, strings.step_wireguard));
 
@@ -228,17 +252,17 @@ export async function stepVpn(ctx: InstallerContext): Promise<StepResult> {
       const serverConf = [
         '[Interface]',
         `PrivateKey = ${serverPrivateKey}`,
-        `Address = ${VPN_SERVER_IP}/24`,
+        `Address = ${vpnCfg.serverIp}/24`,
         `ListenPort = ${VPN_LISTEN_PORT}`,
-        `PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o ${HOST_INTERFACE} -j MASQUERADE`,
-        `PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o ${HOST_INTERFACE} -j MASQUERADE`,
+        `PostUp = iptables -A FORWARD -i ${vpnCfg.iface} -j ACCEPT; iptables -t nat -A POSTROUTING -o ${HOST_INTERFACE} -j MASQUERADE`,
+        `PostDown = iptables -D FORWARD -i ${vpnCfg.iface} -j ACCEPT; iptables -t nat -D POSTROUTING -o ${HOST_INTERFACE} -j MASQUERADE`,
         '',
         '[Peer]',
         `PublicKey = ${clientPublicKey!}`,
-        `AllowedIPs = ${VPN_CLIENT_IP}/32`,
+        `AllowedIPs = ${vpnCfg.clientIp}/32`,
       ].join('\n');
 
-      await vpnSshExecScript(project, zone, buildServerDeployScript(serverConf));
+      await vpnSshExecScript(project, zone, buildServerDeployScript(serverConf, vpnCfg.iface));
     },
   );
 
@@ -246,7 +270,7 @@ export async function stepVpn(ctx: InstallerContext): Promise<StepResult> {
   // HOME doesn't exist on Windows — fall back to USERPROFILE
   const home = process.env.HOME ?? process.env.USERPROFILE ?? '/tmp';
   const clientConfDir = path.join(home, '.config', 'lox', 'wireguard');
-  const clientConfPath = path.join(clientConfDir, 'wg0.conf');
+  const clientConfPath = path.join(clientConfDir, `${vpnCfg.iface}.conf`);
 
   await withSpinner(
     `${strings.configuring} WireGuard client config...`,
@@ -254,12 +278,12 @@ export async function stepVpn(ctx: InstallerContext): Promise<StepResult> {
       const clientConf = [
         '[Interface]',
         `PrivateKey = ${clientPrivateKey!}`,
-        `Address = ${VPN_CLIENT_IP}/24`,
+        `Address = ${vpnCfg.clientIp}/24`,
         '',
         '[Peer]',
         `PublicKey = ${serverPublicKey}`,
         `Endpoint = ${staticIp}:${VPN_LISTEN_PORT}`,
-        `AllowedIPs = ${VPN_SUBNET}`,
+        `AllowedIPs = ${vpnCfg.subnet}`,
         'PersistentKeepalive = 25',
       ].join('\n');
 
@@ -270,13 +294,13 @@ export async function stepVpn(ctx: InstallerContext): Promise<StepResult> {
 
   // Store VPN config in context
   ctx.config.vpn = {
-    server_ip: VPN_SERVER_IP,
-    subnet: VPN_SUBNET,
+    server_ip: vpnCfg.serverIp,
+    subnet: vpnCfg.subnet,
     listen_port: VPN_LISTEN_PORT,
     peers: [
       {
         name: 'mac-client',
-        ip: VPN_CLIENT_IP,
+        ip: vpnCfg.clientIp,
         public_key: clientPublicKey!,
         added_at: new Date().toISOString(),
       },
@@ -291,8 +315,8 @@ export async function stepVpn(ctx: InstallerContext): Promise<StepResult> {
   // WireGuard GUI (#98). Never blocks on failure — the step 12 preflight
   // (#93) is the real gate, and resume (#96) lets the user fix and retry.
   console.log(chalk.dim('  Activating WireGuard tunnel...'));
-  const activation = await activateWireGuard(clientConfPath, VPN_SERVER_IP);
-  const rendered = renderActivationResult(activation, VPN_SERVER_IP);
+  const activation = await activateWireGuard(clientConfPath, vpnCfg.serverIp);
+  const rendered = renderActivationResult(activation, vpnCfg.serverIp);
   const paint = rendered.level === 'success' ? chalk.green : chalk.yellow;
   for (const line of rendered.lines) console.log(`  ${paint(line)}`);
 

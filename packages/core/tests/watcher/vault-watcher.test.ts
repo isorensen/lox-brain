@@ -200,6 +200,27 @@ describe('VaultWatcher', () => {
       expect(mockDb.deleteChunksAbove).not.toHaveBeenCalled();
     });
 
+    it('should pass created_by from parsed metadata to upsertNote', async () => {
+      mockEmbedding.parseNote.mockReturnValue({
+        title: 'Team Note',
+        tags: [],
+        content: 'Content here.',
+        created_by: 'lucas',
+      });
+      mockEmbedding.chunkText.mockReturnValue(['Content here.']);
+
+      await watcher.handleFileChange(`${VAULT_PATH}/notes/team.md`, 'raw');
+
+      expect(mockDb.upsertNote).toHaveBeenCalledTimes(1);
+      expect(mockDb.upsertNote.mock.calls[0][0].created_by).toBe('lucas');
+    });
+
+    it('should pass undefined created_by when not in metadata', async () => {
+      await watcher.handleFileChange(filePath, content);
+
+      expect(mockDb.upsertNote.mock.calls[0][0].created_by).toBeUndefined();
+    });
+
     it('should handle title being null in embedding text', async () => {
       mockEmbedding.parseNote.mockReturnValue({
         title: null,

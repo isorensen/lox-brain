@@ -34,13 +34,18 @@ function safePath(basePath: string, relativePath: string): string {
 // may produce invalid frontmatter. Acceptable for personal vault MVP.
 
 /**
- * Prepends YAML frontmatter with tags to content, unless the content already
- * contains frontmatter (starts with "---").
+ * Prepends YAML frontmatter with tags and/or created_by to content, unless the
+ * content already contains frontmatter (starts with "---").
  */
-function addFrontmatter(content: string, tags: string[]): string {
-  if (tags.length === 0) return content;
+export function addFrontmatter(content: string, tags: string[], createdBy?: string): string {
   if (content.startsWith('---')) return content;
-  return `---\ntags: [${tags.join(', ')}]\n---\n${content}`;
+
+  const fields: string[] = [];
+  if (tags.length > 0) fields.push(`tags: [${tags.join(', ')}]`);
+  if (createdBy) fields.push(`created_by: ${createdBy}`);
+
+  if (fields.length === 0) return content;
+  return `---\n${fields.join('\n')}\n---\n${content}`;
 }
 
 export function createTools(
@@ -74,11 +79,12 @@ export function createTools(
           throw new Error('content must be a string');
         }
         const tags = (args.tags as string[] | undefined) ?? [];
+        const createdBy = typeof args._created_by === 'string' ? args._created_by : undefined;
 
         const resolved = safePath(normalizedVault, filePath);
         await mkdir(path.dirname(resolved), { recursive: true });
 
-        const finalContent = addFrontmatter(content, tags);
+        const finalContent = addFrontmatter(content, tags, createdBy);
         await writeFile(resolved, finalContent, 'utf-8');
 
         return { written: filePath };

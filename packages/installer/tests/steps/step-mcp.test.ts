@@ -423,7 +423,7 @@ describe('getMcpServerName', () => {
   });
 
   it('returns "lox-brain-<org>" for team mode with org', () => {
-    expect(getMcpServerName('team', 'credifit')).toBe('lox-brain-credifit');
+    expect(getMcpServerName('team', 'acme')).toBe('lox-brain-acme');
   });
 
   it('returns "lox-brain" for team mode without org', () => {

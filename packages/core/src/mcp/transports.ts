@@ -25,9 +25,14 @@ export function getTransportConfig(): TransportConfig {
       throw new Error(`Invalid MCP_PORT value: "${rawPort}". Must be a number between 1 and 65535.`);
     }
 
+    const host = process.env.MCP_HOST ?? '127.0.0.1';
+    if (host === '0.0.0.0') {
+      console.error('[lox] WARNING: MCP_HOST=0.0.0.0 exposes the MCP server on ALL interfaces. Use a VPN IP (e.g. 10.x.x.x) for Zero Trust compliance.');
+    }
+
     return {
       type: 'http',
-      host: process.env.MCP_HOST ?? '127.0.0.1',
+      host,
       port,
     };
   }

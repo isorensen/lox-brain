@@ -37,8 +37,8 @@ describe('shared types exports', () => {
   });
 
   it('should allow NoteMetadata with created_by', () => {
-    const meta: NoteMetadata = { title: 'Test', tags: ['a'], content: 'body', created_by: 'eduardo' };
-    expect(meta.created_by).toBe('eduardo');
+    const meta: NoteMetadata = { title: 'Test', tags: ['a'], content: 'body', created_by: 'alice' };
+    expect(meta.created_by).toBe('alice');
   });
 
   it('should allow creating a NoteRow object', () => {

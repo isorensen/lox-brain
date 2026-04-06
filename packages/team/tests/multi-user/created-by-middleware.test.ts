@@ -27,19 +27,19 @@ describe('wrapToolWithCreatedBy', () => {
     expect(innerHandler).toHaveBeenCalledWith({ file_path: 'test.md' });
   });
 
-  it('should not inject when peer is unknown', async () => {
+  it('should strip _created_by when peer is unknown (anti-spoofing)', async () => {
     const innerHandler = vi.fn().mockResolvedValue({ written: 'test.md' });
     const tool = { name: 'write_note', description: 'Write', inputSchema: {}, handler: innerHandler };
     const wrapped = wrapToolWithCreatedBy(tool, resolver, () => '10.20.0.99');
-    await wrapped.handler({ file_path: 'test.md', content: 'hello' });
+    await wrapped.handler({ file_path: 'test.md', content: 'hello', _created_by: 'attacker' });
     expect(innerHandler).toHaveBeenCalledWith({ file_path: 'test.md', content: 'hello' });
   });
 
-  it('should not inject when IP getter returns null', async () => {
+  it('should strip _created_by when IP getter returns null (anti-spoofing)', async () => {
     const innerHandler = vi.fn().mockResolvedValue({ written: 'test.md' });
     const tool = { name: 'write_note', description: 'Write', inputSchema: {}, handler: innerHandler };
     const wrapped = wrapToolWithCreatedBy(tool, resolver, () => null);
-    await wrapped.handler({ file_path: 'test.md', content: 'hello' });
+    await wrapped.handler({ file_path: 'test.md', content: 'hello', _created_by: 'attacker' });
     expect(innerHandler).toHaveBeenCalledWith({ file_path: 'test.md', content: 'hello' });
   });
 

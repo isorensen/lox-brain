@@ -29,7 +29,9 @@ export function wrapToolWithCreatedBy(
           return tool.handler({ ...args, _created_by: peer.name });
         }
       }
-      return tool.handler(args);
+      // Strip any client-supplied _created_by when peer is unknown (anti-spoofing).
+      const { _created_by: _, ...cleanArgs } = args;
+      return tool.handler(cleanArgs);
     },
   };
 }

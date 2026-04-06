@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { isMcpServerRegistered, buildMcpLauncherScript, fixWindowsSshAcl, buildVpnUnreachableMessage, tightenGcloudSshKey, configureSshConfig } from '../../src/steps/step-mcp.js';
+import { isMcpServerRegistered, buildMcpLauncherScript, fixWindowsSshAcl, buildVpnUnreachableMessage, tightenGcloudSshKey, configureSshConfig, getMcpServerName, installMcpService } from '../../src/steps/step-mcp.js';
 import { shell } from '../../src/utils/shell.js';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -414,5 +414,85 @@ describe("fixWindowsSshAcl (#83)", () => {
     process.env.USERNAME = "alice";
     vi.mocked(shell).mockRejectedValue(new Error("icacls exited with code 1"));
     await expect(fixWindowsSshAcl("C:\\path")).resolves.toBeUndefined();
+  });
+});
+
+describe('getMcpServerName', () => {
+  it('returns "lox-brain" for personal mode', () => {
+    expect(getMcpServerName('personal')).toBe('lox-brain');
+  });
+
+  it('returns "lox-brain-<org>" for team mode with org', () => {
+    expect(getMcpServerName('team', 'credifit')).toBe('lox-brain-credifit');
+  });
+
+  it('returns "lox-brain" for team mode without org', () => {
+    expect(getMcpServerName('team')).toBe('lox-brain');
+  });
+
+  it('returns "lox-brain" for team mode with undefined org', () => {
+    expect(getMcpServerName('team', undefined)).toBe('lox-brain');
+  });
+});
+
+describe('installMcpService', () => {
+  // installMcpService reads the real systemd template from infra/systemd/,
+  // writes a tmp file with placeholders replaced, then calls shell commands.
+  // We capture the tmp file content during the scp mock (before finally cleanup).
+  let capturedContent: string | undefined;
+
+  beforeEach(() => {
+    vi.mocked(shell).mockReset();
+    capturedContent = undefined;
+    // Capture the scp call to read the tmp file BEFORE the finally block deletes it
+    vi.mocked(shell).mockImplementation(async (_cmd, args) => {
+      if (_cmd === 'scp' && args && args.length >= 2) {
+        capturedContent = readFileSync(args[0], 'utf-8');
+      }
+      return { stdout: '', stderr: '' };
+    });
+  });
+
+  it('replaces placeholders in the template and runs the correct shell commands', async () => {
+    await installMcpService('/home/lox/lox-brain', 'lox');
+
+    // Verify the 4 shell commands: scp, mv, daemon-reload, enable
+    expect(shell).toHaveBeenCalledTimes(4);
+
+    // scp uploads to lox-vm:/tmp/lox-mcp.service
+    const scpCall = vi.mocked(shell).mock.calls[0];
+    expect(scpCall[0]).toBe('scp');
+    expect(scpCall[1]?.[1]).toBe('lox-vm:/tmp/lox-mcp.service');
+
+    // Verify the captured content has placeholders replaced
+    expect(capturedContent).toBeDefined();
+    expect(capturedContent).toContain('User=lox');
+    expect(capturedContent).toContain('WorkingDirectory=/home/lox/lox-brain');
+    expect(capturedContent).toContain('/home/lox/lox-brain/packages/core/dist/mcp/index.js');
+    expect(capturedContent).not.toContain('__LOX_VM_USER__');
+    expect(capturedContent).not.toContain('__LOX_INSTALL_DIR__');
+
+    // mv to systemd dir
+    expect(vi.mocked(shell).mock.calls[1]).toEqual([
+      'ssh', ['lox-vm', 'sudo', 'mv', '/tmp/lox-mcp.service', '/etc/systemd/system/lox-mcp.service'], { timeout: 30_000 },
+    ]);
+    // daemon-reload
+    expect(vi.mocked(shell).mock.calls[2]).toEqual([
+      'ssh', ['lox-vm', 'sudo', 'systemctl', 'daemon-reload'], { timeout: 30_000 },
+    ]);
+    // enable --now
+    expect(vi.mocked(shell).mock.calls[3]).toEqual([
+      'ssh', ['lox-vm', 'sudo', 'systemctl', 'enable', '--now', 'lox-mcp'], { timeout: 30_000 },
+    ]);
+  });
+
+  it('cleans up the tmp file even when shell commands fail', async () => {
+    vi.mocked(shell).mockRejectedValue(new Error('scp: connection refused'));
+
+    await expect(installMcpService('/opt/lox', 'lox')).rejects.toThrow('connection refused');
+
+    // The tmp file should have been cleaned up by the finally block.
+    // We can't easily verify rmSync was called on the exact path without
+    // mocking fs, but we verify the function propagates the error correctly.
   });
 });

@@ -186,6 +186,49 @@ export async function isMcpServerRegistered(name: string): Promise<boolean> {
 }
 
 /**
+ * Derive the MCP server name for Claude Code registration.
+ * Team installs use `lox-brain-<org>` so they coexist with personal installs.
+ */
+export function getMcpServerName(mode: string, org?: string): string {
+  if (mode === 'team' && org) {
+    return `lox-brain-${org}`;
+  }
+  return 'lox-brain';
+}
+
+/**
+ * Install the MCP HTTP systemd service on the VM. Reads the service template
+ * from `infra/systemd/lox-mcp.service`, substitutes placeholders, uploads to
+ * the VM, and enables the service. Team mode only — the personal mode uses
+ * SSH stdio via the launcher script.
+ */
+export async function installMcpService(installDir: string, vmUser: string): Promise<void> {
+  const { readFileSync, writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join, resolve } = await import('node:path');
+
+  // Resolve the template path relative to this file's location in the built output
+  // packages/installer/dist/steps/step-mcp.js -> ../../../../infra/systemd/lox-mcp.service
+  const templatePath = resolve(__dirname, '..', '..', '..', '..', 'infra', 'systemd', 'lox-mcp.service');
+  const template = readFileSync(templatePath, 'utf-8');
+  const serviceContent = template
+    .replace(/__LOX_VM_USER__/g, vmUser)
+    .replace(/__LOX_INSTALL_DIR__/g, installDir);
+
+  const tmpFile = join(tmpdir(), `lox-mcp-${Date.now()}.service`);
+  writeFileSync(tmpFile, serviceContent);
+
+  try {
+    await shell('scp', [tmpFile, 'lox-vm:/tmp/lox-mcp.service'], { timeout: 60_000 });
+    await shell('ssh', ['lox-vm', 'sudo', 'mv', '/tmp/lox-mcp.service', '/etc/systemd/system/lox-mcp.service'], { timeout: 30_000 });
+    await shell('ssh', ['lox-vm', 'sudo', 'systemctl', 'daemon-reload'], { timeout: 30_000 });
+    await shell('ssh', ['lox-vm', 'sudo', 'systemctl', 'enable', '--now', 'lox-mcp'], { timeout: 30_000 });
+  } finally {
+    try { rmSync(tmpFile, { force: true }); } catch { /* best-effort */ }
+  }
+}
+
+/**
  * Upload the MCP launcher script to the VM at an absolute path and make it
  * executable. Uses plain `scp`/`ssh` via the SSH config entry written earlier
  * in this step (no gcloud, no IAP tunnel — the VPN is already up by now).
@@ -278,32 +321,66 @@ export async function stepMcp(ctx: InstallerContext): Promise<StepResult> {
   );
   console.log(chalk.green(`  ✓ MCP launcher uploaded to ${remoteLauncher}`));
 
+  // 2b. Team mode: install the MCP HTTP systemd service on the VM.
+  //     The launcher script is still uploaded (used for admin tasks), but team
+  //     clients connect via HTTP over VPN instead of SSH stdio.
+  const isTeamMode = ctx.config.mode === 'team';
+
+  if (isTeamMode) {
+    await withSpinner(
+      'Installing MCP HTTP service on VM...',
+      () => installMcpService(installDir, sshUser),
+    );
+    console.log(chalk.green('  ✓ MCP HTTP service installed and started'));
+  }
+
   // 3. Register MCP server with Claude Code.
   //    Idempotency: `claude mcp add` fails when a server with the same name
   //    is already registered. Detect that and remove the prior entry so
   //    re-runs re-register cleanly (picks up changed installDir / lox-vm
   //    config).
-  const alreadyRegistered = await isMcpServerRegistered('lox-brain');
+  const mcpServerName = getMcpServerName(ctx.config.mode ?? 'personal', ctx.config.license_org);
+
+  const alreadyRegistered = await isMcpServerRegistered(mcpServerName);
   if (alreadyRegistered) {
     try {
-      await shell('claude', ['mcp', 'remove', '--scope', 'user', 'lox-brain']);
+      await shell('claude', ['mcp', 'remove', '--scope', 'user', mcpServerName]);
     } catch {
       // Fall through: if remove fails we still try add; add's own error will surface.
     }
   }
 
-  await withSpinner(
-    'Registering lox-brain MCP server with Claude Code...',
-    async () => {
-      await shell('claude', [
-        'mcp', 'add',
-        '--scope', 'user',
-        'lox-brain',
-        '--',
-        'ssh', 'lox-vm', remoteLauncher,
-      ]);
-    },
-  );
+  if (isTeamMode) {
+    // Team mode: HTTP via VPN — clients connect directly to the MCP service
+    // bound to the VPN interface IP. No SSH tunnel needed.
+    const mcpUrl = `http://${vpnServerIp}:3100/mcp`;
+    await withSpinner(
+      `Registering ${mcpServerName} MCP server (HTTP) with Claude Code...`,
+      async () => {
+        await shell('claude', [
+          'mcp', 'add',
+          '--scope', 'user',
+          '--transport', 'sse',
+          mcpServerName,
+          mcpUrl,
+        ]);
+      },
+    );
+  } else {
+    // Personal mode: SSH stdio
+    await withSpinner(
+      `Registering ${mcpServerName} MCP server with Claude Code...`,
+      async () => {
+        await shell('claude', [
+          'mcp', 'add',
+          '--scope', 'user',
+          mcpServerName,
+          '--',
+          'ssh', 'lox-vm', remoteLauncher,
+        ]);
+      },
+    );
+  }
 
   // 4. Verify registration
   const verified = await withSpinner(
@@ -311,7 +388,7 @@ export async function stepMcp(ctx: InstallerContext): Promise<StepResult> {
     async () => {
       try {
         const { stdout } = await shell('claude', ['mcp', 'list']);
-        return stdout.includes('lox-brain');
+        return stdout.includes(mcpServerName);
       } catch {
         return false;
       }
@@ -319,9 +396,9 @@ export async function stepMcp(ctx: InstallerContext): Promise<StepResult> {
   );
 
   if (verified) {
-    console.log(chalk.green('  ✓ lox-brain MCP server registered in Claude Code'));
+    console.log(chalk.green(`  ✓ ${mcpServerName} MCP server registered in Claude Code`));
   } else {
-    console.log(chalk.yellow('  ⚠ Could not verify MCP registration. Run "claude mcp list" to check.'));
+    console.log(chalk.yellow(`  ⚠ Could not verify MCP registration. Run "claude mcp list" to check.`));
   }
 
   return { success: true };

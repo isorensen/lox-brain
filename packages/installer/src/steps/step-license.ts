@@ -47,6 +47,10 @@ export async function stepLicense(ctx: InstallerContext, publicKey: string): Pro
   }
 
   ctx.config.license_key = key;
+  // Persist the public key so step-deploy can embed it in secrets.env.
+  // The public key is passed as an env var (LOX_LICENSE_PUBLIC_KEY) during
+  // install or directly as the publicKey argument.
+  ctx.config.license_public_key = process.env.LOX_LICENSE_PUBLIC_KEY ?? publicKey;
 
   console.log(`  ${strings.license_org}: ${payload.org}`);
   console.log(`  ${strings.license_max_peers}: ${payload.max_peers}`);

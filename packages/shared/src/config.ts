@@ -38,6 +38,7 @@ export interface LoxConfig {
   install_dir: string;
   installed_at: string;
   license_key?: string;
+  license_public_key?: string;
 }
 
 export const DEFAULT_CONFIG: Partial<LoxConfig> = {

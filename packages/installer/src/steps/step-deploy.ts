@@ -90,10 +90,12 @@ export interface SecretsEnvInput {
    * systemd's EnvironmentFile doesn't expand `~`, and the user's local
    * Obsidian path is irrelevant on the VM. */
   vaultPath: string;
+  mode?: 'personal' | 'team';
+  licensePublicKey?: string;
 }
 
 export function buildSecretsEnvContent(input: SecretsEnvInput): string {
-  return [
+  const lines = [
     `DATABASE_URL=postgresql://${input.dbUser}@${input.dbHost}:${input.dbPort}/${input.dbName}?sslmode=require`,
     // Plain password env var — node-postgres reads process.env.PG_PASSWORD
     // via createPool() in packages/core/src/lib/create-pool.ts.
@@ -102,7 +104,19 @@ export function buildSecretsEnvContent(input: SecretsEnvInput): string {
     `VAULT_PATH=${input.vaultPath}`,
     'NODE_ENV=production',
     'LOG_LEVEL=info',
-  ].join('\n');
+  ];
+
+  if (input.mode === 'team') {
+    lines.push('MCP_TRANSPORT=http');
+    lines.push('MCP_PORT=3100');
+  }
+
+  if (input.licensePublicKey) {
+    // Escape newlines in PEM for env var (base64-encode the whole PEM)
+    lines.push(`LOX_LICENSE_PUBLIC_KEY=${input.licensePublicKey}`);
+  }
+
+  return lines.join('\n');
 }
 
 /**
@@ -469,6 +483,8 @@ export async function stepDeploy(ctx: InstallerContext): Promise<StepResult> {
         dbName,
         openaiKey: openaiResult.key ?? OPENAI_KEY_PLACEHOLDER,
         vaultPath,
+        mode: ctx.config.mode,
+        licensePublicKey: ctx.config.license_public_key,
       });
 
       await runRemoteScript(projectId, zone, vmName, 'secrets', buildSecretsEnvScript(envContent, user));

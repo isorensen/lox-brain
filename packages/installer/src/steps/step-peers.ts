@@ -4,6 +4,7 @@ import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { t } from '../i18n/index.js';
+import { shell } from '../utils/shell.js';
 import type { InstallerContext, StepResult } from './types.js';
 
 interface PeerData {
@@ -95,8 +96,27 @@ export async function stepPeers(ctx: InstallerContext): Promise<StepResult> {
   const outputDir = path.join(homedir(), '.lox', 'peers');
   mkdirSync(outputDir, { recursive: true });
 
-  const serverPublicKey = 'SERVER_PUBLIC_KEY_PLACEHOLDER';
-  const serverEndpoint = 'SERVER_ENDPOINT_PLACEHOLDER';
+  // Resolve server public key and endpoint from the VM (set up by step 8)
+  const project = ctx.gcpProjectId ?? 'lox-project';
+  const vmName = ctx.config.gcp?.vm_name ?? 'lox-vm';
+  const zone = ctx.config.gcp?.zone ?? 'us-east1-b';
+
+  const { stdout: rawServerPublicKey } = await shell('gcloud', [
+    'compute', 'ssh', vmName,
+    '--zone', zone,
+    '--project', project,
+    '--tunnel-through-iap',
+    '--command', 'sudo cat /etc/wireguard/server_public.key',
+  ]);
+  const serverPublicKey = rawServerPublicKey.trim();
+
+  const { stdout: rawServerEndpoint } = await shell('gcloud', [
+    'compute', 'addresses', 'describe', 'lox-vpn-ip',
+    '--region', ctx.config.gcp?.region ?? 'us-east1',
+    '--format=value(address)',
+    '--project', project,
+  ]);
+  const serverEndpoint = rawServerEndpoint.trim();
 
   for (const peer of peers) {
     const conf = generateConfFile(peer.privateKey, peer.ip, serverPublicKey, serverEndpoint, serverPort);
@@ -107,9 +127,6 @@ export async function stepPeers(ctx: InstallerContext): Promise<StepResult> {
 
   console.log(strings.peers_generated);
   console.log(strings.peers_conf_written);
-
-  console.log('\n  ⚠ Server endpoint and public key are placeholders.');
-  console.log('  Edit each .conf file with actual values before distributing to peers.');
 
   return { success: true };
 }

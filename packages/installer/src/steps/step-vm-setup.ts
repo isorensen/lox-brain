@@ -326,6 +326,7 @@ function buildDbSetupScript(dbPassword: string): string {
         tags TEXT[] NOT NULL DEFAULT '{}',
         embedding vector(1536),
         file_hash TEXT NOT NULL DEFAULT '',
+        created_by TEXT NOT NULL DEFAULT '',
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );

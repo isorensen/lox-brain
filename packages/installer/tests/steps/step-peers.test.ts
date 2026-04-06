@@ -8,9 +8,23 @@ vi.mock('node:child_process', () => ({
     if (cmd === 'wg' && args?.[0] === 'pubkey') return Buffer.from('fake-public-key\n');
     return Buffer.from('');
   }),
+  execFile: vi.fn(),
 }));
 vi.mock('node:fs', () => ({ mkdirSync: vi.fn(), writeFileSync: vi.fn(), chmodSync: vi.fn() }));
 vi.mock('node:os', () => ({ homedir: () => '/mock-home' }));
+vi.mock('../../src/utils/shell.js', () => ({
+  shell: vi.fn((_cmd: string, args: string[]) => {
+    // Mock gcloud SSH to read server public key
+    if (args?.some((a: string) => a.includes('server_public.key'))) {
+      return Promise.resolve({ stdout: 'mock-server-public-key\n', stderr: '' });
+    }
+    // Mock gcloud addresses describe for endpoint IP
+    if (args?.some((a: string) => a === 'describe')) {
+      return Promise.resolve({ stdout: '203.0.113.42\n', stderr: '' });
+    }
+    return Promise.resolve({ stdout: '', stderr: '' });
+  }),
+}));
 
 describe('stepPeers', () => {
   beforeEach(() => { vi.clearAllMocks(); });
@@ -34,9 +48,11 @@ describe('stepPeers', () => {
     const ctx: InstallerContext = {
       config: {
         mode: 'team',
+        gcp: { project: 'test-project', region: 'us-east1', zone: 'us-east1-b', vm_name: 'lox-vm', service_account: 'sa' },
         vpn: { server_ip: '10.10.0.1', subnet: '10.10.0.0/24', listen_port: 51820, peers: [] },
       },
       locale: 'en',
+      gcpProjectId: 'test-project',
     };
     const result = await stepPeers(ctx);
 
@@ -59,9 +75,11 @@ describe('stepPeers', () => {
     const ctx: InstallerContext = {
       config: {
         mode: 'team',
+        gcp: { project: 'test-project', region: 'us-east1', zone: 'us-east1-b', vm_name: 'lox-vm', service_account: 'sa' },
         vpn: { server_ip: '10.10.0.1', subnet: '10.10.0.0/24', listen_port: 51820, peers: [] },
       },
       locale: 'en',
+      gcpProjectId: 'test-project',
     };
     await stepPeers(ctx);
 

@@ -146,7 +146,7 @@ export const en: I18nStrings = {
 
   // Splash
   splash_description: 'Personal AI-powered Second Brain with semantic search.',
-  splash_features: 'Obsidian + pgvector + MCP Server + WireGuard VPN',
+  splash_features: 'Obsidian + pgvector + MCP Server + Claude Skills + WireGuard VPN',
 
   // Steps
   step_prefix: 'Step',

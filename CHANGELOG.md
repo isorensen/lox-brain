@@ -4,7 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [0.6.20] — 2026-04-05
+## [0.7.0] — 2026-04-05
+
+### Added
+- **Claude Skills are now a first-class feature (#85, PR 1/3).** Lox ships with the `/zettelkasten` skill — generates atomic smart notes from project codebases in three modes (full scan, topic-focused, review). Skills are installed automatically to `~/.claude/skills/` during post-install. The splash screen tagline now includes "Claude Skills" in the stack listing. More skills coming: `/obsidian-ingest`, `/sync-calendar`, `/para`.
+
+### Changed
+- **README.md updated** to reflect shipped skills, corrected monorepo structure (removed phantom `cli/` package, added `skills/` and `templates/` directories), and fixed security section to say "VM public IP restricted to VPN endpoint" instead of the outdated "no public IP" claim (per #119/v0.6.16).
+
+
 
 ### Fixed
 - **VM: GitHub PAT no longer persisted in `~/lox-vault/.git/config` (#107).** The VM clone used `https://${GH_PAT}@github.com/...` which embedded the token in the git remote URL on disk indefinitely. Switched to `GIT_ASKPASS`: a helper script (`~/.lox-git-askpass.sh`) fetches the PAT fresh from GCP Secret Manager on every `git fetch`/`git push`. The clone URL is now `https://x-access-token@github.com/...` (standard GitHub convention, no secret). `sync-vault.sh` exports `GIT_ASKPASS` and `GIT_TERMINAL_PROMPT=0` before git operations. Benefits: `.git/config` contains no token; rotating `lox-github-pat` in Secret Manager takes effect on the next cron tick (every 2 min) without any VM-side action. Existing installs are auto-migrated: the setup script detects PAT-in-URL (prefixes `ghp_` or `github_pat_`) and rewrites the remote to the clean URL on re-run.

@@ -4,7 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [0.6.19] — 2026-04-05
+## [0.6.20] — 2026-04-05
+
+### Fixed
+- **VM: GitHub PAT no longer persisted in `~/lox-vault/.git/config` (#107).** The VM clone used `https://${GH_PAT}@github.com/...` which embedded the token in the git remote URL on disk indefinitely. Switched to `GIT_ASKPASS`: a helper script (`~/.lox-git-askpass.sh`) fetches the PAT fresh from GCP Secret Manager on every `git fetch`/`git push`. The clone URL is now `https://x-access-token@github.com/...` (standard GitHub convention, no secret). `sync-vault.sh` exports `GIT_ASKPASS` and `GIT_TERMINAL_PROMPT=0` before git operations. Benefits: `.git/config` contains no token; rotating `lox-github-pat` in Secret Manager takes effect on the next cron tick (every 2 min) without any VM-side action. Existing installs are auto-migrated: the setup script detects PAT-in-URL (prefixes `ghp_` or `github_pat_`) and rewrites the remote to the clean URL on re-run.
+
+
 
 ### Fixed
 - **Success screen told users to run `lox status` but the command was a stub and the binary wasn't on PATH (#121).** Replaced the `lox status` hints with actionable instructions that work today: verify the VPN tunnel via `ping 10.10.0.1`, then ask Claude Code to search notes (verifies the full stack — VPN + MCP server + vault indexing). Updated both en and pt-BR strings. The `lox status` stub now prints the same actionable steps instead of "coming soon". A proper `lox` CLI is tracked as a separate enhancement (#85).

@@ -181,22 +181,44 @@ describe('buildVmSetupScript', () => {
     expect(script).toContain('rm -- "$0"');
   });
 
-  it('clones the vault repo to ~/lox-vault if missing (#104-B)', () => {
-    // Before #104-B, sync-vault.sh did `cd ~/lox-vault` against a
-    // directory that the installer never created on the VM — cron
-    // failed silently forever. Now the setup script clones the repo
-    // as a one-time bootstrap.
-    expect(script).toContain('if [ ! -d "$HOME/lox-vault/.git" ]; then');
-    expect(script).toContain('git clone');
-    expect(script).toContain('github.com/alice/lox-vault.git');
-    expect(script).toContain('$HOME/lox-vault');
+  it('writes GIT_ASKPASS helper script (~/.lox-git-askpass.sh)', () => {
+    // The askpass helper fetches the PAT from Secret Manager on demand,
+    // so the token never persists in .git/config (#107).
+    expect(script).toContain('cat > ~/.lox-git-askpass.sh');
+    expect(script).toContain('gcloud secrets versions access latest --secret=lox-github-pat');
+    expect(script).toContain('chmod 700 ~/.lox-git-askpass.sh');
   });
 
-  it('fetches the PAT from Secret Manager and unsets it after clone', () => {
-    // The token must be scrubbed from the shell env after the clone so
-    // it doesn't linger for subsequent lines in the setup script.
-    expect(script).toContain('gcloud secrets versions access latest --secret=lox-github-pat');
-    expect(script).toContain('unset GH_PAT');
+  it('clones with clean URL using GIT_ASKPASS (no PAT in URL)', () => {
+    // The clone URL uses x-access-token@ as the username — git prompts
+    // for password only, which GIT_ASKPASS answers from Secret Manager.
+    // No token lands in .git/config (#107).
+    expect(script).toContain('if [ ! -d "$HOME/lox-vault/.git" ]; then');
+    expect(script).toContain('git clone "https://x-access-token@github.com/alice/lox-vault.git"');
+    expect(script).toContain('GIT_ASKPASS="$HOME/.lox-git-askpass.sh"');
+    expect(script).toContain('GIT_TERMINAL_PROMPT=0');
+  });
+
+  it('sync-vault.sh exports GIT_ASKPASS before git operations', () => {
+    // sync-vault.sh needs GIT_ASKPASS so every git fetch/push re-fetches
+    // the PAT from Secret Manager rather than relying on a cached URL.
+    expect(script).toContain('export GIT_ASKPASS="$HOME/.lox-git-askpass.sh"');
+    expect(script).toContain('export GIT_TERMINAL_PROMPT=0');
+  });
+
+  it('migrates existing PAT-in-URL installs (#107)', () => {
+    // Existing installs may have PATs embedded in the remote URL.
+    // The migration block detects and replaces them.
+    expect(script).toContain('remote set-url origin');
+    expect(script).toContain("grep -qE 'https://(ghp_|github_pat_)'");
+    expect(script).toContain('https://x-access-token@github.com/alice/lox-vault.git');
+  });
+
+  it('clone URL never contains the PAT token', () => {
+    // The script must NOT embed the PAT directly in any URL or use
+    // the old GH_PAT variable pattern.
+    expect(script).not.toContain('${GH_PAT}@github.com');
+    expect(script).not.toContain('unset GH_PAT');
   });
 
   it('sanitizes repoName / githubUser / patSecretName against shell injection', () => {

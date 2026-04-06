@@ -34,6 +34,7 @@ export class EmbeddingService {
     let title: string | null = null;
     let tags: string[] = [];
     let content: string;
+    let created_by: string | undefined;
 
     if (frontmatterMatch) {
       const frontmatter = frontmatterMatch[1];
@@ -62,6 +63,12 @@ export class EmbeddingService {
         }
       }
 
+      // Extract created_by from frontmatter
+      const createdByMatch = frontmatter.match(/^created_by:\s*(.+)$/m);
+      if (createdByMatch) {
+        created_by = createdByMatch[1].trim();
+      }
+
       // Content is everything after the frontmatter block
       content = rawContent.slice(frontmatterMatch[0].length).trim();
     } else {
@@ -76,7 +83,7 @@ export class EmbeddingService {
       }
     }
 
-    return { title, tags, content };
+    return { title, tags, content, created_by };
   }
 
   chunkText(text: string, maxTokens = CHUNK_MAX_TOKENS, overlapTokens = CHUNK_OVERLAP_TOKENS): string[] {

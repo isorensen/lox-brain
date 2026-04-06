@@ -292,20 +292,65 @@ export async function stepVpn(ctx: InstallerContext): Promise<StepResult> {
     },
   );
 
-  // Store VPN config in context
+  // Store VPN config in context. Preserve team peers from step-peers
+  // (pre-step) if they exist — they were stored before step 8 ran.
+  const existingPeers = ctx.config.vpn?.peers ?? [];
   ctx.config.vpn = {
     server_ip: vpnCfg.serverIp,
     subnet: vpnCfg.subnet,
     listen_port: VPN_LISTEN_PORT,
     peers: [
+      ...existingPeers,
       {
-        name: 'mac-client',
+        name: 'admin-client',
         ip: vpnCfg.clientIp,
         public_key: clientPublicKey!,
         added_at: new Date().toISOString(),
       },
     ],
   };
+
+  // Team mode: generate per-peer .conf files now that we have server keys + IP.
+  // step-peers (pre-step) collected peer data and stored private keys
+  // in ctx._peerPrivateKeys. We resolve those here and write distributable
+  // .conf files to ~/.lox/peers/.
+  const teamPeers = ctx.config.vpn?.peers ?? [];
+  const peerPrivateKeys = ((ctx as unknown as Record<string, unknown>)._peerPrivateKeys ?? {}) as Record<string, string>;
+  if (ctx.config.mode === 'team' && teamPeers.length > 0 && Object.keys(peerPrivateKeys).length > 0) {
+    await withSpinner(
+      'Generating team peer WireGuard configs...',
+      async () => {
+        const { mkdirSync, writeFileSync, chmodSync } = await import('node:fs');
+        const { homedir } = await import('node:os');
+        const outputDir = path.join(homedir(), '.lox', 'peers');
+        mkdirSync(outputDir, { recursive: true });
+
+        for (const peer of teamPeers) {
+          const privKey = peerPrivateKeys[peer.ip];
+          if (!privKey) continue;
+          const conf = [
+            '[Interface]',
+            `PrivateKey = ${privKey}`,
+            `Address = ${peer.ip}/24`,
+            'DNS = 1.1.1.1',
+            '',
+            '[Peer]',
+            `PublicKey = ${serverPublicKey}`,
+            `Endpoint = ${staticIp}:${VPN_LISTEN_PORT}`,
+            `AllowedIPs = ${vpnCfg.subnet}`,
+            'PersistentKeepalive = 25',
+          ].join('\n');
+          const safeName = peer.name.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+          const confPath = path.join(outputDir, `${safeName}.conf`);
+          writeFileSync(confPath, conf);
+          chmodSync(confPath, 0o600);
+        }
+      },
+    );
+    console.log(chalk.green(`  ✓ Team peer configs written to ~/.lox/peers/ (${teamPeers.length} peers)`));
+    // Clear private keys from memory
+    delete (ctx as unknown as Record<string, unknown>)._peerPrivateKeys;
+  }
 
   console.log(chalk.green(`  ✓ WireGuard VPN configured (${staticIp}:${VPN_LISTEN_PORT})`));
   console.log(chalk.dim(`    Client config: ${clientConfPath}`));

@@ -65,11 +65,10 @@ describe('stepPeers', () => {
     expect(ctx.config.vpn!.peers![0].email).toBe('eduardo@credifit.com.br');
   });
 
-  it('should write .conf files', async () => {
+  it('should store private keys in context for step-vpn conf generation', async () => {
     const { input, number: numberPrompt } = await import('@inquirer/prompts');
     (numberPrompt as any).mockResolvedValue(1);
     (input as any).mockResolvedValueOnce('eduardo').mockResolvedValueOnce('eduardo@credifit.com.br');
-    const { writeFileSync, mkdirSync, chmodSync } = await import('node:fs');
 
     const { stepPeers } = await import('../../src/steps/step-peers.js');
     const ctx: InstallerContext = {
@@ -83,10 +82,9 @@ describe('stepPeers', () => {
     };
     await stepPeers(ctx);
 
-    expect(mkdirSync).toHaveBeenCalledWith(expect.stringContaining('.lox'), { recursive: true });
-    expect(writeFileSync).toHaveBeenCalledWith(
-      expect.stringContaining('eduardo.conf'), expect.stringContaining('[Interface]'),
-    );
-    expect(chmodSync).toHaveBeenCalledWith(expect.stringContaining('eduardo.conf'), 0o600);
+    // Private keys stored temporarily for step-vpn to generate .conf files
+    const privKeys = (ctx as unknown as Record<string, unknown>)._peerPrivateKeys as Record<string, string>;
+    expect(privKeys).toBeDefined();
+    expect(privKeys['10.20.0.2']).toBe('fake-private-key');
   });
 });

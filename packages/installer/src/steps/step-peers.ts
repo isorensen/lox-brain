@@ -1,10 +1,6 @@
 import { input, number as numberPrompt } from '@inquirer/prompts';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
-import path from 'node:path';
 import { t } from '../i18n/index.js';
-import { shell } from '../utils/shell.js';
 import type { InstallerContext, StepResult } from './types.js';
 
 interface PeerData {
@@ -26,27 +22,6 @@ function assignIp(baseSubnet: string, index: number): string {
   const parts = baseSubnet.split('/')[0].split('.');
   parts[3] = String(index + 2); // .1 is server, peers start at .2
   return parts.join('.');
-}
-
-function generateConfFile(
-  peerPrivateKey: string,
-  peerIp: string,
-  serverPublicKey: string,
-  serverEndpoint: string,
-  serverPort: number,
-  subnet: string,
-): string {
-  return `[Interface]
-PrivateKey = ${peerPrivateKey}
-Address = ${peerIp}/24
-DNS = 1.1.1.1
-
-[Peer]
-PublicKey = ${serverPublicKey}
-Endpoint = ${serverEndpoint}:${serverPort}
-AllowedIPs = ${subnet}
-PersistentKeepalive = 25
-`;
 }
 
 export async function stepPeers(ctx: InstallerContext): Promise<StepResult> {
@@ -94,41 +69,14 @@ export async function stepPeers(ctx: InstallerContext): Promise<StepResult> {
     added_at,
   }));
 
-  // Write .conf files for distribution
-  const outputDir = path.join(homedir(), '.lox', 'peers');
-  mkdirSync(outputDir, { recursive: true });
-
-  // Resolve server public key and endpoint from the VM (set up by step 8)
-  const project = ctx.gcpProjectId ?? 'lox-project';
-  const vmName = ctx.config.gcp?.vm_name ?? 'lox-vm';
-  const zone = ctx.config.gcp?.zone ?? 'us-east1-b';
-
-  const { stdout: rawServerPublicKey } = await shell('gcloud', [
-    'compute', 'ssh', vmName,
-    '--zone', zone,
-    '--project', project,
-    '--tunnel-through-iap',
-    '--command', 'sudo cat /etc/wireguard/server_public.key',
-  ]);
-  const serverPublicKey = rawServerPublicKey.trim();
-
-  const { stdout: rawServerEndpoint } = await shell('gcloud', [
-    'compute', 'addresses', 'describe', 'lox-vpn-ip',
-    '--region', ctx.config.gcp?.region ?? 'us-east1',
-    '--format=value(address)',
-    '--project', project,
-  ]);
-  const serverEndpoint = rawServerEndpoint.trim();
-
-  for (const peer of peers) {
-    const conf = generateConfFile(peer.privateKey, peer.ip, serverPublicKey, serverEndpoint, serverPort, subnet);
-    const confPath = path.join(outputDir, `${peer.name}.conf`);
-    writeFileSync(confPath, conf);
-    chmodSync(confPath, 0o600);
-  }
+  // Store private keys temporarily in context for .conf generation in step 8
+  // (step-vpn.ts), which has access to the server public key and static IP.
+  // Private keys are NOT persisted to config.json — only used for .conf files.
+  (ctx as unknown as Record<string, unknown>)._peerPrivateKeys = Object.fromEntries(
+    peers.map(p => [p.ip, p.privateKey]),
+  );
 
   console.log(strings.peers_generated);
-  console.log(strings.peers_conf_written);
 
   return { success: true };
 }

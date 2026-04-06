@@ -1,0 +1,90 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { InstallerContext } from '../../src/steps/types.js';
+
+vi.mock('@inquirer/prompts', () => ({ input: vi.fn(), number: vi.fn() }));
+vi.mock('node:child_process', () => ({
+  execFileSync: vi.fn((cmd: string, args?: string[]) => {
+    if (cmd === 'wg' && args?.[0] === 'genkey') return Buffer.from('fake-private-key\n');
+    if (cmd === 'wg' && args?.[0] === 'pubkey') return Buffer.from('fake-public-key\n');
+    return Buffer.from('');
+  }),
+  execFile: vi.fn(),
+}));
+vi.mock('node:fs', () => ({ mkdirSync: vi.fn(), writeFileSync: vi.fn(), chmodSync: vi.fn() }));
+vi.mock('node:os', () => ({ homedir: () => '/mock-home' }));
+vi.mock('../../src/utils/shell.js', () => ({
+  shell: vi.fn((_cmd: string, args: string[]) => {
+    // Mock gcloud SSH to read server public key
+    if (args?.some((a: string) => a.includes('server_public.key'))) {
+      return Promise.resolve({ stdout: 'mock-server-public-key\n', stderr: '' });
+    }
+    // Mock gcloud addresses describe for endpoint IP
+    if (args?.some((a: string) => a === 'describe')) {
+      return Promise.resolve({ stdout: '203.0.113.42\n', stderr: '' });
+    }
+    return Promise.resolve({ stdout: '', stderr: '' });
+  }),
+}));
+
+describe('stepPeers', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('should skip if mode is personal', async () => {
+    const { stepPeers } = await import('../../src/steps/step-peers.js');
+    const ctx: InstallerContext = { config: { mode: 'personal' }, locale: 'en' };
+    const result = await stepPeers(ctx);
+    expect(result.success).toBe(true);
+    expect(result.message).toContain('skip');
+  });
+
+  it('should collect peers and store in config', async () => {
+    const { input, number: numberPrompt } = await import('@inquirer/prompts');
+    (numberPrompt as any).mockResolvedValue(2);
+    (input as any)
+      .mockResolvedValueOnce('eduardo').mockResolvedValueOnce('eduardo@credifit.com.br')
+      .mockResolvedValueOnce('matheus').mockResolvedValueOnce('matheus@credifit.com.br');
+
+    const { stepPeers } = await import('../../src/steps/step-peers.js');
+    const ctx: InstallerContext = {
+      config: {
+        mode: 'team',
+        gcp: { project: 'test-project', region: 'us-east1', zone: 'us-east1-b', vm_name: 'lox-vm', service_account: 'sa' },
+        vpn: { server_ip: '10.20.0.1', subnet: '10.20.0.0/24', listen_port: 51820, peers: [] },
+      },
+      locale: 'en',
+      gcpProjectId: 'test-project',
+    };
+    const result = await stepPeers(ctx);
+
+    expect(result.success).toBe(true);
+    expect(ctx.config.vpn!.peers).toHaveLength(2);
+    expect(ctx.config.vpn!.peers![0].name).toBe('eduardo');
+    expect(ctx.config.vpn!.peers![0].ip).toBe('10.20.0.2');
+    expect(ctx.config.vpn!.peers![1].ip).toBe('10.20.0.3');
+    expect(ctx.config.vpn!.peers![0]).not.toHaveProperty('privateKey');
+    expect(ctx.config.vpn!.peers![0].email).toBe('eduardo@credifit.com.br');
+  });
+
+  it('should store private keys in context for step-vpn conf generation', async () => {
+    const { input, number: numberPrompt } = await import('@inquirer/prompts');
+    (numberPrompt as any).mockResolvedValue(1);
+    (input as any).mockResolvedValueOnce('eduardo').mockResolvedValueOnce('eduardo@credifit.com.br');
+
+    const { stepPeers } = await import('../../src/steps/step-peers.js');
+    const ctx: InstallerContext = {
+      config: {
+        mode: 'team',
+        gcp: { project: 'test-project', region: 'us-east1', zone: 'us-east1-b', vm_name: 'lox-vm', service_account: 'sa' },
+        vpn: { server_ip: '10.20.0.1', subnet: '10.20.0.0/24', listen_port: 51820, peers: [] },
+      },
+      locale: 'en',
+      gcpProjectId: 'test-project',
+    };
+    await stepPeers(ctx);
+
+    // Private keys stored temporarily for step-vpn to generate .conf files
+    const privKeys = (ctx as unknown as Record<string, unknown>)._peerPrivateKeys as Record<string, string>;
+    expect(privKeys).toBeDefined();
+    expect(privKeys['10.20.0.2']).toBe('fake-private-key');
+  });
+});

@@ -14,12 +14,14 @@
   },
   "type": "commonjs",
   "dependencies": {
-    "@lox-brain/shared": "*",
     "@inquirer/prompts": "^7.0.0",
+    "@lox-brain/shared": "*",
     "chalk": "^4.1.2",
+    "jsonwebtoken": "^9.0.3",
     "ora": "^5.4.1"
   },
   "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.3.5",
     "@vitest/coverage-v8": "^4.0.18",
     "tsx": "^4.21.0",

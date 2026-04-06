@@ -1,7 +1,7 @@
 import { runSecurityAudit, renderAuditResults, renderSecurityHygiene } from '../security/audit.js';
 import { renderBox } from '../ui/box.js';
 import { t } from '../i18n/index.js';
-import { getConfigPath } from '@lox-brain/shared';
+import { getConfigPath, getTeamConfigPath } from '@lox-brain/shared';
 import type { InstallerContext } from './types.js';
 import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
@@ -43,8 +43,10 @@ export async function runPostInstall(ctx: InstallerContext): Promise<void> {
   console.log('\n');
   console.log(renderSecurityHygiene());
 
-  // Save config
-  const configPath = getConfigPath();
+  // Save config — team mode uses a separate path to avoid overwriting personal config
+  const isTeam = config.mode === 'team';
+  const orgSlug = isTeam ? (config.license_org ?? 'team') : null;
+  const configPath = isTeam && orgSlug ? getTeamConfigPath(orgSlug) : getConfigPath();
   const configDir = path.dirname(configPath);
   if (!existsSync(configDir)) {
     mkdirSync(configDir, { recursive: true });
@@ -62,6 +64,7 @@ export async function runPostInstall(ctx: InstallerContext): Promise<void> {
   // Success screen
   const strings = t();
   const vaultPath = ctx.config.vault?.local_path ?? '~/Obsidian/Lox';
+  const vpnServerIp = ctx.config.vpn?.server_ip ?? '10.10.0.1';
   console.log('\n');
   console.log(renderBox([
     '',
@@ -75,7 +78,7 @@ export async function runPostInstall(ctx: InstallerContext): Promise<void> {
     '',
     `  ${strings.success_next_steps}`,
     `    1. ${strings.success_step_1}`,
-    `    2. ${strings.success_step_2}`,
+    `    2. Verify the VPN tunnel: ping ${vpnServerIp}`,
     `    3. ${strings.success_step_3}`,
     '',
     `  ${strings.success_status_hint}`,

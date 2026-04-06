@@ -45,17 +45,25 @@ describe('isObsidianInstalled', () => {
     expect(await isObsidianInstalled('windows')).toBe(false);
   });
 
-  it('returns true when snap list contains obsidian (linux)', async () => {
-    vi.mocked(shell).mockResolvedValue({
-      stdout: 'Name      Version  Rev   Tracking  Publisher  Notes\nobsidian  1.5.12   42    latest/stable  obsidianmd  classic',
-      stderr: '',
-    });
+  it('returns true when obsidian is on PATH (linux — AUR/pacman/flatpak)', async () => {
+    vi.mocked(shell).mockResolvedValueOnce({ stdout: '/usr/bin/obsidian', stderr: '' });
+    expect(await isObsidianInstalled('linux')).toBe(true);
+    expect(shell).toHaveBeenCalledWith('which', ['obsidian']);
+  });
+
+  it('returns true when snap list contains obsidian (linux — snap fallback)', async () => {
+    vi.mocked(shell)
+      .mockRejectedValueOnce(new Error('not found'))  // which fails
+      .mockResolvedValueOnce({
+        stdout: 'Name      Version  Rev   Tracking  Publisher  Notes\nobsidian  1.5.12   42    latest/stable  obsidianmd  classic',
+        stderr: '',
+      });
     expect(await isObsidianInstalled('linux')).toBe(true);
     expect(shell).toHaveBeenCalledWith('snap', ['list', 'obsidian']);
   });
 
-  it('returns false when snap list throws (linux)', async () => {
-    vi.mocked(shell).mockRejectedValue(new Error('error: no matching snaps installed'));
+  it('returns false when both which and snap fail (linux)', async () => {
+    vi.mocked(shell).mockRejectedValue(new Error('not found'));
     expect(await isObsidianInstalled('linux')).toBe(false);
   });
 });

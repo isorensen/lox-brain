@@ -42,6 +42,18 @@ Thank you for your interest in contributing to Lox! This guide will help you get
 
 If you discover a security vulnerability, please do **not** open a public issue. Instead, email the maintainer directly or use GitHub's private vulnerability reporting feature.
 
+## Contributor License Agreement (CLA)
+
+Contributions to `packages/team/` require a Contributor License Agreement.
+This is because `packages/team/` is under a commercial license, and we need
+to ensure that contributions can be distributed under those terms.
+
+For all other packages (MIT-licensed), no CLA is required. Standard GitHub
+fork-and-PR workflow applies.
+
+If you would like to contribute to `packages/team/`, please contact
+eduardo@isorensen.dev before opening a pull request.
+
 ## License
 
-By contributing, you agree that your contributions will be licensed under the MIT License.
+By contributing to MIT-licensed packages, you agree that your contributions will be licensed under the MIT License. Contributions to `packages/team/` are governed by the CLA described above.

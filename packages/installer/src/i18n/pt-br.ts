@@ -45,7 +45,7 @@ export const ptBr: I18nStrings = {
   success_claude: 'Claude Code conectado',
   success_next_steps: 'Proximos Passos',
   success_step_1: 'Abra o Obsidian e verifique a sincronizacao do vault.',
-  success_step_2: 'Verifique o tunel VPN: ping 10.10.0.1',
+  success_step_2: 'Verifique o tunel VPN: ping o IP do servidor VPN (mostrado na configuracao)',
   success_step_3: 'Peca ao Claude Code para buscar em suas notas — isso verifica a stack completa.',
   success_status_hint: 'VPN nao conecta? Verifique se o WireGuard esta ativo e tente o ping novamente.',
 
@@ -88,8 +88,30 @@ export const ptBr: I18nStrings = {
   billing_linking: 'Vinculando conta de faturamento...',
 
   // Modes
+  step_mode: 'Seleção de Modo',
+  mode_prompt: 'Escolha o modo de instalação:',
   mode_personal: 'Pessoal',
+  mode_personal_desc: 'Usuário único — seu Segundo Cérebro pessoal.',
   mode_team: 'Equipe',
+  mode_team_desc: 'Multi-usuário — cérebro compartilhado para a equipe (requer chave de licença).',
+
+  // License
+  step_license: 'Chave de Licença',
+  license_prompt: 'Insira sua chave de licença Lox Team:',
+  license_valid: 'Licença validada com sucesso.',
+  license_invalid: 'Chave de licença inválida ou expirada. Tente novamente.',
+  license_org: 'Organização',
+  license_max_peers: 'Max peers',
+  license_expires: 'Expira em',
+
+  // Peers
+  step_peers: 'Peers da Equipe',
+  peers_count_prompt: 'Quantos membros na equipe (excluindo o servidor)?',
+  peers_name_prompt: 'Nome do peer',
+  peers_email_prompt: 'Email do peer',
+  peers_generating: 'Gerando pares de chaves WireGuard...',
+  peers_generated: 'Pares de chaves gerados para todos os peers.',
+  peers_conf_written: 'Arquivos de configuração WireGuard escritos em output/',
 
   // VM setup
   vm_setup_timeout: 'A configuracao da VM esta demorando mais que o esperado. Continuar aguardando?',
@@ -133,9 +155,9 @@ export const ptBr: I18nStrings = {
   resume_cleared: 'Estado anterior do instalador descartado.',
 
   // Error reporting
-  error_report_prompt: 'Would you like to report this issue on GitHub?',
-  error_report_creating: 'Creating issue report...',
-  error_report_created: 'Issue created:',
-  error_report_failed: 'Could not create issue report',
-  error_report_note: 'Personal data has been redacted from the report',
+  error_report_prompt: 'Gostaria de reportar este problema no GitHub?',
+  error_report_creating: 'Criando relatorio do problema...',
+  error_report_created: 'Issue criada:',
+  error_report_failed: 'Nao foi possivel criar o relatorio',
+  error_report_note: 'Dados pessoais foram removidos do relatorio',
 };

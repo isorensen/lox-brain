@@ -54,6 +54,7 @@ export class VaultWatcher {
           embedding: chunkData[i].embedding,
           file_hash: newHash,
           chunk_index: i,
+          created_by: metadata.created_by,
         });
       }
 

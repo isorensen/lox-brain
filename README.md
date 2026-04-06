@@ -12,7 +12,7 @@
 ### Where knowledge lives.
 
 [![CI](https://github.com/isorensen/lox-brain/actions/workflows/ci.yml/badge.svg)](https://github.com/isorensen/lox-brain/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) (core packages) | [![License: Commercial](https://img.shields.io/badge/License-Commercial-blue.svg)](packages/team/LICENSE) (team package)
 [![Node.js](https://img.shields.io/badge/Node.js-22%20LTS-green.svg)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org/)
 
@@ -149,6 +149,36 @@ npm run index-vault                      # One-time full vault indexing
 ## Cost
 
 Estimated monthly cost: **~US$18/month** (GCE e2-small + 30GB pd-ssd + Cloud NAT + minimal traffic).
+
+## Lox Team (Commercial)
+
+Lox Team extends the personal brain into a shared, multi-user knowledge base
+for corporate teams. It is available under a commercial license.
+
+### What Team Mode adds
+
+- **Multi-user identity** via WireGuard VPN peers -- each user is identified
+  by their VPN IP, no auth server needed.
+- **`created_by` attribution** -- every note is tagged with its author
+  automatically.
+- **Team MCP tools** -- `list_team_activity` and `search_by_author` for
+  cross-team knowledge discovery.
+- **Installer team flow** -- guided setup for license validation, peer
+  generation, and WireGuard config distribution.
+
+### Licensing
+
+| Package | License |
+|---------|---------|
+| `packages/core` | MIT |
+| `packages/shared` | MIT |
+| `packages/cli` | MIT |
+| `packages/installer` | MIT |
+| `packages/team` | Commercial (see `packages/team/LICENSE`) |
+
+Personal mode (single user) is free and open source. Team mode (2+ users)
+requires a commercial license key. Contact eduardo@isorensen.dev for
+licensing inquiries.
 
 ## Status
 

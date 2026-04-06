@@ -138,6 +138,43 @@ Content here.`;
       expect(result.tags).toEqual([]);
       expect(result.content).toBe('Just some plain text without any headings or frontmatter.');
     });
+
+    it('should extract created_by from frontmatter when present', () => {
+      const rawContent = `---
+title: Meeting Note
+tags: [meeting, credifit]
+created_by: matheus
+---
+
+Meeting content here.`;
+
+      const result: NoteMetadata = service.parseNote(rawContent);
+
+      expect(result.created_by).toBe('matheus');
+    });
+
+    it('should return undefined created_by when field not in frontmatter', () => {
+      const rawContent = `---
+title: Regular Note
+tags: [tag1]
+---
+
+Content without created_by.`;
+
+      const result: NoteMetadata = service.parseNote(rawContent);
+
+      expect(result.created_by).toBeUndefined();
+    });
+
+    it('should return undefined created_by when no frontmatter at all', () => {
+      const rawContent = `# Just a Heading
+
+Plain content with no frontmatter.`;
+
+      const result: NoteMetadata = service.parseNote(rawContent);
+
+      expect(result.created_by).toBeUndefined();
+    });
   });
 
   describe('chunkText', () => {

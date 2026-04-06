@@ -16,11 +16,15 @@ Local (Obsidian Desktop) <--git sync--> VM (GCE)
                                          +-- PostgreSQL 16 + pgvector (localhost only)
                                          +-- Vault Watcher (chokidar, detects .md changes)
                                          +-- Embedding Service (OpenAI text-embedding-3-small)
-                                         +-- MCP Server (TypeScript, Anthropic SDK)
+                                         +-- MCP Server (TypeScript, stdio or HTTP transport)
                                          +-- WireGuard VPN (UDP 51820)
 
 Client --VPN--> VM (10.10.0.1) --> MCP Server --> tools
 ```
+
+**Transports:** The MCP server supports two transport modes controlled by `MCP_TRANSPORT`:
+- `stdio` (default) — used for single-user personal mode, launched by Claude Code directly
+- `http` — used for team mode; binds to `MCP_HOST` (default `127.0.0.1`, set to VPN interface for multi-user), port `MCP_PORT` (default `3100`). Uses session-based `StreamableHTTPServerTransport`. The caller's VPN IP is extracted from `req.socket.remoteAddress` for peer attribution.
 
 **Data flow:** Local edit -> git push -> VM git pull (cron 2min) -> Watcher -> OpenAI embedding -> pgvector upsert. Reverse: Claude Code -> MCP Server -> creates .md -> Watcher -> embedding -> pgvector -> git push -> local pull.
 
@@ -67,7 +71,10 @@ lox-brain/
     core/                  # Runs on the GCP VM
       src/
         lib/               # Embedding service, DB client
-        mcp/               # MCP server (stdio transport)
+        mcp/               # MCP server (stdio + HTTP transport)
+          index.ts         # Server entry point, transport selection
+          tools.ts         # Tool definitions
+          transports.ts    # TransportConfig, getTransportConfig()
         watcher/           # Vault watcher (chokidar)
         scripts/           # index-vault, migrations
       tests/
@@ -75,6 +82,10 @@ lox-brain/
       src/
         steps/             # step-*.ts — ordered install steps
         utils/             # shell(), windows-acl, etc.
+  infra/
+    systemd/               # lox-mcp.service, lox-watcher.service
+    wireguard/             # WireGuard config templates
+    postgres/              # PostgreSQL config
   docs/
     plans/                 # Historical planning docs (pre-monorepo)
     internal/              # Gitignored (strategy, pricing — not public)
@@ -127,7 +138,7 @@ lox-brain/
 
 Database: `lox_brain`, User: `lox`
 
-Table `vault_embeddings`: `id` (UUID PK), `file_path` (TEXT UNIQUE), `title`, `content`, `tags` (TEXT[]), `embedding` (vector(1536)), `file_hash` (SHA256), `created_at`, `updated_at`. Indexes: ivfflat on embedding (cosine), GIN on tags, btree on updated_at DESC.
+Table `vault_embeddings`: `id` (UUID PK), `file_path` (TEXT), `chunk_index` (INTEGER, default 0), `title`, `content`, `tags` (TEXT[]), `embedding` (vector(1536)), `file_hash` (SHA256), `created_by` (TEXT, default ''), `created_at`, `updated_at`. Unique constraint on `(file_path, chunk_index)`. Indexes: ivfflat on embedding (cosine), GIN on tags, btree on updated_at DESC.
 
 ## Conventions
 

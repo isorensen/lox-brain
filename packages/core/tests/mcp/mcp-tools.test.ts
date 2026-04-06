@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { createTools } from '../../src/mcp/tools.js';
+import { createTools, addFrontmatter } from '../../src/mcp/tools.js';
 import type { DbClient } from '../../src/lib/db-client.js';
 import type { EmbeddingService } from '../../src/lib/embedding-service.js';
 
@@ -26,6 +26,34 @@ function createMockEmbeddingService(): EmbeddingService {
     computeHash: vi.fn().mockReturnValue('abc123'),
   } as unknown as EmbeddingService;
 }
+
+describe('addFrontmatter', () => {
+  it('should include both tags and created_by when both provided', () => {
+    const result = addFrontmatter('# Note', ['tag1', 'tag2'], 'alice');
+    expect(result).toBe('---\ntags: [tag1, tag2]\ncreated_by: alice\n---\n# Note');
+  });
+
+  it('should include only created_by when tags are empty', () => {
+    const result = addFrontmatter('# Note', [], 'alice');
+    expect(result).toBe('---\ncreated_by: alice\n---\n# Note');
+  });
+
+  it('should include only tags when created_by is not provided', () => {
+    const result = addFrontmatter('# Note', ['tag1']);
+    expect(result).toBe('---\ntags: [tag1]\n---\n# Note');
+  });
+
+  it('should return content unchanged when neither tags nor created_by are provided', () => {
+    const result = addFrontmatter('# Note', []);
+    expect(result).toBe('# Note');
+  });
+
+  it('should return content unchanged when content already has frontmatter', () => {
+    const content = '---\ntitle: Existing\n---\n# Note';
+    const result = addFrontmatter(content, ['tag1'], 'bob');
+    expect(result).toBe(content);
+  });
+});
 
 describe('createTools', () => {
   let tempVaultPath: string;
@@ -340,6 +368,28 @@ describe('createTools', () => {
       await expect(
         tool.handler({ file_path: 'legit.md\0../../../etc/passwd', content: 'x' }),
       ).rejects.toThrow();
+    });
+
+    it('should embed created_by in frontmatter when _created_by is provided', async () => {
+      const tools = createTools(dbClient, embeddingService, tempVaultPath);
+      const tool = tools.find((t) => t.name === 'write_note')!;
+
+      await tool.handler({ file_path: 'team-note.md', content: '# Team Note', _created_by: 'bob' });
+
+      const written = await readFile(path.join(tempVaultPath, 'team-note.md'), 'utf-8');
+      expect(written).toContain('created_by: bob');
+      expect(written).toContain('# Team Note');
+    });
+
+    it('should embed both tags and created_by in frontmatter', async () => {
+      const tools = createTools(dbClient, embeddingService, tempVaultPath);
+      const tool = tools.find((t) => t.name === 'write_note')!;
+
+      await tool.handler({ file_path: 'team-tagged.md', content: '# Note', tags: ['proj'], _created_by: 'carol' });
+
+      const written = await readFile(path.join(tempVaultPath, 'team-tagged.md'), 'utf-8');
+      expect(written).toContain('tags: [proj]');
+      expect(written).toContain('created_by: carol');
     });
 
     it('should reject dot path in write_note', async () => {

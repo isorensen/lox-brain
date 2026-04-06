@@ -4,6 +4,7 @@ export interface VpnPeer {
   name: string;
   ip: string;
   public_key: string;
+  email?: string;
   added_at: string;
 }
 
@@ -36,6 +37,9 @@ export interface LoxConfig {
   };
   install_dir: string;
   installed_at: string;
+  license_key?: string;
+  license_public_key?: string;
+  license_org?: string;
 }
 
 export const DEFAULT_CONFIG: Partial<LoxConfig> = {
@@ -61,9 +65,26 @@ export const DEFAULT_CONFIG: Partial<LoxConfig> = {
  */
 
 export function getConfigPath(): string {
+  if (process.env.LOX_CONFIG_PATH) {
+    return process.env.LOX_CONFIG_PATH;
+  }
   const home = process.env.HOME ?? process.env.USERPROFILE;
   if (!home) {
     throw new Error('Cannot determine home directory: HOME and USERPROFILE are both unset');
   }
   return `${home}/.lox/config.json`;
+}
+
+/**
+ * Get the config path for a team mode installation.
+ * Team configs live in ~/.lox/teams/<org-slug>/config.json
+ * so they don't overwrite the personal config.
+ */
+export function getTeamConfigPath(orgSlug: string): string {
+  const home = process.env.HOME ?? process.env.USERPROFILE;
+  if (!home) {
+    throw new Error('Cannot determine home directory: HOME and USERPROFILE are both unset');
+  }
+  const safe = orgSlug.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-');
+  return `${home}/.lox/teams/${safe}/config.json`;
 }

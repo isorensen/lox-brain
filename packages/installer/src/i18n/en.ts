@@ -86,8 +86,30 @@ export interface I18nStrings {
   billing_linking: string;
 
   // Modes
+  step_mode: string;
+  mode_prompt: string;
   mode_personal: string;
+  mode_personal_desc: string;
   mode_team: string;
+  mode_team_desc: string;
+
+  // License
+  step_license: string;
+  license_prompt: string;
+  license_valid: string;
+  license_invalid: string;
+  license_org: string;
+  license_max_peers: string;
+  license_expires: string;
+
+  // Peers
+  step_peers: string;
+  peers_count_prompt: string;
+  peers_name_prompt: string;
+  peers_email_prompt: string;
+  peers_generating: string;
+  peers_generated: string;
+  peers_conf_written: string;
 
   // VM setup
   vm_setup_timeout: string;
@@ -183,7 +205,7 @@ export const en: I18nStrings = {
   success_claude: 'Claude Code connected',
   success_next_steps: 'Next Steps',
   success_step_1: 'Open Obsidian and verify vault sync.',
-  success_step_2: 'Verify the VPN tunnel: ping 10.10.0.1',
+  success_step_2: 'Verify the VPN tunnel: ping your VPN server IP (shown in the config)',
   success_step_3: 'Ask Claude Code to search your notes — this verifies the full stack.',
   success_status_hint: 'VPN not connecting? Check WireGuard is active and retry the ping.',
 
@@ -226,8 +248,30 @@ export const en: I18nStrings = {
   billing_linking: 'Linking billing account...',
 
   // Modes
+  step_mode: 'Mode Selection',
+  mode_prompt: 'Choose installation mode:',
   mode_personal: 'Personal',
+  mode_personal_desc: 'Single user — your personal Second Brain.',
   mode_team: 'Team',
+  mode_team_desc: 'Multi-user — shared brain for your team (requires license key).',
+
+  // License
+  step_license: 'License Key',
+  license_prompt: 'Enter your Lox Team license key:',
+  license_valid: 'License validated successfully.',
+  license_invalid: 'Invalid or expired license key. Please try again.',
+  license_org: 'Organization',
+  license_max_peers: 'Max peers',
+  license_expires: 'Expires',
+
+  // Peers
+  step_peers: 'Team Peers',
+  peers_count_prompt: 'How many team members (excluding the server)?',
+  peers_name_prompt: 'Name for peer',
+  peers_email_prompt: 'Email for peer',
+  peers_generating: 'Generating WireGuard keypairs...',
+  peers_generated: 'Keypairs generated for all peers.',
+  peers_conf_written: 'WireGuard config files written to output/',
 
   // VM setup
   vm_setup_timeout: 'VM setup is taking longer than expected. Continue waiting?',

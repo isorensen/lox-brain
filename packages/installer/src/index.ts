@@ -2,12 +2,17 @@
 
 import { renderSplash } from './ui/splash.js';
 import { stepLanguage } from './steps/step-language.js';
+import { stepMode } from './steps/step-mode.js';
+import { stepLicense } from './steps/step-license.js';
+import { stepPeers } from './steps/step-peers.js';
 import { runPostInstall } from './steps/step-post-install.js';
 import { STEPS } from './steps/registry.js';
 import { offerErrorReport } from './utils/error-report.js';
 import { handleStepFailure as handleStepFailureExternal } from './step-failure.js';
 import { formatFatalError } from './utils/format-error.js';
-import { LOX_VERSION } from '@lox-brain/shared';
+import { LOX_VERSION, getConfigPath } from '@lox-brain/shared';
+import { existsSync, readFileSync } from 'node:fs';
+import chalk from 'chalk';
 import { setLocale, t } from './i18n/index.js';
 import { loadState, saveState, clearState } from './state.js';
 import { promptResume, stepLabel } from './ui/resume-prompt.js';
@@ -38,7 +43,7 @@ async function main(): Promise<void> {
   }
   if (args[0] === 'status') {
     console.log('lox status is not yet implemented. Verify your setup with:');
-    console.log('  1. ping 10.10.0.1          (VPN tunnel)');
+    console.log('  1. ping <your VPN server IP>  (VPN tunnel — see ~/.lox/config.json)');
     console.log('  2. Ask Claude Code to search your notes (full stack)');
     return;
   }
@@ -73,6 +78,41 @@ async function main(): Promise<void> {
     const langResult = await stepLanguage(ctx);
     if (!langResult.success) process.exit(1);
     console.log(renderSplash());
+  }
+
+  // Detect existing personal install and inform user before mode selection
+  const existingConfigPath = getConfigPath();
+  if (existsSync(existingConfigPath)) {
+    try {
+      const existing = JSON.parse(readFileSync(existingConfigPath, 'utf-8'));
+      if (existing.mode === 'personal' || !existing.mode) {
+        console.log(chalk.cyan(`  \u2139 Detected existing personal Lox install (project: ${existing.gcp?.project ?? 'unknown'})`));
+        console.log(chalk.cyan(`    Team mode will be installed alongside it \u2014 separate VPN, separate config.\n`));
+      }
+    } catch { /* corrupt config, ignore */ }
+  }
+
+  // Mode selection + team-mode pre-steps (license, peers)
+  const modeResult = await stepMode(ctx);
+  if (!modeResult.success) process.exit(1);
+
+  if (ctx.config.mode === 'team') {
+    const LICENSE_PUBLIC_KEY = process.env.LOX_LICENSE_PUBLIC_KEY ?? '';
+    if (!LICENSE_PUBLIC_KEY) {
+      console.error('LOX_LICENSE_PUBLIC_KEY environment variable is required for team mode.');
+      process.exit(1);
+    }
+    const licenseResult = await stepLicense(ctx, LICENSE_PUBLIC_KEY);
+    if (!licenseResult.success) {
+      console.error(`\n${licenseResult.message}`);
+      process.exit(1);
+    }
+
+    const peersResult = await stepPeers(ctx);
+    if (!peersResult.success) {
+      console.error(`\n${peersResult.message}`);
+      process.exit(1);
+    }
   }
 
   for (const step of STEPS) {

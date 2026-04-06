@@ -203,7 +203,11 @@ export async function stepGcpProject(ctx: InstallerContext): Promise<StepResult>
     return true;
   };
 
-  let suggestedDefault = `lox-brain-${ctx.gcpUsername ?? 'user'}`;
+  // In team mode, suggest project ID from license org (#143).
+  const orgSlug = ctx.config.license_org?.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-') ?? '';
+  let suggestedDefault = ctx.config.mode === 'team' && orgSlug
+    ? `lox-brain-${orgSlug}`
+    : `lox-brain-${ctx.gcpUsername ?? 'user'}`;
   let projectId = '';
 
   // Prompt + (describe or create) loop. A globally-taken ID is NOT visible

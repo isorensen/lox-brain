@@ -14,6 +14,7 @@ import {
   // Config values
   DEFAULT_CONFIG,
   getConfigPath,
+  getTeamConfigPath,
 
   // Constants
   LOX_VERSION,
@@ -33,6 +34,11 @@ describe('shared types exports', () => {
     const meta: NoteMetadata = { title: 'Test', tags: ['a'], content: 'body' };
     expect(meta.title).toBe('Test');
     expect(meta.tags).toEqual(['a']);
+  });
+
+  it('should allow NoteMetadata with created_by', () => {
+    const meta: NoteMetadata = { title: 'Test', tags: ['a'], content: 'body', created_by: 'alice' };
+    expect(meta.created_by).toBe('alice');
   });
 
   it('should allow creating a NoteRow object', () => {
@@ -149,6 +155,14 @@ describe('config', () => {
     }
   });
 
+  it('should allow creating a LoxConfig with license_org', () => {
+    const config: Partial<LoxConfig> = {
+      mode: 'team',
+      license_org: 'credifit',
+    };
+    expect(config.license_org).toBe('credifit');
+  });
+
   it('should allow creating a VpnPeer object', () => {
     const peer: VpnPeer = {
       name: 'mac',
@@ -194,5 +208,50 @@ describe('constants', () => {
 
   it('DB_TABLE_NAME should be vault_embeddings', () => {
     expect(DB_TABLE_NAME).toBe('vault_embeddings');
+  });
+});
+
+describe('getTeamConfigPath', () => {
+  it('returns path under ~/.lox/teams/<slug>/config.json', () => {
+    const p = getTeamConfigPath('Credifit');
+    expect(p).toContain('.lox/teams/credifit/config.json');
+  });
+
+  it('sanitizes org name: removes non-alphanumeric chars except hyphens', () => {
+    const p = getTeamConfigPath('My Cool Org!!!');
+    expect(p).toContain('.lox/teams/my-cool-org-/config.json');
+    expect(p).not.toContain(' ');
+    expect(p).not.toContain('!');
+  });
+
+  it('collapses consecutive hyphens', () => {
+    const p = getTeamConfigPath('foo---bar');
+    expect(p).toContain('.lox/teams/foo-bar/config.json');
+  });
+
+  it('uses USERPROFILE as fallback when HOME is unset', () => {
+    const originalHome = process.env.HOME;
+    const originalUserProfile = process.env.USERPROFILE;
+    delete process.env.HOME;
+    process.env.USERPROFILE = '/mock/home';
+    try {
+      expect(getTeamConfigPath('acme')).toBe('/mock/home/.lox/teams/acme/config.json');
+    } finally {
+      process.env.HOME = originalHome;
+      process.env.USERPROFILE = originalUserProfile;
+    }
+  });
+
+  it('throws when HOME and USERPROFILE are both unset', () => {
+    const originalHome = process.env.HOME;
+    const originalUserProfile = process.env.USERPROFILE;
+    delete process.env.HOME;
+    delete process.env.USERPROFILE;
+    try {
+      expect(() => getTeamConfigPath('acme')).toThrow('Cannot determine home directory');
+    } finally {
+      process.env.HOME = originalHome;
+      process.env.USERPROFILE = originalUserProfile;
+    }
   });
 });

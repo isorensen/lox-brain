@@ -47,6 +47,52 @@ describe('DbClient', () => {
       expect(embeddingParam).toBe(JSON.stringify(note.embedding));
     });
 
+    it('should include created_by in INSERT and preserve it on conflict', async () => {
+      mockPool.query.mockResolvedValue({ rowCount: 1 });
+
+      const note: NoteRow = {
+        id: '550e8400-e29b-41d4-a716-446655440000',
+        file_path: 'notes/team-note.md',
+        title: 'Team Note',
+        content: 'Written by eduardo',
+        tags: ['team'],
+        embedding: [0.1, 0.2],
+        file_hash: 'hash456',
+        chunk_index: 0,
+        created_by: 'eduardo',
+      };
+
+      await client.upsertNote(note);
+
+      expect(mockPool.query).toHaveBeenCalledTimes(1);
+      const [sql, params] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('created_by');
+      expect(params).toContain('eduardo');
+      // On conflict, created_by should NOT be overwritten (preserve original over incoming)
+      expect(sql).toContain('COALESCE(vault_embeddings.created_by, EXCLUDED.created_by)');
+    });
+
+    it('should pass null created_by when not provided', async () => {
+      mockPool.query.mockResolvedValue({ rowCount: 1 });
+
+      const note: NoteRow = {
+        id: '550e8400-e29b-41d4-a716-446655440000',
+        file_path: 'notes/personal.md',
+        title: 'Personal Note',
+        content: 'No author',
+        tags: [],
+        embedding: [0.1],
+        file_hash: 'hash789',
+        chunk_index: 0,
+      };
+
+      await client.upsertNote(note);
+
+      const [sql, params] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('created_by');
+      expect(params).toContain(null);
+    });
+
     it('should propagate pool.query rejection', async () => {
       mockPool.query.mockRejectedValue(new Error('connection refused'));
 
@@ -122,6 +168,21 @@ describe('DbClient', () => {
     it('should throw RangeError when limit is zero or negative', async () => {
       await expect(() => client.searchSemantic([], 0)).rejects.toThrow(RangeError);
       await expect(() => client.searchSemantic([], -1)).rejects.toThrow(RangeError);
+    });
+
+    it('should SELECT created_by in semantic search results', async () => {
+      const fakeRows = [
+        {
+          id: 'id1', file_path: 'notes/a.md', title: 'Note A', content: null,
+          tags: ['tag1'], similarity: 0.92, updated_at: new Date('2026-03-07'),
+          created_by: 'eduardo', total_count: '1',
+        },
+      ];
+      mockPool.query.mockResolvedValue({ rows: fakeRows });
+      const result = await client.searchSemantic([0.1], { limit: 5 });
+      const [sql] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('created_by');
+      expect(result.results[0].created_by).toBe('eduardo');
     });
   });
 
@@ -279,6 +340,20 @@ describe('DbClient', () => {
       await expect(() => client.listRecent(0)).rejects.toThrow(RangeError);
       await expect(() => client.listRecent(-5)).rejects.toThrow(RangeError);
     });
+
+    it('should SELECT created_by in recent notes', async () => {
+      const fakeRows = [
+        {
+          id: 'id1', file_path: 'notes/c.md', title: 'Note C', content: null,
+          tags: [], updated_at: new Date(), created_by: 'igor', total_count: '1',
+        },
+      ];
+      mockPool.query.mockResolvedValue({ rows: fakeRows });
+      const result = await client.listRecent(5);
+      const [sql] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('created_by');
+      expect(result.results[0].created_by).toBe('igor');
+    });
   });
 
   describe('listRecent with SearchOptions', () => {
@@ -340,6 +415,20 @@ describe('DbClient', () => {
       expect(params[0]).toBe('%query%');
     });
 
+    it('should SELECT created_by in text search results', async () => {
+      const fakeRows = [
+        {
+          id: 'id1', file_path: 'notes/b.md', title: 'Note B', content: null,
+          tags: [], updated_at: new Date(), created_by: 'matheus', total_count: '1',
+        },
+      ];
+      mockPool.query.mockResolvedValue({ rows: fakeRows });
+      const result = await client.searchText('query');
+      const [sql] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('created_by');
+      expect(result.results[0].created_by).toBe('matheus');
+    });
+
     it('should default limit to 20', async () => {
       mockPool.query.mockResolvedValue({ rows: [] });
 
@@ -351,6 +440,41 @@ describe('DbClient', () => {
       const [, params] = mockPool.query.mock.calls[0];
       // Last numeric param before offset should be 20
       expect(params).toContain(20);
+    });
+  });
+
+  describe('searchByAuthor', () => {
+    it('should filter by created_by with parameterized query', async () => {
+      const fakeRows = [{
+        id: 'id1', file_path: 'notes/team.md', title: 'Team Note',
+        content: null, tags: ['meeting'], updated_at: new Date(),
+        created_by: 'eduardo', total_count: '1',
+      }];
+      mockPool.query.mockResolvedValue({ rows: fakeRows });
+      const result = await client.searchByAuthor('eduardo');
+      const [sql, params] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('created_by = ');
+      expect(params).toContain('eduardo');
+      expect(result.results[0].created_by).toBe('eduardo');
+    });
+
+    it('should support text query combined with author filter', async () => {
+      mockPool.query.mockResolvedValue({ rows: [] });
+      await client.searchByAuthor('eduardo', 'meeting');
+      const [sql, params] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('created_by = ');
+      expect(sql).toContain('ILIKE');
+      expect(params).toContain('eduardo');
+      expect(params).toContain('%meeting%');
+    });
+
+    it('should return PaginatedResult', async () => {
+      mockPool.query.mockResolvedValue({ rows: [] });
+      const result = await client.searchByAuthor('eduardo');
+      expect(result).toHaveProperty('results');
+      expect(result).toHaveProperty('total');
+      expect(result).toHaveProperty('limit');
+      expect(result).toHaveProperty('offset');
     });
   });
 

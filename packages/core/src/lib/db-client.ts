@@ -71,26 +71,28 @@ export class DbClient {
 
   async upsertNote(note: NoteRow): Promise<void> {
     const sql = `
-      INSERT INTO vault_embeddings (id, file_path, title, content, tags, embedding, file_hash, chunk_index, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+      INSERT INTO vault_embeddings (id, file_path, title, content, tags, embedding, file_hash, chunk_index, created_by, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
       ON CONFLICT (file_path, chunk_index) DO UPDATE SET
         title = EXCLUDED.title,
         content = EXCLUDED.content,
         tags = EXCLUDED.tags,
         embedding = EXCLUDED.embedding,
         file_hash = EXCLUDED.file_hash,
+        created_by = COALESCE(vault_embeddings.created_by, EXCLUDED.created_by),
         updated_at = NOW()
     `;
 
     await this.pool.query(sql, [
       note.id,
       note.file_path,
-      note.title,
+      note.title ?? '',
       note.content,
       note.tags,
       JSON.stringify(note.embedding),
       note.file_hash,
       note.chunk_index,
+      note.created_by ?? null,
     ]);
   }
 
@@ -130,7 +132,7 @@ export class DbClient {
     const sql = `
       SELECT id, file_path, title, ${contentCol.sql}, tags,
              1 - (embedding <=> $1::vector) AS similarity,
-             updated_at,
+             updated_at, created_by,
              COUNT(*) OVER() AS total_count
       FROM vault_embeddings
       ORDER BY embedding <=> $1::vector
@@ -179,7 +181,7 @@ export class DbClient {
     const offsetIdx = paramIdx++;
 
     const sql = `
-      SELECT id, file_path, title, ${contentCol.sql}, tags, updated_at,
+      SELECT id, file_path, title, ${contentCol.sql}, tags, updated_at, created_by,
              COUNT(*) OVER() AS total_count
       FROM vault_embeddings
       ORDER BY updated_at DESC
@@ -188,6 +190,47 @@ export class DbClient {
     `;
 
     const params = [...contentCol.params, opts.limit, opts.offset];
+
+    const result = await this.pool.query(sql, params);
+    return this.buildPaginatedResult(result.rows, opts);
+  }
+
+  async searchByAuthor(
+    author: string,
+    query?: string,
+    options?: Partial<SearchOptions>,
+  ): Promise<PaginatedResult<RecentNote>> {
+    const opts = this.buildSearchOptions(options, TEXT_DEFAULTS);
+
+    let paramIdx = 1;
+    const authorParamIdx = paramIdx++;
+
+    let queryClause = '';
+    let queryParamIdx = 0;
+    if (query) {
+      queryParamIdx = paramIdx++;
+      queryClause = ` AND content ILIKE $${queryParamIdx}`;
+    }
+
+    const contentCol = this.buildContentColumn(opts, paramIdx);
+    paramIdx = contentCol.nextParamIndex;
+
+    const limitIdx = paramIdx++;
+    const offsetIdx = paramIdx++;
+
+    const sql = `
+      SELECT id, file_path, title, ${contentCol.sql}, tags, updated_at, created_by,
+             COUNT(*) OVER() AS total_count
+      FROM vault_embeddings
+      WHERE created_by = $${authorParamIdx}${queryClause}
+      ORDER BY updated_at DESC
+      LIMIT $${limitIdx}
+      OFFSET $${offsetIdx}
+    `;
+
+    const params: unknown[] = [author];
+    if (query) params.push(`%${query}%`);
+    params.push(...contentCol.params, opts.limit, opts.offset);
 
     const result = await this.pool.query(sql, params);
     return this.buildPaginatedResult(result.rows, opts);
@@ -219,7 +262,7 @@ export class DbClient {
     const offsetIdx = paramIdx++;
 
     const sql = `
-      SELECT id, file_path, title, ${contentCol.sql}, tags, updated_at,
+      SELECT id, file_path, title, ${contentCol.sql}, tags, updated_at, created_by,
              COUNT(*) OVER() AS total_count
       FROM vault_embeddings
       WHERE content ILIKE $${queryParamIdx}${tagsClause}

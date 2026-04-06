@@ -681,6 +681,29 @@ describe('stepVmSetup -- error handling', () => {
   });
 });
 
+describe('stepVmSetup -- schema: chunk_index column', () => {
+  it('includes chunk_index INTEGER NOT NULL DEFAULT 0 in CREATE TABLE', async () => {
+    mockAllPhasesSuccess();
+
+    await stepVmSetup(makeCtx());
+
+    const dbScriptContent = writeFileSyncMock.mock.calls[TOTAL_SSH_PHASES - 1][1] as string;
+    expect(dbScriptContent).toContain('chunk_index INTEGER NOT NULL DEFAULT 0');
+  });
+
+  it('uses composite UNIQUE constraint on (file_path, chunk_index), not a column-level UNIQUE on file_path', async () => {
+    mockAllPhasesSuccess();
+
+    await stepVmSetup(makeCtx());
+
+    const dbScriptContent = writeFileSyncMock.mock.calls[TOTAL_SSH_PHASES - 1][1] as string;
+    // Should NOT have file_path TEXT UNIQUE
+    expect(dbScriptContent).not.toMatch(/file_path\s+TEXT\s+UNIQUE/);
+    // Should have composite unique constraint
+    expect(dbScriptContent).toMatch(/UNIQUE\s*\(\s*file_path\s*,\s*chunk_index\s*\)/);
+  });
+});
+
 describe('stepVmSetup -- full success path', () => {
   it('sets database config on context after success', async () => {
     mockAllPhasesSuccess();

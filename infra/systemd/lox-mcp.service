@@ -1,0 +1,15 @@
+[Unit]
+Description=Lox Brain MCP Server (HTTP)
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=__LOX_VM_USER__
+WorkingDirectory=__LOX_INSTALL_DIR__
+EnvironmentFile=/etc/lox/secrets.env
+ExecStart=/usr/bin/env node __LOX_INSTALL_DIR__/packages/core/dist/mcp/index.js
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

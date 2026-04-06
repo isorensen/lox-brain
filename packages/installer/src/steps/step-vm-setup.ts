@@ -320,14 +320,17 @@ function buildDbSetupScript(dbPassword: string): string {
     `sudo -u postgres psql -d ${DB_NAME} -c "
       CREATE TABLE IF NOT EXISTS vault_embeddings (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        file_path TEXT UNIQUE NOT NULL,
+        file_path TEXT NOT NULL,
+        chunk_index INTEGER NOT NULL DEFAULT 0,
         title TEXT NOT NULL DEFAULT '',
         content TEXT NOT NULL DEFAULT '',
         tags TEXT[] NOT NULL DEFAULT '{}',
         embedding vector(1536),
         file_hash TEXT NOT NULL DEFAULT '',
+        created_by TEXT NOT NULL DEFAULT '',
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE (file_path, chunk_index)
       );
       CREATE INDEX IF NOT EXISTS idx_embedding_cosine ON vault_embeddings USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
       CREATE INDEX IF NOT EXISTS idx_tags ON vault_embeddings USING gin (tags);

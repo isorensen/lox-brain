@@ -224,6 +224,17 @@ export function buildVmSetupScript(input: VmSetupScriptInput): string {
     '#!/bin/bash',
     'set -euo pipefail',
     '',
+    // GIT_ASKPASS helper: fetches the PAT from Secret Manager on every
+    // git operation that needs auth. The token never persists in
+    // .git/config — git calls this script as a password provider (#107).
+    // Single-quoted heredoc tag prevents bash expansion; the secret name
+    // is embedded as a JS template literal at script-generation time.
+    `cat > ~/.lox-git-askpass.sh <<'ASKPASS_EOF'`,
+    '#!/bin/bash',
+    `gcloud secrets versions access latest --secret=${safeSecret}`,
+    'ASKPASS_EOF',
+    'chmod 700 ~/.lox-git-askpass.sh',
+    '',
     // #104-B: initial clone of the vault repo on the VM. sync-vault.sh
     // (written below) does `cd ~/lox-vault` and assumes it exists — but
     // step 9 only ever clones the repo on the user's local machine, never
@@ -233,17 +244,27 @@ export function buildVmSetupScript(input: VmSetupScriptInput): string {
     // skipped if ~/lox-vault/.git already exists.
     'if [ ! -d "$HOME/lox-vault/.git" ]; then',
     '  echo "[lox] Cloning vault repo to ~/lox-vault (one-time)..."',
-    `  GH_PAT=$(gcloud secrets versions access latest --secret=${safeSecret})`,
-    // PAT embedded in the clone URL so subsequent `git fetch` / `git push`
-    // in sync-vault.sh work without a credential helper. The token stays
-    // in ~/lox-vault/.git/config, which is 0600 on the VM (single-user).
-    `  git clone "https://\${GH_PAT}@github.com/${safeUser}/${safeRepo}.git" "$HOME/lox-vault"`,
-    '  unset GH_PAT',
+    '  GIT_ASKPASS="$HOME/.lox-git-askpass.sh" GIT_TERMINAL_PROMPT=0 \\',
+    `    git clone "https://x-access-token@github.com/${safeUser}/${safeRepo}.git" "$HOME/lox-vault"`,
+    'fi',
+    '',
+    // Migration: remove embedded PAT from existing installs (#107).
+    // Only triggers when the remote URL contains a PAT prefix (ghp_ or
+    // github_pat_), replacing it with the clean x-access-token@ URL that
+    // delegates auth to GIT_ASKPASS.
+    'if git -C "$HOME/lox-vault" remote get-url origin 2>/dev/null | grep -q \'@github.com\'; then',
+    '  CURRENT_URL=$(git -C "$HOME/lox-vault" remote get-url origin)',
+    '  if echo "$CURRENT_URL" | grep -qE \'https://(ghp_|github_pat_)\'; then',
+    '    echo "[lox] Migrating vault remote URL (removing embedded PAT)..."',
+    `    git -C "$HOME/lox-vault" remote set-url origin "https://x-access-token@github.com/${safeUser}/${safeRepo}.git"`,
+    '  fi',
     'fi',
     '',
     "cat > ~/sync-vault.sh <<'LOX_SYNC_EOF'",
     '#!/bin/bash',
     'set -euo pipefail',
+    'export GIT_ASKPASS="$HOME/.lox-git-askpass.sh"',
+    'export GIT_TERMINAL_PROMPT=0',
     'cd ~/lox-vault',
     'git fetch origin main',
     'git merge --ff-only origin/main || true',

@@ -97,8 +97,8 @@ Lox ships with Claude Skills that provide opinionated workflows on top of the MC
 |-------|-------------|
 | `/zettelkasten` | Generate atomic smart notes from project codebases (3 modes: full scan, topic-focused, review) |
 | `/obsidian-ingest` | Ingest URLs, images, PDFs, and text into the vault with semantic deduplication and categorization |
-
-More skills coming: `/sync-calendar` (Google Calendar → vault), `/para` (PARA method notes).
+| `/sync-calendar` | Sync Google Calendar events to meeting notes, with optional Gemini AI summary integration |
+| `/para` | Organize content using the PARA method (Projects, Areas, Resources, Archives) |
 
 ## Monorepo Structure
 
@@ -111,6 +111,8 @@ lox-brain/
   skills/
     zettelkasten/          # /zettelkasten Claude Skill
     obsidian-ingest/       # /obsidian-ingest Claude Skill
+    sync-calendar/         # /sync-calendar Claude Skill
+    para/                  # /para Claude Skill
   docs/
     plans/                 # Design docs and implementation plan
   templates/

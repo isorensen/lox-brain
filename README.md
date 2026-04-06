@@ -49,6 +49,7 @@ Claude Code --VPN--> MCP Server --> tools
 - **Text chunking** for large notes (4000 tokens, 200 overlap)
 - **Zero Trust security** -- no public IPs, VPN-only access, secrets in GCP Secret Manager
 - **Git sync** between local vault and VM (bidirectional, 2-min cron)
+- **Claude Skills** shipped out of the box (`/zettelkasten`, more coming) for day-one workflows
 - **CI/CD** via GitHub Actions (build, test, deploy over IAP tunnel)
 
 ## Quick Start
@@ -88,35 +89,38 @@ bash scripts/install.sh
 
 All search tools return metadata only by default. Use `read_note` to fetch full content after finding notes. Pagination parameters: `limit`, `offset`, `include_content`, `content_preview_length`.
 
-## CLI Commands
+## Claude Skills
 
-```bash
-lox status     # Check VM, database, and watcher health
-lox migrate    # Run pending database migrations
-```
+Lox ships with Claude Skills that provide opinionated workflows on top of the MCP tools. Installed automatically to `~/.claude/skills/` during setup.
+
+| Skill | Description |
+|-------|-------------|
+| `/zettelkasten` | Generate atomic smart notes from project codebases (3 modes: full scan, topic-focused, review) |
+
+More skills coming: `/obsidian-ingest` (content ingestion), `/sync-calendar` (Google Calendar → vault), `/para` (PARA method notes).
 
 ## Monorepo Structure
 
 ```
 lox-brain/
   packages/
-    core/                  # Main application
-      src/
-        lib/               # Embedding service, DB client
-        mcp/               # MCP server (stdio transport)
-        watcher/           # Vault watcher (chokidar)
-      tests/
-    cli/                   # CLI tool (lox status, lox migrate)
-    installer/             # Cross-platform installer (install.sh, install.ps1)
+    shared/                # Constants, types, config
+    core/                  # MCP server, vault watcher, embedding service (runs on VM)
+    installer/             # Cross-platform setup wizard (runs locally)
+  skills/
+    zettelkasten/          # /zettelkasten Claude Skill
   docs/
     plans/                 # Design docs and implementation plan
+  templates/
+    para/                  # PARA vault template
+    zettelkasten/          # Zettelkasten vault template
   .github/
     workflows/             # CI/CD (build, test, deploy)
 ```
 
 ## Security (Zero Trust)
 
-- VM has **no public IP** -- all access via WireGuard VPN
+- VM public IP **restricted to VPN endpoint** (WireGuard UDP 51820 only)
 - PostgreSQL listens on **localhost only** (127.0.0.1)
 - Firewall: **deny-all** default, only UDP 51820 (WireGuard) open
 - SSH via **IAP tunnel only** (Google range 35.235.240.0/20)

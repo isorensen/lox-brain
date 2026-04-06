@@ -5,6 +5,24 @@ import { getConfigPath } from '@lox-brain/shared';
 import type { InstallerContext } from './types.js';
 import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
+import chalk from 'chalk';
+
+async function installSkills(): Promise<void> {
+  const { cpSync, existsSync: fsExistsSync, mkdirSync: fsMkdirSync } = await import('node:fs');
+  const { resolve: pathResolve, join } = await import('node:path');
+  const { homedir } = await import('node:os');
+
+  // Skills source: skills/ at repo root, relative to this compiled file.
+  // Compiled layout: packages/installer/dist/steps/step-post-install.js
+  // → go up 4 dirs to repo root, then into skills/
+  const skillsSrc = pathResolve(__dirname, '..', '..', '..', '..', 'skills');
+  if (!fsExistsSync(skillsSrc)) return; // No skills directory — skip silently
+
+  const targetDir = join(homedir(), '.claude', 'skills');
+  fsMkdirSync(targetDir, { recursive: true });
+
+  cpSync(skillsSrc, targetDir, { recursive: true, force: true });
+}
 
 /**
  * Post-install sequence: security audit, hygiene reminders,
@@ -32,6 +50,14 @@ export async function runPostInstall(ctx: InstallerContext): Promise<void> {
     mkdirSync(configDir, { recursive: true });
   }
   writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+  // Install shipped Claude Skills
+  try {
+    await installSkills();
+    console.log(chalk.green('  ✓ Claude Skills installed to ~/.claude/skills/'));
+  } catch {
+    console.log(chalk.yellow('  ⚠ Could not install Claude Skills — copy them manually from skills/'));
+  }
 
   // Success screen
   const strings = t();

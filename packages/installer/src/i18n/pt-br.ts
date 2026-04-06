@@ -8,7 +8,7 @@ export const ptBr: I18nStrings = {
 
   // Splash
   splash_description: 'Segundo Cerebro pessoal com IA e busca semantica.',
-  splash_features: 'Obsidian + pgvector + MCP Server + WireGuard VPN',
+  splash_features: 'Obsidian + pgvector + MCP Server + Claude Skills + WireGuard VPN',
 
   // Steps
   step_prefix: 'Passo',

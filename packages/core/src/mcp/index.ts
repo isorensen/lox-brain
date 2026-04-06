@@ -140,6 +140,15 @@ async function main(): Promise<void> {
     await server.connect(transport);
 
     const httpServer = createServer(async (req, res) => {
+      // GET is not supported in stateless mode (no SSE subscriptions).
+      // Return 405 so clients (e.g. Claude Code health checks) get a clean
+      // error instead of a 500 from the SDK.
+      if (req.method === 'GET') {
+        res.writeHead(405, { Allow: 'POST, DELETE' });
+        res.end('Method Not Allowed');
+        return;
+      }
+
       // Inject the caller's IP as a request header so that MCP tool
       // handlers can read it via extra.requestInfo.headers['x-real-ip'].
       const clientIp = req.socket.remoteAddress ?? '';

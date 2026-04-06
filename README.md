@@ -96,8 +96,9 @@ Lox ships with Claude Skills that provide opinionated workflows on top of the MC
 | Skill | Description |
 |-------|-------------|
 | `/zettelkasten` | Generate atomic smart notes from project codebases (3 modes: full scan, topic-focused, review) |
+| `/obsidian-ingest` | Ingest URLs, images, PDFs, and text into the vault with semantic deduplication and categorization |
 
-More skills coming: `/obsidian-ingest` (content ingestion), `/sync-calendar` (Google Calendar → vault), `/para` (PARA method notes).
+More skills coming: `/sync-calendar` (Google Calendar → vault), `/para` (PARA method notes).
 
 ## Monorepo Structure
 
@@ -109,6 +110,7 @@ lox-brain/
     installer/             # Cross-platform setup wizard (runs locally)
   skills/
     zettelkasten/          # /zettelkasten Claude Skill
+    obsidian-ingest/       # /obsidian-ingest Claude Skill
   docs/
     plans/                 # Design docs and implementation plan
   templates/

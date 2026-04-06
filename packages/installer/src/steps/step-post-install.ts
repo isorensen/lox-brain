@@ -1,7 +1,7 @@
 import { runSecurityAudit, renderAuditResults, renderSecurityHygiene } from '../security/audit.js';
 import { renderBox } from '../ui/box.js';
 import { t } from '../i18n/index.js';
-import { getConfigPath } from '@lox-brain/shared';
+import { getConfigPath, getTeamConfigPath } from '@lox-brain/shared';
 import type { InstallerContext } from './types.js';
 import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
@@ -43,8 +43,10 @@ export async function runPostInstall(ctx: InstallerContext): Promise<void> {
   console.log('\n');
   console.log(renderSecurityHygiene());
 
-  // Save config
-  const configPath = getConfigPath();
+  // Save config — team mode uses a separate path to avoid overwriting personal config
+  const isTeam = config.mode === 'team';
+  const orgSlug = isTeam ? (config.license_org ?? 'team') : null;
+  const configPath = isTeam && orgSlug ? getTeamConfigPath(orgSlug) : getConfigPath();
   const configDir = path.dirname(configPath);
   if (!existsSync(configDir)) {
     mkdirSync(configDir, { recursive: true });

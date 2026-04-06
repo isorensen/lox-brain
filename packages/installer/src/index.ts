@@ -10,7 +10,9 @@ import { STEPS } from './steps/registry.js';
 import { offerErrorReport } from './utils/error-report.js';
 import { handleStepFailure as handleStepFailureExternal } from './step-failure.js';
 import { formatFatalError } from './utils/format-error.js';
-import { LOX_VERSION } from '@lox-brain/shared';
+import { LOX_VERSION, getConfigPath } from '@lox-brain/shared';
+import { existsSync, readFileSync } from 'node:fs';
+import chalk from 'chalk';
 import { setLocale, t } from './i18n/index.js';
 import { loadState, saveState, clearState } from './state.js';
 import { promptResume, stepLabel } from './ui/resume-prompt.js';
@@ -76,6 +78,18 @@ async function main(): Promise<void> {
     const langResult = await stepLanguage(ctx);
     if (!langResult.success) process.exit(1);
     console.log(renderSplash());
+  }
+
+  // Detect existing personal install and inform user before mode selection
+  const existingConfigPath = getConfigPath();
+  if (existsSync(existingConfigPath)) {
+    try {
+      const existing = JSON.parse(readFileSync(existingConfigPath, 'utf-8'));
+      if (existing.mode === 'personal' || !existing.mode) {
+        console.log(chalk.cyan(`  \u2139 Detected existing personal Lox install (project: ${existing.gcp?.project ?? 'unknown'})`));
+        console.log(chalk.cyan(`    Team mode will be installed alongside it \u2014 separate VPN, separate config.\n`));
+      }
+    } catch { /* corrupt config, ignore */ }
   }
 
   // Mode selection + team-mode pre-steps (license, peers)

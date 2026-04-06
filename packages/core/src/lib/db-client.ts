@@ -86,7 +86,7 @@ export class DbClient {
     await this.pool.query(sql, [
       note.id,
       note.file_path,
-      note.title,
+      note.title ?? '',
       note.content,
       note.tags,
       JSON.stringify(note.embedding),

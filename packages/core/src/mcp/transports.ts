@@ -27,7 +27,7 @@ export function getTransportConfig(): TransportConfig {
 
     return {
       type: 'http',
-      host: '127.0.0.1',
+      host: process.env.MCP_HOST ?? '127.0.0.1',
       port,
     };
   }

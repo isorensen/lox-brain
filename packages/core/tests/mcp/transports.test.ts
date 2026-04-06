@@ -38,6 +38,26 @@ describe('selectTransport', () => {
     expect(config.host).toBe('127.0.0.1');
   });
 
+  it('should default host to 127.0.0.1 when MCP_HOST is not set', async () => {
+    process.env.MCP_TRANSPORT = 'http';
+    delete process.env.MCP_HOST;
+    const { getTransportConfig } = await import('../../src/mcp/transports.js');
+    const config: TransportConfig = getTransportConfig();
+
+    if (config.type !== 'http') throw new Error('Expected http config');
+    expect(config.host).toBe('127.0.0.1');
+  });
+
+  it('should respect MCP_HOST override', async () => {
+    process.env.MCP_TRANSPORT = 'http';
+    process.env.MCP_HOST = '10.20.0.1';
+    const { getTransportConfig } = await import('../../src/mcp/transports.js');
+    const config: TransportConfig = getTransportConfig();
+
+    if (config.type !== 'http') throw new Error('Expected http config');
+    expect(config.host).toBe('10.20.0.1');
+  });
+
   it('should respect MCP_PORT override', async () => {
     process.env.MCP_TRANSPORT = 'http';
     process.env.MCP_PORT = '4200';

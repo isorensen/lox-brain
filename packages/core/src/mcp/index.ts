@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -132,31 +133,50 @@ async function main(): Promise<void> {
     await server.connect(transport);
     console.error('Lox Brain MCP Server running on stdio');
   } else {
-    // Single stateless transport -- server.connect() once to avoid
-    // handler conflicts and listener leaks from multiple connect() calls.
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: undefined,
-    });
-    await server.connect(transport);
+    // Session-based transport — each client gets a unique session ID.
+    // Stateless mode (sessionIdGenerator: undefined) has a known SDK bug
+    // where session validation never succeeds, breaking Claude Code health
+    // checks. Session mode fixes this and enables GET-based SSE streaming.
+    const sessions = new Map<string, StreamableHTTPServerTransport>();
 
     const httpServer = createServer(async (req, res) => {
-      // GET is not supported in stateless mode (no SSE subscriptions).
-      // Return 405 so clients (e.g. Claude Code health checks) get a clean
-      // error instead of a 500 from the SDK.
-      if (req.method === 'GET') {
-        res.writeHead(405, { Allow: 'POST, DELETE' });
-        res.end('Method Not Allowed');
-        return;
-      }
-
-      // Inject the caller's IP as a request header so that MCP tool
-      // handlers can read it via extra.requestInfo.headers['x-real-ip'].
+      // Inject the caller's IP so PeerResolver can identify the peer.
       const clientIp = req.socket.remoteAddress ?? '';
       req.headers['x-real-ip'] = clientIp;
 
-      await clientIpStorage.run(clientIp, async () => {
-        await transport.handleRequest(req, res);
-      });
+      const sessionId = req.headers['mcp-session-id'] as string | undefined;
+
+      if (sessionId && sessions.has(sessionId)) {
+        // Existing session — route to its transport.
+        const transport = sessions.get(sessionId)!;
+        await clientIpStorage.run(clientIp, async () => {
+          await transport.handleRequest(req, res);
+        });
+      } else if (req.method === 'POST') {
+        // New session — create transport, connect, handle.
+        const transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: () => randomUUID(),
+        });
+
+        transport.onclose = () => {
+          const sid = transport.sessionId;
+          if (sid) sessions.delete(sid);
+        };
+
+        await server.connect(transport);
+
+        await clientIpStorage.run(clientIp, async () => {
+          await transport.handleRequest(req, res);
+        });
+
+        if (transport.sessionId) {
+          sessions.set(transport.sessionId, transport);
+        }
+      } else {
+        // GET/DELETE without a valid session.
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'No valid session. Send initialize first.' }));
+      }
     });
 
     httpServer.listen(transportConfig.port, transportConfig.host, () => {

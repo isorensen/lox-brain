@@ -2,6 +2,7 @@
   "name": "@lox-brain/shared",
   "version": "0.7.2",
   "private": true,
+  "license": "MIT",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {

@@ -30,6 +30,10 @@ async function processFile(filePath: string, label: string): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  // Ensure schema is up-to-date (adds columns introduced after initial setup).
+  await dbClient.ensureSchema();
+  console.log('Schema migration check complete');
+
   // chokidar v5 is ESM-only; dynamic import is required from CommonJS modules.
   const chokidar = await import('chokidar');
 

@@ -41,7 +41,7 @@ npm ci --silent
 echo "Building..."
 npm run build --workspaces --silent
 echo ""
-node packages/installer/dist/index.js
+node packages/installer/dist/index.js < /dev/tty
 
 # Cleanup
 rm -rf "$TEMP_DIR"

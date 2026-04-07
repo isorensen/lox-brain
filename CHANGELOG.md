@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.8.4] — 2026-04-07
+
+### Fixed
+- **`curl|bash` install crashes on interactive prompts (#164).** Redirected stdin from `/dev/tty` in `install.sh` so `@inquirer/prompts` can read user input even when the script itself is piped through bash.
+
 ## [0.8.3] — 2026-04-07
 
 ### Fixed

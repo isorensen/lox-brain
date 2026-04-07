@@ -9,9 +9,9 @@
  *
  * Keep in sync with packages/team/src/index.ts.
  */
-import type { LoxConfig } from '@lox-brain/shared';
-
 declare module '@lox-brain/team' {
+  import type { LoxConfig } from '@lox-brain/shared';
+
   export interface Tool {
     name: string;
     description: string;

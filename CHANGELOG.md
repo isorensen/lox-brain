@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.8.3] — 2026-04-07
+
+### Fixed
+- **Ambient `.d.ts` declaration was silently ignored due to top-level import (#161).** Moved `import type { LoxConfig }` inside the `declare module` block so the file remains a script (global ambient declaration) rather than becoming a module (scoped augmentation). Without this fix, TypeScript still couldn't resolve `@lox-brain/team` on fresh clones.
+
 ## [0.8.2] — 2026-04-07
 
 ### Fixed

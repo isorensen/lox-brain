@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.8.2] — 2026-04-07
+
+### Fixed
+- **Fresh install fails to build due to missing `@lox-brain/team` type declarations (#161).** Added ambient module declaration (`packages/core/src/types/lox-brain-team.d.ts`) so TypeScript can resolve the dynamic `import('@lox-brain/team')` in `mcp/index.ts` without adding a circular dependency between core and team packages. `npm run build --workspaces` now succeeds on a clean clone.
+
 ## [0.8.0] — 2026-04-06
 
 ### Added

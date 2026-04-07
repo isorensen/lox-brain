@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { DbClient } from '../../src/lib/db-client.js';
-import type { NoteRow, SearchOptions } from '@lox-brain/shared';
+import type { NoteRow } from '@lox-brain/shared';
 
 describe('DbClient', () => {
   let client: DbClient;
@@ -11,6 +11,27 @@ describe('DbClient', () => {
       query: vi.fn(),
     };
     client = new DbClient(mockPool);
+  });
+
+  describe('ensureSchema', () => {
+    it('should run ALTER TABLE ADD COLUMN IF NOT EXISTS for created_by', async () => {
+      mockPool.query.mockResolvedValue({ rowCount: 0 });
+
+      await client.ensureSchema();
+
+      expect(mockPool.query).toHaveBeenCalledTimes(1);
+      const [sql] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('ALTER TABLE vault_embeddings');
+      expect(sql).toContain('ADD COLUMN IF NOT EXISTS created_by');
+      expect(sql).toContain('TEXT');
+      expect(sql).toContain("DEFAULT ''");
+    });
+
+    it('should propagate pool.query rejection', async () => {
+      mockPool.query.mockRejectedValue(new Error('permission denied'));
+
+      await expect(client.ensureSchema()).rejects.toThrow('permission denied');
+    });
   });
 
   describe('upsertNote', () => {

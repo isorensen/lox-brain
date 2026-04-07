@@ -159,6 +159,10 @@ async function loadTeamFeatures(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  // Ensure schema is up-to-date (adds columns introduced after initial setup).
+  await dbClient.ensureSchema();
+  console.error('Schema migration check complete');
+
   try {
     await dbClient.reindexEmbeddings();
     console.error('Reindexed ivfflat embedding index');

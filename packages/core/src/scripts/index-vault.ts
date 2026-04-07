@@ -85,6 +85,11 @@ async function main(): Promise<void> {
   const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
   const embeddingService = new EmbeddingService(openai);
   const dbClient = new DbClient(pool);
+
+  // Ensure schema is up-to-date before indexing.
+  await dbClient.ensureSchema();
+  console.log('[index-vault] Schema migration check complete');
+
   const watcher = new VaultWatcher(VAULT_PATH!, embeddingService, dbClient);
 
   console.log(`[index-vault] Scanning vault at: ${VAULT_PATH}`);

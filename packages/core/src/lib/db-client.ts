@@ -29,6 +29,23 @@ export class DbClient {
     this.pool = pool;
   }
 
+  /**
+   * Ensure the database schema is up-to-date.
+   *
+   * Runs idempotent ALTER TABLE statements so that columns introduced after
+   * the initial CREATE TABLE (e.g. `created_by` from team-mode) exist on
+   * databases that were provisioned before those columns were added.
+   *
+   * Safe to call on every startup — ADD COLUMN IF NOT EXISTS is a no-op
+   * when the column already exists.
+   */
+  async ensureSchema(): Promise<void> {
+    await this.pool.query(`
+      ALTER TABLE vault_embeddings
+        ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT ''
+    `);
+  }
+
   private buildSearchOptions(
     limitOrOptions: number | Partial<SearchOptions> | undefined,
     defaults: SearchOptions,

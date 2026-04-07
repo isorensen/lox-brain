@@ -208,19 +208,17 @@ step2_install_wg_config() {
 
   local target="${WG_TARGET_DIR}/${WG_IFACE}.conf"
 
-  if [[ "$DRY_RUN" == true ]]; then
-    info "[dry-run] would create directory: ${WG_TARGET_DIR}"
-    info "[dry-run] would copy ${WG_CONFIG} → ${target} (chmod 600)"
-    return
-  fi
-
-  mkdir -p "$WG_TARGET_DIR"
-
+  # Check if already installed (works in both normal and dry-run)
   if [[ -f "$target" ]]; then
     if diff -q "$WG_CONFIG" "$target" &>/dev/null; then
       ok "Config already installed and matches: ${target}"
       return
     else
+      if [[ "$DRY_RUN" == true ]]; then
+        warn "Config exists but differs: ${target}"
+        info "[dry-run] would ask to overwrite"
+        return
+      fi
       warn "Config exists but differs: ${target}"
       printf "  Overwrite? [y/N] "
       read -r answer
@@ -231,6 +229,13 @@ step2_install_wg_config() {
     fi
   fi
 
+  if [[ "$DRY_RUN" == true ]]; then
+    info "[dry-run] would create directory: ${WG_TARGET_DIR}"
+    info "[dry-run] would copy ${WG_CONFIG} → ${target} (chmod 600)"
+    return
+  fi
+
+  mkdir -p "$WG_TARGET_DIR"
   cp "$WG_CONFIG" "$target"
   chmod 600 "$target"
   ok "Config installed: ${target}"
@@ -242,8 +247,13 @@ step2_install_wg_config() {
 step3_activate_wg() {
   step 3 "Activating WireGuard interface"
 
-  # Check if interface is already up
-  if sudo wg show "$WG_IFACE" &>/dev/null; then
+  # Check if interface is already up (without sudo in dry-run)
+  local iface_up=false
+  if ip link show "$WG_IFACE" &>/dev/null 2>&1; then
+    iface_up=true
+  fi
+
+  if [[ "$iface_up" == true ]]; then
     ok "Interface ${WG_IFACE} is already up"
   else
     local conf_path="${WG_TARGET_DIR}/${WG_IFACE}.conf"

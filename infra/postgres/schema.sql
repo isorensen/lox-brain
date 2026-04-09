@@ -27,3 +27,29 @@ CREATE INDEX IF NOT EXISTS idx_vault_embeddings_tags
 
 CREATE INDEX IF NOT EXISTS idx_vault_embeddings_updated_at
   ON vault_embeddings (updated_at DESC);
+
+-- Full-text search index (Portuguese stemming + ranking)
+CREATE INDEX IF NOT EXISTS idx_vault_embeddings_fulltext
+  ON vault_embeddings USING GIN(to_tsvector('portuguese', content));
+
+-- Tasks table
+CREATE TABLE IF NOT EXISTS tasks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  details TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  priority TEXT NOT NULL DEFAULT 'medium',
+  due_date DATE,
+  tags TEXT[] DEFAULT '{}',
+  project_context TEXT,
+  created_by TEXT,
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_due_date
+  ON tasks(due_date) WHERE status NOT IN ('done', 'cancelled');
+CREATE INDEX IF NOT EXISTS idx_tasks_tags ON tasks USING GIN(tags);
+CREATE INDEX IF NOT EXISTS idx_tasks_project_context ON tasks(project_context);

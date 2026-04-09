@@ -1,5 +1,8 @@
 import type { Pool } from 'pg';
-import type { NoteRow, SearchResult, RecentNote, SearchOptions, PaginatedResult } from '@lox-brain/shared';
+import type {
+  NoteRow, SearchResult, RecentNote, SearchOptions, PaginatedResult,
+  TaskRow, TaskStatus, TaskPriority, TaskListOptions,
+} from '@lox-brain/shared';
 
 const SEMANTIC_DEFAULTS: SearchOptions = {
   limit: 5,
@@ -43,6 +46,36 @@ export class DbClient {
     await this.pool.query(`
       ALTER TABLE vault_embeddings
         ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT ''
+    `);
+
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS tasks (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        title TEXT NOT NULL,
+        details TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        priority TEXT NOT NULL DEFAULT 'medium',
+        due_date DATE,
+        tags TEXT[] DEFAULT '{}',
+        project_context TEXT,
+        created_by TEXT,
+        completed_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+      CREATE INDEX IF NOT EXISTS idx_tasks_due_date
+        ON tasks(due_date) WHERE status NOT IN ('done', 'cancelled');
+      CREATE INDEX IF NOT EXISTS idx_tasks_tags ON tasks USING GIN(tags);
+      CREATE INDEX IF NOT EXISTS idx_tasks_project_context ON tasks(project_context);
+    `);
+
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_vault_embeddings_fulltext
+        ON vault_embeddings USING GIN(to_tsvector('portuguese', content))
     `);
   }
 
@@ -262,13 +295,11 @@ export class DbClient {
 
     let paramIdx = 1;
 
-    // $1 = query pattern
     const queryParamIdx = paramIdx++;
 
     let tagsClause = '';
-    let tagsParamIdx = 0;
     if (tags && tags.length > 0) {
-      tagsParamIdx = paramIdx++;
+      const tagsParamIdx = paramIdx++;
       tagsClause = ` AND tags @> $${tagsParamIdx}`;
     }
 
@@ -280,15 +311,16 @@ export class DbClient {
 
     const sql = `
       SELECT id, file_path, title, ${contentCol.sql}, tags, updated_at, created_by,
+             ts_rank(to_tsvector('portuguese', content), plainto_tsquery('portuguese', $${queryParamIdx})) AS rank,
              COUNT(*) OVER() AS total_count
       FROM vault_embeddings
-      WHERE content ILIKE $${queryParamIdx}${tagsClause}
-      ORDER BY updated_at DESC
+      WHERE to_tsvector('portuguese', content) @@ plainto_tsquery('portuguese', $${queryParamIdx})${tagsClause}
+      ORDER BY rank DESC
       LIMIT $${limitIdx}
       OFFSET $${offsetIdx}
     `;
 
-    const params: unknown[] = [`%${query}%`];
+    const params: unknown[] = [query];
     if (tags && tags.length > 0) {
       params.push(tags);
     }
@@ -296,5 +328,181 @@ export class DbClient {
 
     const result = await this.pool.query(sql, params);
     return this.buildPaginatedResult(result.rows, opts);
+  }
+
+  // --- Tasks ---
+
+  async addTask(params: {
+    title: string;
+    details?: string;
+    priority?: TaskPriority;
+    due_date?: string;
+    tags?: string[];
+    project_context?: string;
+    created_by?: string;
+  }): Promise<TaskRow> {
+    const result = await this.pool.query<TaskRow>(
+      `INSERT INTO tasks (title, details, priority, due_date, tags, project_context, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [
+        params.title,
+        params.details ?? null,
+        params.priority ?? 'medium',
+        params.due_date ?? null,
+        params.tags ?? [],
+        params.project_context ?? null,
+        params.created_by ?? null,
+      ],
+    );
+    return result.rows[0];
+  }
+
+  async listTasks(options: TaskListOptions = {}): Promise<{ results: TaskRow[]; total: number }> {
+    const conditions: string[] = [];
+    const values: unknown[] = [];
+    let paramIdx = 1;
+
+    const status = options.status ?? 'pending';
+    if (status) {
+      conditions.push(`status = $${paramIdx++}`);
+      values.push(status);
+    }
+    if (options.priority) {
+      conditions.push(`priority = $${paramIdx++}`);
+      values.push(options.priority);
+    }
+    if (options.project_context) {
+      conditions.push(`project_context = $${paramIdx++}`);
+      values.push(options.project_context);
+    }
+    if (options.tags && options.tags.length > 0) {
+      conditions.push(`tags && $${paramIdx++}`);
+      values.push(options.tags);
+    }
+    if (options.due_before) {
+      conditions.push(`due_date <= $${paramIdx++}`);
+      values.push(options.due_before);
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const limit = options.limit ?? 20;
+    const offset = options.offset ?? 0;
+
+    const countResult = await this.pool.query<{ count: string }>(
+      `SELECT COUNT(*) AS count FROM tasks ${where}`, values,
+    );
+    const total = Number(countResult.rows[0].count);
+
+    const result = await this.pool.query<TaskRow>(
+      `SELECT * FROM tasks ${where}
+       ORDER BY
+         CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 END,
+         due_date ASC NULLS LAST,
+         created_at DESC
+       LIMIT $${paramIdx++} OFFSET $${paramIdx}`,
+      [...values, limit, offset],
+    );
+
+    return { results: result.rows, total };
+  }
+
+  async updateTask(id: string, updates: Partial<{
+    title: string;
+    details: string;
+    status: TaskStatus;
+    priority: TaskPriority;
+    due_date: string;
+    tags: string[];
+    project_context: string;
+  }>): Promise<TaskRow | null> {
+    const setClauses: string[] = [];
+    const values: unknown[] = [];
+    let paramIdx = 1;
+
+    const idIdx = paramIdx++;
+    if (updates.title !== undefined) { setClauses.push(`title = $${paramIdx++}`); values.push(updates.title); }
+    if (updates.details !== undefined) { setClauses.push(`details = $${paramIdx++}`); values.push(updates.details); }
+    if (updates.status !== undefined) {
+      setClauses.push(`status = $${paramIdx++}`);
+      values.push(updates.status);
+      if (updates.status === 'done') {
+        setClauses.push(`completed_at = NOW()`);
+      }
+    }
+    if (updates.priority !== undefined) { setClauses.push(`priority = $${paramIdx++}`); values.push(updates.priority); }
+    if (updates.due_date !== undefined) { setClauses.push(`due_date = $${paramIdx++}`); values.push(updates.due_date); }
+    if (updates.tags !== undefined) { setClauses.push(`tags = $${paramIdx++}`); values.push(updates.tags); }
+    if (updates.project_context !== undefined) { setClauses.push(`project_context = $${paramIdx++}`); values.push(updates.project_context); }
+
+    if (setClauses.length === 0) return null;
+
+    setClauses.push('updated_at = NOW()');
+
+    const result = await this.pool.query<TaskRow>(
+      `UPDATE tasks SET ${setClauses.join(', ')} WHERE id = $${idIdx} RETURNING *`,
+      [id, ...values],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  async completeTask(idOrTitle: string): Promise<TaskRow | null> {
+    // Try by ID first
+    let result = await this.pool.query<TaskRow>(
+      `UPDATE tasks SET status = 'done', completed_at = NOW(), updated_at = NOW()
+       WHERE id = $1 RETURNING *`,
+      [idOrTitle],
+    );
+    if (result.rows[0]) return result.rows[0];
+
+    // Fallback to fuzzy title match
+    result = await this.pool.query<TaskRow>(
+      `UPDATE tasks SET status = 'done', completed_at = NOW(), updated_at = NOW()
+       WHERE id = (SELECT id FROM tasks WHERE title ILIKE $1 AND status != 'done' ORDER BY created_at DESC LIMIT 1)
+       RETURNING *`,
+      [`%${idOrTitle}%`],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  // --- Daily Log ---
+
+  async appendDailyLog(entry: string, tags?: string[], createdBy?: string): Promise<{ id: string; date: string; entries_count: number }> {
+    const today = new Date().toISOString().split('T')[0];
+    const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+    const formattedEntry = `\n### ${timestamp}\n${entry}`;
+
+    // Try to find existing daily log for today
+    const existing = await this.pool.query<{ id: string; content: string; tags: string[] }>(
+      `SELECT id, content, tags FROM vault_embeddings
+       WHERE file_path = $1 AND chunk_index = 0`,
+      [`daily-logs/${today}.md`],
+    );
+
+    if (existing.rows[0]) {
+      const updatedContent = existing.rows[0].content + formattedEntry;
+      const mergedTags = [...new Set([...existing.rows[0].tags, ...(tags ?? [])])];
+      await this.pool.query(
+        `UPDATE vault_embeddings SET content = $1, tags = $2, updated_at = NOW()
+         WHERE id = $3`,
+        [updatedContent, mergedTags, existing.rows[0].id],
+      );
+      const entriesCount = (updatedContent.match(/^### \d{2}:\d{2}/gm) ?? []).length;
+      return { id: existing.rows[0].id, date: today, entries_count: entriesCount };
+    }
+
+    // Create new daily log
+    const content = `# Daily Log - ${today}${formattedEntry}`;
+    const allTags = ['daily_log', ...(tags ?? [])];
+    const { randomUUID } = await import('node:crypto');
+    const id = randomUUID();
+
+    await this.pool.query(
+      `INSERT INTO vault_embeddings (id, file_path, title, content, tags, embedding, file_hash, chunk_index, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 0, $8)`,
+      [id, `daily-logs/${today}.md`, today, content, allTags, null, '', createdBy ?? ''],
+    );
+
+    return { id, date: today, entries_count: 1 };
   }
 }

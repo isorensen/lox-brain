@@ -59,6 +59,11 @@ export class DbClient {
           ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT ''
       `);
     }
+    // NOTE: the dual-language full-text GIN indexes live in
+    // infra/postgres/schema.sql (applied by the table owner at setup).
+    // They are intentionally NOT created here: a non-owner runtime role
+    // cannot run CREATE INDEX (even a no-op IF NOT EXISTS) without hitting
+    // the 42501 permission error described in issue #169.
   }
 
   private buildSearchOptions(
@@ -277,13 +282,11 @@ export class DbClient {
 
     let paramIdx = 1;
 
-    // $1 = query pattern
     const queryParamIdx = paramIdx++;
 
     let tagsClause = '';
-    let tagsParamIdx = 0;
     if (tags && tags.length > 0) {
-      tagsParamIdx = paramIdx++;
+      const tagsParamIdx = paramIdx++;
       tagsClause = ` AND tags @> $${tagsParamIdx}`;
     }
 
@@ -293,17 +296,23 @@ export class DbClient {
     const limitIdx = paramIdx++;
     const offsetIdx = paramIdx++;
 
+    const q = `$${queryParamIdx}`;
     const sql = `
       SELECT id, file_path, title, ${contentCol.sql}, tags, updated_at, created_by,
+             GREATEST(
+               ts_rank(to_tsvector('portuguese', content), plainto_tsquery('portuguese', ${q})),
+               ts_rank(to_tsvector('english', content), plainto_tsquery('english', ${q}))
+             ) AS rank,
              COUNT(*) OVER() AS total_count
       FROM vault_embeddings
-      WHERE content ILIKE $${queryParamIdx}${tagsClause}
-      ORDER BY updated_at DESC
+      WHERE (to_tsvector('portuguese', content) @@ plainto_tsquery('portuguese', ${q})
+         OR to_tsvector('english', content) @@ plainto_tsquery('english', ${q}))${tagsClause}
+      ORDER BY rank DESC
       LIMIT $${limitIdx}
       OFFSET $${offsetIdx}
     `;
 
-    const params: unknown[] = [`%${query}%`];
+    const params: unknown[] = [query];
     if (tags && tags.length > 0) {
       params.push(tags);
     }

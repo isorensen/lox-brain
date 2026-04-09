@@ -27,3 +27,12 @@ CREATE INDEX IF NOT EXISTS idx_vault_embeddings_tags
 
 CREATE INDEX IF NOT EXISTS idx_vault_embeddings_updated_at
   ON vault_embeddings (updated_at DESC);
+
+-- Full-text search indexes (dual-language: Portuguese + English)
+-- Two separate GIN indexes allow PostgreSQL to combine them via BitmapOr,
+-- applying language-specific stemming and stop words for each language.
+CREATE INDEX IF NOT EXISTS idx_vault_embeddings_fulltext_pt
+  ON vault_embeddings USING GIN(to_tsvector('portuguese', content));
+
+CREATE INDEX IF NOT EXISTS idx_vault_embeddings_fulltext_en
+  ON vault_embeddings USING GIN(to_tsvector('english', content));

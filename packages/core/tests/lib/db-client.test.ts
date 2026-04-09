@@ -19,12 +19,12 @@ describe('DbClient', () => {
 
       await client.ensureSchema();
 
-      expect(mockPool.query).toHaveBeenCalledTimes(1);
-      const [sql] = mockPool.query.mock.calls[0];
-      expect(sql).toContain('ALTER TABLE vault_embeddings');
-      expect(sql).toContain('ADD COLUMN IF NOT EXISTS created_by');
-      expect(sql).toContain('TEXT');
-      expect(sql).toContain("DEFAULT ''");
+      expect(mockPool.query).toHaveBeenCalled();
+      const allSql = mockPool.query.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+      expect(allSql).toContain('ALTER TABLE vault_embeddings');
+      expect(allSql).toContain('ADD COLUMN IF NOT EXISTS created_by');
+      expect(allSql).toContain('idx_vault_embeddings_fulltext_pt');
+      expect(allSql).toContain('idx_vault_embeddings_fulltext_en');
     });
 
     it('should propagate pool.query rejection', async () => {
@@ -400,7 +400,7 @@ describe('DbClient', () => {
   });
 
   describe('searchText', () => {
-    it('should use ILIKE and tags @> filter with parameterized query', async () => {
+    it('should use tsvector with Portuguese and English stemming and tags filter', async () => {
       const fakeRows = [
         {
           id: 'id1',
@@ -409,6 +409,7 @@ describe('DbClient', () => {
           content: null,
           tags: ['tag1'],
           updated_at: new Date('2026-03-07'),
+          rank: 0.5,
           total_count: '1',
         },
       ];
@@ -418,9 +419,13 @@ describe('DbClient', () => {
 
       expect(mockPool.query).toHaveBeenCalledTimes(1);
       const [sql, params] = mockPool.query.mock.calls[0];
-      expect(sql).toContain('ILIKE');
+      expect(sql).toContain("to_tsvector('portuguese', content)");
+      expect(sql).toContain("to_tsvector('english', content)");
+      expect(sql).toContain('ts_rank');
+      expect(sql).toContain('GREATEST');
       expect(sql).toContain('tags @>');
-      expect(params[0]).toBe('%matching%');
+      expect(sql).toContain('ORDER BY rank DESC');
+      expect(params[0]).toBe('matching');
       expect(result).toHaveProperty('results');
       expect(result).toHaveProperty('total');
     });
@@ -431,9 +436,10 @@ describe('DbClient', () => {
       await client.searchText('query');
 
       const [sql, params] = mockPool.query.mock.calls[0];
-      expect(sql).toContain('ILIKE');
+      expect(sql).toContain("to_tsvector('portuguese', content)");
+      expect(sql).toContain("to_tsvector('english', content)");
       expect(sql).not.toContain('tags @>');
-      expect(params[0]).toBe('%query%');
+      expect(params[0]).toBe('query');
     });
 
     it('should SELECT created_by in text search results', async () => {

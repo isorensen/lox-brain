@@ -44,6 +44,13 @@ export class DbClient {
       ALTER TABLE vault_embeddings
         ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT ''
     `);
+
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_vault_embeddings_fulltext_pt
+        ON vault_embeddings USING GIN(to_tsvector('portuguese', content));
+      CREATE INDEX IF NOT EXISTS idx_vault_embeddings_fulltext_en
+        ON vault_embeddings USING GIN(to_tsvector('english', content));
+    `);
   }
 
   private buildSearchOptions(
@@ -262,13 +269,11 @@ export class DbClient {
 
     let paramIdx = 1;
 
-    // $1 = query pattern
     const queryParamIdx = paramIdx++;
 
     let tagsClause = '';
-    let tagsParamIdx = 0;
     if (tags && tags.length > 0) {
-      tagsParamIdx = paramIdx++;
+      const tagsParamIdx = paramIdx++;
       tagsClause = ` AND tags @> $${tagsParamIdx}`;
     }
 
@@ -278,17 +283,23 @@ export class DbClient {
     const limitIdx = paramIdx++;
     const offsetIdx = paramIdx++;
 
+    const q = `$${queryParamIdx}`;
     const sql = `
       SELECT id, file_path, title, ${contentCol.sql}, tags, updated_at, created_by,
+             GREATEST(
+               ts_rank(to_tsvector('portuguese', content), plainto_tsquery('portuguese', ${q})),
+               ts_rank(to_tsvector('english', content), plainto_tsquery('english', ${q}))
+             ) AS rank,
              COUNT(*) OVER() AS total_count
       FROM vault_embeddings
-      WHERE content ILIKE $${queryParamIdx}${tagsClause}
-      ORDER BY updated_at DESC
+      WHERE (to_tsvector('portuguese', content) @@ plainto_tsquery('portuguese', ${q})
+         OR to_tsvector('english', content) @@ plainto_tsquery('english', ${q}))${tagsClause}
+      ORDER BY rank DESC
       LIMIT $${limitIdx}
       OFFSET $${offsetIdx}
     `;
 
-    const params: unknown[] = [`%${query}%`];
+    const params: unknown[] = [query];
     if (tags && tags.length > 0) {
       params.push(tags);
     }

@@ -73,10 +73,6 @@ export class DbClient {
       CREATE INDEX IF NOT EXISTS idx_tasks_project_context ON tasks(project_context);
     `);
 
-    await this.pool.query(`
-      CREATE INDEX IF NOT EXISTS idx_vault_embeddings_fulltext
-        ON vault_embeddings USING GIN(to_tsvector('portuguese', content))
-    `);
   }
 
   private buildSearchOptions(
@@ -311,16 +307,15 @@ export class DbClient {
 
     const sql = `
       SELECT id, file_path, title, ${contentCol.sql}, tags, updated_at, created_by,
-             ts_rank(to_tsvector('portuguese', content), plainto_tsquery('portuguese', $${queryParamIdx})) AS rank,
              COUNT(*) OVER() AS total_count
       FROM vault_embeddings
-      WHERE to_tsvector('portuguese', content) @@ plainto_tsquery('portuguese', $${queryParamIdx})${tagsClause}
-      ORDER BY rank DESC
+      WHERE content ILIKE $${queryParamIdx}${tagsClause}
+      ORDER BY updated_at DESC
       LIMIT $${limitIdx}
       OFFSET $${offsetIdx}
     `;
 
-    const params: unknown[] = [query];
+    const params: unknown[] = [`%${query}%`];
     if (tags && tags.length > 0) {
       params.push(tags);
     }

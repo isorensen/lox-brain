@@ -28,10 +28,6 @@ CREATE INDEX IF NOT EXISTS idx_vault_embeddings_tags
 CREATE INDEX IF NOT EXISTS idx_vault_embeddings_updated_at
   ON vault_embeddings (updated_at DESC);
 
--- Full-text search index (Portuguese stemming + ranking)
-CREATE INDEX IF NOT EXISTS idx_vault_embeddings_fulltext
-  ON vault_embeddings USING GIN(to_tsvector('portuguese', content));
-
 -- Tasks table
 CREATE TABLE IF NOT EXISTS tasks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

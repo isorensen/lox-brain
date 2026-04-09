@@ -19,12 +19,12 @@ describe('DbClient', () => {
 
       await client.ensureSchema();
 
-      expect(mockPool.query).toHaveBeenCalledTimes(1);
-      const [sql] = mockPool.query.mock.calls[0];
-      expect(sql).toContain('ALTER TABLE vault_embeddings');
-      expect(sql).toContain('ADD COLUMN IF NOT EXISTS created_by');
-      expect(sql).toContain('TEXT');
-      expect(sql).toContain("DEFAULT ''");
+      expect(mockPool.query).toHaveBeenCalled();
+      const allSql = mockPool.query.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+      expect(allSql).toContain('ALTER TABLE vault_embeddings');
+      expect(allSql).toContain('ADD COLUMN IF NOT EXISTS created_by');
+      expect(allSql).toContain('CREATE TABLE IF NOT EXISTS tasks');
+      expect(allSql).toContain('idx_vault_embeddings_fulltext');
     });
 
     it('should propagate pool.query rejection', async () => {
@@ -418,9 +418,10 @@ describe('DbClient', () => {
 
       expect(mockPool.query).toHaveBeenCalledTimes(1);
       const [sql, params] = mockPool.query.mock.calls[0];
-      expect(sql).toContain('ILIKE');
+      expect(sql).toContain('to_tsvector');
+      expect(sql).toContain('plainto_tsquery');
       expect(sql).toContain('tags @>');
-      expect(params[0]).toBe('%matching%');
+      expect(params[0]).toBe('matching');
       expect(result).toHaveProperty('results');
       expect(result).toHaveProperty('total');
     });
@@ -431,9 +432,10 @@ describe('DbClient', () => {
       await client.searchText('query');
 
       const [sql, params] = mockPool.query.mock.calls[0];
-      expect(sql).toContain('ILIKE');
+      expect(sql).toContain('to_tsvector');
+      expect(sql).toContain('ts_rank');
       expect(sql).not.toContain('tags @>');
-      expect(params[0]).toBe('%query%');
+      expect(params[0]).toBe('query');
     });
 
     it('should SELECT created_by in text search results', async () => {

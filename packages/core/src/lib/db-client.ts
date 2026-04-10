@@ -44,6 +44,15 @@ export class DbClient {
       ALTER TABLE vault_embeddings
         ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT ''
     `);
+
+    await this.pool.query(`
+      ALTER TABLE vault_embeddings ADD COLUMN IF NOT EXISTS area TEXT;
+      ALTER TABLE vault_embeddings ADD COLUMN IF NOT EXISTS source_type TEXT;
+      CREATE INDEX IF NOT EXISTS idx_vault_embeddings_area
+        ON vault_embeddings(area) WHERE area IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_vault_embeddings_source_type
+        ON vault_embeddings(source_type) WHERE source_type IS NOT NULL;
+    `);
   }
 
   private buildSearchOptions(
@@ -77,6 +86,25 @@ export class DbClient {
     return { sql: 'content', params: [], nextParamIndex: paramIndex };
   }
 
+  private buildMetadataFilters(
+    opts: SearchOptions,
+    startParamIdx: number,
+  ): { clauses: string[]; params: unknown[]; nextParamIndex: number } {
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    let paramIdx = startParamIdx;
+
+    if (opts.area) {
+      clauses.push(`area = $${paramIdx++}`);
+      params.push(opts.area);
+    }
+    if (opts.source_type) {
+      clauses.push(`source_type = $${paramIdx++}`);
+      params.push(opts.source_type);
+    }
+    return { clauses, params, nextParamIndex: paramIdx };
+  }
+
   private buildPaginatedResult<T>(
     rows: Array<T & { total_count?: string }>,
     opts: SearchOptions,
@@ -88,8 +116,8 @@ export class DbClient {
 
   async upsertNote(note: NoteRow): Promise<void> {
     const sql = `
-      INSERT INTO vault_embeddings (id, file_path, title, content, tags, embedding, file_hash, chunk_index, created_by, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+      INSERT INTO vault_embeddings (id, file_path, title, content, tags, embedding, file_hash, chunk_index, created_by, area, source_type, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
       ON CONFLICT (file_path, chunk_index) DO UPDATE SET
         title = EXCLUDED.title,
         content = EXCLUDED.content,
@@ -97,6 +125,8 @@ export class DbClient {
         embedding = EXCLUDED.embedding,
         file_hash = EXCLUDED.file_hash,
         created_by = COALESCE(vault_embeddings.created_by, EXCLUDED.created_by),
+        area = COALESCE(EXCLUDED.area, vault_embeddings.area),
+        source_type = COALESCE(EXCLUDED.source_type, vault_embeddings.source_type),
         updated_at = NOW()
     `;
 
@@ -110,6 +140,8 @@ export class DbClient {
       note.file_hash,
       note.chunk_index,
       note.created_by ?? null,
+      note.area ?? null,
+      note.source_type ?? null,
     ]);
   }
 
@@ -143,15 +175,21 @@ export class DbClient {
     const contentCol = this.buildContentColumn(opts, paramIdx);
     paramIdx = contentCol.nextParamIndex;
 
+    const filters = this.buildMetadataFilters(opts, paramIdx);
+    paramIdx = filters.nextParamIndex;
+
     const limitIdx = paramIdx++;
     const offsetIdx = paramIdx++;
+
+    const whereClause = filters.clauses.length > 0 ? `WHERE ${filters.clauses.join(' AND ')}` : '';
 
     const sql = `
       SELECT id, file_path, title, ${contentCol.sql}, tags,
              1 - (embedding <=> $1::vector) AS similarity,
-             updated_at, created_by,
+             updated_at, created_by, area, source_type,
              COUNT(*) OVER() AS total_count
       FROM vault_embeddings
+      ${whereClause}
       ORDER BY embedding <=> $1::vector
       LIMIT $${limitIdx}
       OFFSET $${offsetIdx}
@@ -160,6 +198,7 @@ export class DbClient {
     const params = [
       JSON.stringify(embedding),
       ...contentCol.params,
+      ...filters.params,
       opts.limit,
       opts.offset,
     ];
@@ -194,19 +233,25 @@ export class DbClient {
     const contentCol = this.buildContentColumn(opts, paramIdx);
     paramIdx = contentCol.nextParamIndex;
 
+    const filters = this.buildMetadataFilters(opts, paramIdx);
+    paramIdx = filters.nextParamIndex;
+
     const limitIdx = paramIdx++;
     const offsetIdx = paramIdx++;
 
+    const whereClause = filters.clauses.length > 0 ? `WHERE ${filters.clauses.join(' AND ')}` : '';
+
     const sql = `
-      SELECT id, file_path, title, ${contentCol.sql}, tags, updated_at, created_by,
+      SELECT id, file_path, title, ${contentCol.sql}, tags, updated_at, created_by, area, source_type,
              COUNT(*) OVER() AS total_count
       FROM vault_embeddings
+      ${whereClause}
       ORDER BY updated_at DESC
       LIMIT $${limitIdx}
       OFFSET $${offsetIdx}
     `;
 
-    const params = [...contentCol.params, opts.limit, opts.offset];
+    const params = [...contentCol.params, ...filters.params, opts.limit, opts.offset];
 
     const result = await this.pool.query(sql, params);
     return this.buildPaginatedResult(result.rows, opts);
@@ -266,11 +311,14 @@ export class DbClient {
     const queryParamIdx = paramIdx++;
 
     let tagsClause = '';
-    let tagsParamIdx = 0;
     if (tags && tags.length > 0) {
-      tagsParamIdx = paramIdx++;
+      const tagsParamIdx = paramIdx++;
       tagsClause = ` AND tags @> $${tagsParamIdx}`;
     }
+
+    const filters = this.buildMetadataFilters(opts, paramIdx);
+    paramIdx = filters.nextParamIndex;
+    const metadataClause = filters.clauses.length > 0 ? ` AND ${filters.clauses.join(' AND ')}` : '';
 
     const contentCol = this.buildContentColumn(opts, paramIdx);
     paramIdx = contentCol.nextParamIndex;
@@ -279,10 +327,10 @@ export class DbClient {
     const offsetIdx = paramIdx++;
 
     const sql = `
-      SELECT id, file_path, title, ${contentCol.sql}, tags, updated_at, created_by,
+      SELECT id, file_path, title, ${contentCol.sql}, tags, updated_at, created_by, area, source_type,
              COUNT(*) OVER() AS total_count
       FROM vault_embeddings
-      WHERE content ILIKE $${queryParamIdx}${tagsClause}
+      WHERE content ILIKE $${queryParamIdx}${tagsClause}${metadataClause}
       ORDER BY updated_at DESC
       LIMIT $${limitIdx}
       OFFSET $${offsetIdx}
@@ -292,7 +340,7 @@ export class DbClient {
     if (tags && tags.length > 0) {
       params.push(tags);
     }
-    params.push(...contentCol.params, opts.limit, opts.offset);
+    params.push(...filters.params, ...contentCol.params, opts.limit, opts.offset);
 
     const result = await this.pool.query(sql, params);
     return this.buildPaginatedResult(result.rows, opts);

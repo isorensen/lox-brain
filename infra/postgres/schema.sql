@@ -27,3 +27,13 @@ CREATE INDEX IF NOT EXISTS idx_vault_embeddings_tags
 
 CREATE INDEX IF NOT EXISTS idx_vault_embeddings_updated_at
   ON vault_embeddings (updated_at DESC);
+
+-- Optional metadata columns for domain filtering
+ALTER TABLE vault_embeddings ADD COLUMN IF NOT EXISTS area TEXT;
+ALTER TABLE vault_embeddings ADD COLUMN IF NOT EXISTS source_type TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_vault_embeddings_area
+  ON vault_embeddings(area) WHERE area IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_vault_embeddings_source_type
+  ON vault_embeddings(source_type) WHERE source_type IS NOT NULL;

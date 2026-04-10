@@ -15,6 +15,8 @@ export interface NoteRow {
   file_hash: string;
   chunk_index: number;
   created_by?: string;
+  area?: string | null;
+  source_type?: string | null;
 }
 
 export interface SearchOptions {
@@ -22,6 +24,8 @@ export interface SearchOptions {
   offset: number;
   includeContent: boolean;
   contentPreviewLength: number; // 0 = full content, >0 = truncate at N chars
+  area?: string;
+  source_type?: string;
 }
 
 export interface PaginatedResult<T> {

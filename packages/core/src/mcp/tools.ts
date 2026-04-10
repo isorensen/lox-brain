@@ -141,6 +141,8 @@ export function createTools(
           offset: { type: 'number', description: 'Pagination offset (default: 0)' },
           include_content: { type: 'boolean', description: 'Include content in results (default: false)' },
           content_preview_length: { type: 'number', description: 'Truncate content to N chars, 0 for full (default: 300)' },
+          area: { type: 'string', description: 'Filter by area (e.g. ia, programacao, lideranca, comunicacao, financas)' },
+          source_type: { type: 'string', description: 'Filter by source type (e.g. study, book_summary, news, free_note, daily_log)' },
         },
         required: ['query'],
       },
@@ -155,6 +157,8 @@ export function createTools(
           offset: (args.offset as number | undefined) ?? 0,
           includeContent: (args.include_content as boolean | undefined) ?? false,
           contentPreviewLength: (args.content_preview_length as number | undefined) ?? 300,
+          area: args.area as string | undefined,
+          source_type: args.source_type as string | undefined,
         };
 
         const embedding = await embeddingService.generateEmbedding(query);
@@ -163,12 +167,14 @@ export function createTools(
     },
     {
       name: 'search_text',
-      description: 'Search notes by text content. Returns metadata only by default. Supports pagination via limit/offset. Use read_note for full content.',
+      description: 'Search notes by text content (case-insensitive). Returns metadata only by default. Use read_note for full content.',
       inputSchema: {
         type: 'object',
         properties: {
           query: { type: 'string', description: 'Text to search for (case-insensitive)' },
           tags: { type: 'array', items: { type: 'string' }, description: 'Optional tags to filter by' },
+          area: { type: 'string', description: 'Filter by area (e.g. ia, programacao, lideranca, comunicacao, financas)' },
+          source_type: { type: 'string', description: 'Filter by source type (e.g. study, book_summary, news, free_note, daily_log)' },
           limit: { type: 'number', description: 'Maximum number of results (default: 20)' },
           offset: { type: 'number', description: 'Pagination offset (default: 0)' },
           include_content: { type: 'boolean', description: 'Include content in results (default: false)' },
@@ -188,6 +194,8 @@ export function createTools(
           offset: (args.offset as number | undefined) ?? 0,
           includeContent: (args.include_content as boolean | undefined) ?? false,
           contentPreviewLength: (args.content_preview_length as number | undefined) ?? 300,
+          area: args.area as string | undefined,
+          source_type: args.source_type as string | undefined,
         };
 
         return dbClient.searchText(query, tags, searchOptions);
@@ -203,6 +211,8 @@ export function createTools(
           offset: { type: 'number', description: 'Pagination offset (default: 0)' },
           include_content: { type: 'boolean', description: 'Include content in results (default: false)' },
           content_preview_length: { type: 'number', description: 'Truncate content to N chars, 0 for full (default: 300)' },
+          area: { type: 'string', description: 'Filter by area' },
+          source_type: { type: 'string', description: 'Filter by source type' },
         },
       },
       async handler(args: Record<string, unknown>): Promise<unknown> {
@@ -211,6 +221,8 @@ export function createTools(
           offset: (args.offset as number | undefined) ?? 0,
           includeContent: (args.include_content as boolean | undefined) ?? false,
           contentPreviewLength: (args.content_preview_length as number | undefined) ?? 300,
+          area: args.area as string | undefined,
+          source_type: args.source_type as string | undefined,
         };
 
         return dbClient.listRecent(searchOptions);

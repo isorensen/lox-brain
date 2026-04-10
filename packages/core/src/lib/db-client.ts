@@ -59,11 +59,13 @@ export class DbClient {
           ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT ''
       `);
     }
-    // NOTE: the dual-language full-text GIN indexes live in
-    // infra/postgres/schema.sql (applied by the table owner at setup).
-    // They are intentionally NOT created here: a non-owner runtime role
-    // cannot run CREATE INDEX (even a no-op IF NOT EXISTS) without hitting
-    // the 42501 permission error described in issue #169.
+    // NOTE: all other schema objects — the area/source_type columns, their
+    // partial indexes, and the dual-language full-text GIN indexes — live in
+    // infra/postgres/schema.sql (applied by the table owner at setup). They
+    // are intentionally NOT created here: a non-owner runtime role cannot run
+    // ALTER TABLE / CREATE INDEX (even a no-op IF NOT EXISTS) without hitting
+    // the 42501 permission error described in issue #169. Existing
+    // deployments pick them up by re-applying schema.sql.
   }
 
   private buildSearchOptions(
@@ -97,6 +99,25 @@ export class DbClient {
     return { sql: 'content', params: [], nextParamIndex: paramIndex };
   }
 
+  private buildMetadataFilters(
+    opts: SearchOptions,
+    startParamIdx: number,
+  ): { clauses: string[]; params: unknown[]; nextParamIndex: number } {
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    let paramIdx = startParamIdx;
+
+    if (opts.area) {
+      clauses.push(`area = $${paramIdx++}`);
+      params.push(opts.area);
+    }
+    if (opts.source_type) {
+      clauses.push(`source_type = $${paramIdx++}`);
+      params.push(opts.source_type);
+    }
+    return { clauses, params, nextParamIndex: paramIdx };
+  }
+
   private buildPaginatedResult<T>(
     rows: Array<T & { total_count?: string }>,
     opts: SearchOptions,
@@ -108,8 +129,8 @@ export class DbClient {
 
   async upsertNote(note: NoteRow): Promise<void> {
     const sql = `
-      INSERT INTO vault_embeddings (id, file_path, title, content, tags, embedding, file_hash, chunk_index, created_by, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+      INSERT INTO vault_embeddings (id, file_path, title, content, tags, embedding, file_hash, chunk_index, created_by, area, source_type, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
       ON CONFLICT (file_path, chunk_index) DO UPDATE SET
         title = EXCLUDED.title,
         content = EXCLUDED.content,
@@ -117,6 +138,8 @@ export class DbClient {
         embedding = EXCLUDED.embedding,
         file_hash = EXCLUDED.file_hash,
         created_by = COALESCE(vault_embeddings.created_by, EXCLUDED.created_by),
+        area = COALESCE(EXCLUDED.area, vault_embeddings.area),
+        source_type = COALESCE(EXCLUDED.source_type, vault_embeddings.source_type),
         updated_at = NOW()
     `;
 
@@ -130,6 +153,8 @@ export class DbClient {
       note.file_hash,
       note.chunk_index,
       note.created_by ?? null,
+      note.area ?? null,
+      note.source_type ?? null,
     ]);
   }
 
@@ -163,15 +188,21 @@ export class DbClient {
     const contentCol = this.buildContentColumn(opts, paramIdx);
     paramIdx = contentCol.nextParamIndex;
 
+    const filters = this.buildMetadataFilters(opts, paramIdx);
+    paramIdx = filters.nextParamIndex;
+
     const limitIdx = paramIdx++;
     const offsetIdx = paramIdx++;
+
+    const whereClause = filters.clauses.length > 0 ? `WHERE ${filters.clauses.join(' AND ')}` : '';
 
     const sql = `
       SELECT id, file_path, title, ${contentCol.sql}, tags,
              1 - (embedding <=> $1::vector) AS similarity,
-             updated_at, created_by,
+             updated_at, created_by, area, source_type,
              COUNT(*) OVER() AS total_count
       FROM vault_embeddings
+      ${whereClause}
       ORDER BY embedding <=> $1::vector
       LIMIT $${limitIdx}
       OFFSET $${offsetIdx}
@@ -180,6 +211,7 @@ export class DbClient {
     const params = [
       JSON.stringify(embedding),
       ...contentCol.params,
+      ...filters.params,
       opts.limit,
       opts.offset,
     ];
@@ -214,19 +246,25 @@ export class DbClient {
     const contentCol = this.buildContentColumn(opts, paramIdx);
     paramIdx = contentCol.nextParamIndex;
 
+    const filters = this.buildMetadataFilters(opts, paramIdx);
+    paramIdx = filters.nextParamIndex;
+
     const limitIdx = paramIdx++;
     const offsetIdx = paramIdx++;
 
+    const whereClause = filters.clauses.length > 0 ? `WHERE ${filters.clauses.join(' AND ')}` : '';
+
     const sql = `
-      SELECT id, file_path, title, ${contentCol.sql}, tags, updated_at, created_by,
+      SELECT id, file_path, title, ${contentCol.sql}, tags, updated_at, created_by, area, source_type,
              COUNT(*) OVER() AS total_count
       FROM vault_embeddings
+      ${whereClause}
       ORDER BY updated_at DESC
       LIMIT $${limitIdx}
       OFFSET $${offsetIdx}
     `;
 
-    const params = [...contentCol.params, opts.limit, opts.offset];
+    const params = [...contentCol.params, ...filters.params, opts.limit, opts.offset];
 
     const result = await this.pool.query(sql, params);
     return this.buildPaginatedResult(result.rows, opts);
@@ -290,6 +328,10 @@ export class DbClient {
       tagsClause = ` AND tags @> $${tagsParamIdx}`;
     }
 
+    const filters = this.buildMetadataFilters(opts, paramIdx);
+    paramIdx = filters.nextParamIndex;
+    const metadataClause = filters.clauses.length > 0 ? ` AND ${filters.clauses.join(' AND ')}` : '';
+
     const contentCol = this.buildContentColumn(opts, paramIdx);
     paramIdx = contentCol.nextParamIndex;
 
@@ -298,7 +340,7 @@ export class DbClient {
 
     const q = `$${queryParamIdx}`;
     const sql = `
-      SELECT id, file_path, title, ${contentCol.sql}, tags, updated_at, created_by,
+      SELECT id, file_path, title, ${contentCol.sql}, tags, updated_at, created_by, area, source_type,
              GREATEST(
                ts_rank(to_tsvector('portuguese', content), plainto_tsquery('portuguese', ${q})),
                ts_rank(to_tsvector('english', content), plainto_tsquery('english', ${q}))
@@ -307,7 +349,7 @@ export class DbClient {
       FROM vault_embeddings
       WHERE (to_tsvector('portuguese', content) @@ plainto_tsquery('portuguese', ${q})
          OR to_tsvector('english', content) @@ plainto_tsquery('english', ${q})
-         OR content ILIKE '%' || ${q} || '%')${tagsClause}
+         OR content ILIKE '%' || ${q} || '%')${tagsClause}${metadataClause}
       ORDER BY rank DESC, updated_at DESC
       LIMIT $${limitIdx}
       OFFSET $${offsetIdx}
@@ -317,7 +359,7 @@ export class DbClient {
     if (tags && tags.length > 0) {
       params.push(tags);
     }
-    params.push(...contentCol.params, opts.limit, opts.offset);
+    params.push(...filters.params, ...contentCol.params, opts.limit, opts.offset);
 
     const result = await this.pool.query(sql, params);
     return this.buildPaginatedResult(result.rows, opts);

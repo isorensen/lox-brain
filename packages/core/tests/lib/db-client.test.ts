@@ -19,12 +19,14 @@ describe('DbClient', () => {
 
       await client.ensureSchema();
 
-      expect(mockPool.query).toHaveBeenCalledTimes(1);
-      const [sql] = mockPool.query.mock.calls[0];
-      expect(sql).toContain('ALTER TABLE vault_embeddings');
-      expect(sql).toContain('ADD COLUMN IF NOT EXISTS created_by');
-      expect(sql).toContain('TEXT');
-      expect(sql).toContain("DEFAULT ''");
+      expect(mockPool.query).toHaveBeenCalled();
+      const allSql = mockPool.query.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+      expect(allSql).toContain('ALTER TABLE vault_embeddings');
+      expect(allSql).toContain('ADD COLUMN IF NOT EXISTS created_by');
+      expect(allSql).toContain('ADD COLUMN IF NOT EXISTS area');
+      expect(allSql).toContain('ADD COLUMN IF NOT EXISTS source_type');
+      expect(allSql).toContain('idx_vault_embeddings_area');
+      expect(allSql).toContain('idx_vault_embeddings_source_type');
     });
 
     it('should propagate pool.query rejection', async () => {

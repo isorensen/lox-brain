@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.8.5] — 2026-04-13
+
+### Fixed
+- **Watcher crash loop on non-owner DB users (#169).** `DbClient.ensureSchema()` issued `ALTER TABLE vault_embeddings ADD COLUMN IF NOT EXISTS created_by ...` on every startup, but Postgres runs the ownership check *before* evaluating `IF NOT EXISTS` — so any connection role with full DML grants (`arwdDxt`) but without table ownership crashed with `error 42501 (insufficient_privilege)`, even on the no-op path. The watcher exited, systemd restarted it every 10s, and the service sat in a silent crash loop (observed: ~10 days, 57k restarts) while `write_note` kept writing files to disk — the filesystem and DB silently diverged. `ensureSchema()` now probes `information_schema.columns` first and only issues `ALTER TABLE` when the column is actually missing. The common path (schema already correct) no longer needs table ownership.
+
 ## [0.8.4] — 2026-04-07
 
 ### Fixed

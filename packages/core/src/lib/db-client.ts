@@ -32,18 +32,33 @@ export class DbClient {
   /**
    * Ensure the database schema is up-to-date.
    *
-   * Runs idempotent ALTER TABLE statements so that columns introduced after
-   * the initial CREATE TABLE (e.g. `created_by` from team-mode) exist on
-   * databases that were provisioned before those columns were added.
-   *
-   * Safe to call on every startup — ADD COLUMN IF NOT EXISTS is a no-op
-   * when the column already exists.
+   * Probes `information_schema.columns` first and only issues `ALTER TABLE`
+   * when a missing column is detected. Postgres runs the ownership check
+   * before evaluating `IF NOT EXISTS`, so a plain `ALTER TABLE ADD COLUMN
+   * IF NOT EXISTS` fails with 42501 for any connection role that holds
+   * full DML grants but is not the table owner — even on the no-op path.
+   * See issue #169.
    */
   async ensureSchema(): Promise<void> {
-    await this.pool.query(`
-      ALTER TABLE vault_embeddings
-        ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT ''
+    const { rows } = await this.pool.query(`
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'vault_embeddings'
+        AND column_name = 'created_by'
+      LIMIT 1
     `);
+    if (rows.length === 0) {
+      // IF NOT EXISTS kept as a guard against a race between concurrent
+      // owner-privileged startups probing and ALTERing at the same time.
+      // Non-owner callers never reach this branch in normal operation
+      // (the probe sees the column on an already-migrated DB), so the
+      // 42501 path from #169 is not reintroduced.
+      await this.pool.query(`
+        ALTER TABLE vault_embeddings
+          ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT ''
+      `);
+    }
   }
 
   private buildSearchOptions(

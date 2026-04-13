@@ -14,23 +14,50 @@ describe('DbClient', () => {
   });
 
   describe('ensureSchema', () => {
-    it('should run ALTER TABLE ADD COLUMN IF NOT EXISTS for created_by', async () => {
-      mockPool.query.mockResolvedValue({ rowCount: 0 });
+    it('probes information_schema and skips ALTER when created_by already exists', async () => {
+      // information_schema read returns a row -> column already present
+      mockPool.query.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] });
 
       await client.ensureSchema();
 
+      // Only the information_schema probe should run — no ALTER TABLE at all.
+      // This is the no-owner path (issue #169): non-owner users cannot ALTER
+      // even when the statement would be a no-op, so we must avoid issuing it.
       expect(mockPool.query).toHaveBeenCalledTimes(1);
-      const [sql] = mockPool.query.mock.calls[0];
-      expect(sql).toContain('ALTER TABLE vault_embeddings');
-      expect(sql).toContain('ADD COLUMN IF NOT EXISTS created_by');
-      expect(sql).toContain('TEXT');
-      expect(sql).toContain("DEFAULT ''");
+      const [probeSql] = mockPool.query.mock.calls[0];
+      expect(probeSql).toContain('information_schema.columns');
+      expect(probeSql).toContain("table_name = 'vault_embeddings'");
+      expect(probeSql).toContain("column_name = 'created_by'");
+      expect(probeSql).not.toContain('ALTER TABLE');
     });
 
-    it('should propagate pool.query rejection', async () => {
-      mockPool.query.mockRejectedValue(new Error('permission denied'));
+    it('issues ALTER TABLE ADD COLUMN when created_by is missing', async () => {
+      mockPool.query
+        .mockResolvedValueOnce({ rows: [] }) // probe -> missing
+        .mockResolvedValueOnce({ rowCount: 0 }); // ALTER
+
+      await client.ensureSchema();
+
+      expect(mockPool.query).toHaveBeenCalledTimes(2);
+      const [alterSql] = mockPool.query.mock.calls[1];
+      expect(alterSql).toContain('ALTER TABLE vault_embeddings');
+      expect(alterSql).toContain('ADD COLUMN IF NOT EXISTS created_by');
+      expect(alterSql).toContain('TEXT');
+      expect(alterSql).toContain("DEFAULT ''");
+    });
+
+    it('propagates pool.query rejection from the probe', async () => {
+      mockPool.query.mockRejectedValueOnce(new Error('permission denied'));
 
       await expect(client.ensureSchema()).rejects.toThrow('permission denied');
+    });
+
+    it('propagates ALTER TABLE rejection when probe returns empty', async () => {
+      mockPool.query
+        .mockResolvedValueOnce({ rows: [] })
+        .mockRejectedValueOnce(new Error('42501: must be owner of table'));
+
+      await expect(client.ensureSchema()).rejects.toThrow('42501');
     });
   });
 

@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__lox-brain__write_note",
+      "mcp__lox-brain__read_note",
+      "mcp__lox-brain__search_text",
+      "mcp__lox-brain__search_semantic",
+      "mcp__lox-brain__list_recent",
+      "mcp__claude_ai_Google_Calendar__list_events",
+      "mcp__claude_ai_Google_Calendar__get_event",
+      "mcp__claude_ai_Google_Calendar__list_calendars",
+      "mcp__claude_ai_Gmail__search_threads",
+      "mcp__claude_ai_Gmail__get_thread",
+      "mcp__claude_ai_Google_Drive__read_file_content",
+      "Read"
+    ]
+  }
+}

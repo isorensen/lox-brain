@@ -72,13 +72,14 @@ Wants=network-online.target
 Type=oneshot
 User=sorensen
 EnvironmentFile=/home/sorensen/.config/lox-claude/env
+ExecStartPre=/usr/bin/test -x /usr/local/bin/claude
 ExecStartPre=/usr/bin/test -n "${CLAUDE_CODE_OAUTH_TOKEN}"
 ExecStartPre=/usr/bin/test -d /home/sorensen/obsidian
-ExecStart=/usr/bin/claude -p "/sync-calendar" --settings /home/sorensen/.config/lox-claude/settings.json
+ExecStart=/usr/local/bin/claude -p "/sync-calendar" --settings /home/sorensen/.config/lox-claude/settings.json
 TimeoutStartSec=600
 NoNewPrivileges=yes
 ProtectSystem=strict
-ReadWritePaths=/home/sorensen/obsidian /home/sorensen/.claude /home/sorensen/lox-brain
+ReadWritePaths=/home/sorensen/obsidian /home/sorensen/.claude /home/sorensen/.config/lox-claude /home/sorensen/lox-brain
 
 [Install]
 WantedBy=multi-user.target
@@ -91,7 +92,7 @@ WantedBy=multi-user.target
 Description=Daily sync of Google Calendar to Obsidian vault at 06:00
 
 [Timer]
-OnCalendar=*-*-* 06:00:00
+OnCalendar=*-*-* 06:00:00 America/Sao_Paulo
 Persistent=true
 Unit=lox-claude-sync-calendar.service
 
@@ -109,7 +110,11 @@ Allowlist mínima inicial. Iterada conforme primeiros runs reportarem permission
 {
   "permissions": {
     "allow": [
-      "mcp__lox-brain__*",
+      "mcp__lox-brain__write_note",
+      "mcp__lox-brain__read_note",
+      "mcp__lox-brain__search_text",
+      "mcp__lox-brain__search_semantic",
+      "mcp__lox-brain__list_recent",
       "mcp__claude_ai_Google_Calendar__list_events",
       "mcp__claude_ai_Google_Calendar__get_event",
       "mcp__claude_ai_Google_Calendar__list_calendars",

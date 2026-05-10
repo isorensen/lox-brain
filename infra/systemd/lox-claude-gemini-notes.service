@@ -1,0 +1,24 @@
+[Unit]
+Description=Lox Claude Runner — capture Gemini meeting notes (evening)
+Documentation=https://github.com/isorensen/lox-brain/blob/main/docs/superpowers/specs/2026-05-09-vm-claude-runner-design.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=sorensen
+EnvironmentFile=/home/sorensen/.config/lox-claude/env
+ExecStartPre=/usr/bin/test -x /usr/local/bin/claude
+ExecStartPre=/usr/bin/test -n "${CLAUDE_CODE_OAUTH_TOKEN}"
+ExecStartPre=/usr/bin/test -d /home/sorensen/obsidian
+# Intentionally invokes the same /sync-calendar skill as the morning job.
+# Reason: Gemini meeting summaries arrive after meetings end (with lag).
+# Morning run captures new events; evening run captures the post-meeting summaries.
+ExecStart=/usr/local/bin/claude -p "/sync-calendar" --settings /home/sorensen/.config/lox-claude/settings.json
+TimeoutStartSec=600
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/home/sorensen/obsidian /home/sorensen/.claude /home/sorensen/.config/lox-claude /home/sorensen/lox-brain
+
+[Install]
+WantedBy=multi-user.target

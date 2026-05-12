@@ -1,0 +1,40 @@
+[Unit]
+Description=Lox Claude Telegram channel listener — interactive chat from anywhere
+Documentation=https://github.com/isorensen/lox-brain/blob/main/infra/vm-claude/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Long-running (vs. oneshot used by the cron sync-calendar units).
+# Restart=on-failure recovers from MCP crashes; the plugin reconnects to Telegram on its own.
+Type=simple
+User=__LOX_VM_USER__
+# Auth comes from ~/.claude/.credentials.json populated by `claude login` (see README).
+# We do NOT use CLAUDE_CODE_OAUTH_TOKEN — empirically the long-lived token from
+# `claude setup-token` is rejected as "Invalid bearer token" in this context
+# (see https://github.com/anthropics/claude-code/issues/50743).
+ExecStartPre=/usr/bin/test -x /usr/local/bin/claude
+ExecStartPre=/usr/bin/test -f /home/__LOX_VM_USER__/.claude/.credentials.json
+# The telegram plugin keeps its bot token in .env and its allowlist/policy in access.json.
+# Refusing to start when either is missing avoids the "service runs, drops messages silently" trap.
+ExecStartPre=/usr/bin/test -f /home/__LOX_VM_USER__/.claude/channels/telegram/.env
+ExecStartPre=/usr/bin/test -f /home/__LOX_VM_USER__/.claude/channels/telegram/access.json
+# If `bun` is installed under the user's home (default for the official installer),
+# systemd does NOT inherit the shell's PATH — uncomment and adjust the next line so the
+# plugin's `server.ts` (which `claude --channels` spawns) can resolve `bun`.
+# Environment="PATH=/home/__LOX_VM_USER__/.bun/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/usr/local/bin/claude --channels plugin:telegram@claude-plugins-official --settings /home/__LOX_VM_USER__/.config/lox-claude/telegram-settings.json
+Restart=on-failure
+RestartSec=15
+# Channel session start includes Bun init + Telegram handshake + MCP spawn.
+# 30s was empirically tight; 90s leaves headroom on slow/cold VMs without masking real hangs.
+TimeoutStartSec=90
+NoNewPrivileges=yes
+ProtectSystem=strict
+# `.claude` is listed once and covers the recursive subtree, including
+# `.claude/channels/telegram/` where the plugin writes session state (systemd >= 232).
+# Do not narrow this to a non-recursive path without also adding `.claude/channels/telegram/`.
+ReadWritePaths=/home/__LOX_VM_USER__/obsidian /home/__LOX_VM_USER__/.claude /home/__LOX_VM_USER__/.config/lox-claude /home/__LOX_VM_USER__/lox-brain
+
+[Install]
+WantedBy=multi-user.target

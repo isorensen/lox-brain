@@ -38,7 +38,7 @@ A VM `obsidian-vm` (GCE, Ubuntu 24.04) já hospeda o vault, o git sync, o pgvect
 obsidian-vm (existente, user existente da VM — referenciado como __LOX_VM_USER__)
 │
 ├── ~/.config/lox-claude/
-│   ├── env                  CLAUDE_CODE_OAUTH_TOKEN=... (mode 0600)
+│   └── settings.json        MCP allowlist (consumed by claude -p --settings)
 │   └── settings.json        permissions allowlist
 │
 ├── /etc/systemd/system/
@@ -71,9 +71,8 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 User=__LOX_VM_USER__
-EnvironmentFile=/home/__LOX_VM_USER__/.config/lox-claude/env
 ExecStartPre=/usr/bin/test -x /usr/local/bin/claude
-ExecStartPre=/usr/bin/test -n "${CLAUDE_CODE_OAUTH_TOKEN}"
+ExecStartPre=/usr/bin/test -f /home/__LOX_VM_USER__/.claude/.credentials.json
 ExecStartPre=/usr/bin/test -d /home/__LOX_VM_USER__/obsidian
 ExecStart=/usr/local/bin/claude -p "/sync-calendar" --settings /home/__LOX_VM_USER__/.config/lox-claude/settings.json
 TimeoutStartSec=600
@@ -133,8 +132,7 @@ Princípio: começar tight, expandir quando run reportar `Permission denied: <to
 
 Documenta:
 1. Pré-requisitos (Claude Code instalado, MCPs `lox-brain` configurados)
-2. Login OAuth: `claude login` (device-code flow em VM headless) — pré-requisito do `setup-token`
-3. Geração do token long-lived: `claude setup-token` (após `claude login`)
+2. Login OAuth: `claude login` (device-code flow em VM headless) — popula `~/.claude/.credentials.json` (mode 0600). É a fonte de auth usada pelo runner.
 3. Salvar token em `~/.config/lox-claude/env`
 4. Copiar `settings.json.example` → `~/.config/lox-claude/settings.json`
 5. `sudo cp infra/systemd/* /etc/systemd/system/`
@@ -150,14 +148,15 @@ Adiciona em Phase 2 (Community):
 
 ## Modelo de auth
 
-- **Pré-requisito**: `claude login` precisa ter sido executado antes (device-code flow em VM headless). Sem login ativo, `setup-token` gera um valor inválido que 401s na primeira chamada real à API. Bug capturado no exploration test do #171.
-- `claude setup-token` (manual, uma vez via SSH, **após `claude login`**) gera token OAuth de 1 ano scoped à conta Max
-- Token vai pra `~/.config/lox-claude/env` (mode 0600) do user da VM
-- systemd injeta via `EnvironmentFile=`
-- Em ~11 meses, lembrete no Google Calendar dispara renovação manual
-- Detecção de expiração: `journalctl` mostrará 401; usuário roda `claude setup-token` de novo
+- `claude login` (device-code flow em VM headless, uma vez via SSH) popula `~/.claude/.credentials.json` (mode 0600). Claude Code lê esse arquivo automaticamente quando invocado como o user dono — sem necessidade de env var.
 
-**Por que `setup-token` e não `claude login`:** issue oficial #28827 — refresh de OAuth em modo non-interactive falha silenciosamente. `setup-token` gera long-lived token explicitamente projetado pra automação.
+> **Abandonamos `claude setup-token` + `CLAUDE_CODE_OAUTH_TOKEN`** após validar empiricamente no exploration test do #171 que o token gerado é rejeitado como `Invalid bearer token` mesmo em contexto válido. Provavelmente relacionado à [anthropics/claude-code#50743](https://github.com/anthropics/claude-code/issues/50743) (OAuth refresh quebrado em headless Linux). Tentar usar `setup-token` mascarava um bug; usar `credentials.json` direto é mais simples e funciona.
+- Token vai pra `~/.config/lox-claude/env` (mode 0600) do user da VM
+- systemd roda `claude -p` como `User=__LOX_VM_USER__`, e Claude lê `~/.claude/.credentials.json` automaticamente desse user. Sem `EnvironmentFile`.
+- Em ~11 meses, lembrete no Google Calendar dispara renovação manual
+- Detecção de expiração: `journalctl` mostrará `401 Invalid bearer token`; usuário roda `claude login` de novo (refresh automático em headless é unreliable per #50743).
+
+**Por que NÃO `setup-token`:** empiricamente o token é rejeitado como `Invalid bearer token` (#50743). `claude login` + `credentials.json` é o caminho que efetivamente funciona, com trade-off de re-login manual ocasional quando o refresh interno falhar.
 
 ## Permissions & Security
 
@@ -180,7 +179,7 @@ Sem alerting ativo. É escolha consciente: 2 jobs/dia, vault é checado humaname
 - [ ] `sudo systemctl start lox-claude-sync-calendar.service` executa, termina exit 0
 - [ ] `journalctl -u lox-claude-sync-calendar.service` mostra log do `claude -p` com tool calls esperados (list_events, write_note)
 - [ ] `systemctl list-timers` mostra ambos os timers ativos com next-run em 06:00 e 19:00
-- [ ] Sem `CLAUDE_CODE_OAUTH_TOKEN`: `ExecStartPre` falha, `claude -p` não é invocado
+- [ ] Sem `~/.claude/.credentials.json`: `ExecStartPre` falha, `claude -p` não é invocado
 - [ ] Após 24h ativo: vault tem nota(s) de evento(s) do dia (validação manual)
 - [ ] README permite alguém com VM Ubuntu fresca completar setup em < 15 min
 

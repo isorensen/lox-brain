@@ -7,9 +7,12 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 User=__LOX_VM_USER__
-EnvironmentFile=/home/__LOX_VM_USER__/.config/lox-claude/env
+# Auth comes from ~/.claude/.credentials.json populated by `claude login` (see README).
+# We do NOT use CLAUDE_CODE_OAUTH_TOKEN — empirically the long-lived token from
+# `claude setup-token` is rejected as "Invalid bearer token" in this context
+# (see https://github.com/anthropics/claude-code/issues/50743).
 ExecStartPre=/usr/bin/test -x /usr/local/bin/claude
-ExecStartPre=/usr/bin/test -n "${CLAUDE_CODE_OAUTH_TOKEN}"
+ExecStartPre=/usr/bin/test -f /home/__LOX_VM_USER__/.claude/.credentials.json
 ExecStartPre=/usr/bin/test -d /home/__LOX_VM_USER__/obsidian
 # Intentionally invokes the same /sync-calendar skill as the morning job.
 # Reason: Gemini meeting summaries arrive after meetings end (with lag).

@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-05-12
+
+### Added
+- **Telegram channel listener for the VM Claude runner (#177).** A second, optional VM service — `infra/systemd/lox-claude-telegram.service` — keeps a long-running `claude --channels plugin:telegram@claude-plugins-official` session listening on Telegram. DMs from the operator's phone arrive as user messages in the session; Claude responds with full vault + connector access (`mcp__lox-brain__*`, Google Calendar, Gmail, Drive). Sibling to the cron `/sync-calendar` runner (`Type=oneshot`): this one is `Type=simple` with `Restart=on-failure` so it stays up across MCP crashes. Auth and skill setup are shared with the cron runner; the only additional prerequisites are Bun (for the plugin's `server.ts`) and a one-time interactive pairing flow (BotFather token → `/telegram:configure` → DM-driven 6-character pairing code → `/telegram:access policy allowlist` lockdown). Permissions are tighter than the cron runner: read-only across MCPs by default plus `mcp__lox-brain__write_note` for note capture, with `Bash`/`Write`/`Edit`/`WebFetch`/`WebSearch` explicitly denied — chat-livre blast radius is larger than a fixed slash command, so the posture starts tight and any expansion goes through phone-side permission relay. Setup, security model, and troubleshooting documented in `infra/vm-claude/README.md`; settings template at `infra/vm-claude/telegram-settings.json.example`.
+
 ## [0.9.2] — 2026-05-12
 
 ### Changed

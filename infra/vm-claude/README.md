@@ -1,8 +1,13 @@
-# VM Claude Runner
+# VM Claude
 
-Headless Claude Code on the lox-brain VM, running scheduled MCP-aware tasks via systemd timers.
+Headless Claude Code on the lox-brain VM in two complementary modes:
 
-## What it does
+1. **Cron runner (default)** — scheduled MCP-aware tasks via systemd timers. Captures calendar events and Gemini meeting notes on a fixed schedule.
+2. **Telegram channel listener (optional)** — a long-running session listening on Telegram so you can chat with Claude from your phone with full vault + connector access. See [Telegram listener](#telegram-listener-long-running) below.
+
+Both modes share the same auth (`~/.claude/.credentials.json` from `claude login`), the same MCP setup, and the same skills installed under `~/.claude/skills/` on the VM.
+
+## What the cron runner does
 
 Two systemd timers trigger `claude -p "/sync-calendar"` on the VM:
 
@@ -164,6 +169,149 @@ systemctl --failed
 ```
 
 For MVP this is enough. If failures become silent or frequent, see follow-up: Cloud Logging + log-based alerting (out of scope for this PR).
+
+## Telegram listener (long-running)
+
+A second, optional VM service: `lox-claude-telegram.service` keeps a long-running `claude --channels` session listening on Telegram. Send a DM from your phone, Claude responds with full vault + connector access.
+
+Unlike the cron runner (`Type=oneshot`), this service is `Type=simple` with `Restart=on-failure` so it stays up and recovers from the occasional MCP crash.
+
+### Architecture
+
+```
+claude --channels plugin:telegram@claude-plugins-official
+```
+
+The session loads the `telegram` plugin from `claude-plugins-official`. The plugin spawns its Bun-based MCP server, which connects to Telegram via grammy. Inbound DMs/mentions arrive as user messages in the session; Claude responds; the plugin's `reply` tool sends back to Telegram. Tool-approval prompts can be relayed to the phone (permission relay) so write operations are confirmed on-device.
+
+### Security model
+
+State lives in `~/.claude/channels/telegram/access.json` and is re-read on every inbound message. Three policies:
+
+| Policy | Behavior |
+|---|---|
+| `pairing` (initial) | DM from unknown sender → bot replies with a 6-character pairing code → operator approves with `/telegram:access pair <code>` in a live Claude session. The code is sent only via Telegram to the sender, never logged, so a hostile DM cannot self-approve without access to a running session. |
+| `allowlist` (recommended steady state) | DM from non-allowlisted sender → dropped silently, no reply. |
+| `disabled` | Drop everything, including allowlisted users. Kill switch. |
+
+**Groups are opt-in per group**, with `requireMention: true` by default.
+
+The pairing window is the only soft spot. Telegram bots are **publicly discoverable by username** (anyone can open `t.me/<botname>` and DM them) — there is no "guessing" if the name is at all predictable. Between starting the service in `pairing` mode and switching to `allowlist`, any Telegram user who finds the bot receives a pairing code. The code alone is useless: approving it requires access to a running Claude session on the VM. But the smaller the window, the smaller the risk. **Do not share the bot username publicly until step 3 below is complete and the policy is set to `allowlist`.**
+
+### Prerequisites
+
+In addition to the cron-runner prerequisites:
+
+- **Bun** installed and on `$PATH` for `User=__LOX_VM_USER__` — the plugin's `server.ts` runs on Bun, not Node. Verify: `bun --version`.
+  ```bash
+  curl -fsSL https://bun.sh/install | bash
+  ```
+- **Telegram plugin** installed in the VM user's Claude config (one-time, interactive). Verify: `claude plugin list | grep telegram`.
+- **Bot token** from BotFather, saved to `~/.claude/channels/telegram/.env` (handled by `/telegram:configure`).
+- **`access.json`** with at least one allowlisted Telegram numeric user ID and `dmPolicy: "allowlist"`.
+
+### Setup (interactive on the VM)
+
+The first four steps run in an interactive Claude session on the VM (`ssh obsidian-vm`, then `claude`). This is unavoidable — pairing requires a live session — but only happens once.
+
+#### 1. Create the bot and save the token
+
+Talk to [@BotFather](https://t.me/BotFather), `/newbot`, follow the prompts. Save the token.
+
+#### 2. Install the plugin and write the token to the VM
+
+```bash
+ssh obsidian-vm
+claude   # interactive session, NOT `claude -p`
+```
+
+Inside the session:
+
+```
+/plugin install telegram@claude-plugins-official
+/reload-plugins
+/telegram:configure <BOT_TOKEN>
+/exit
+```
+
+`/telegram:configure` writes `~/.claude/channels/telegram/.env`.
+
+#### 3. Pair from your phone, then lock down
+
+Still on the VM, start a channel session:
+
+```bash
+ssh obsidian-vm
+claude --channels plugin:telegram@claude-plugins-official
+```
+
+From your phone, DM your bot anything. You receive a 6-character pairing code. Back in the SSH session, approve it:
+
+```
+/telegram:access pair <code>
+```
+
+Immediately after pairing succeeds, switch the policy:
+
+```
+/telegram:access policy allowlist
+```
+
+Verify `~/.claude/channels/telegram/access.json`:
+
+```bash
+cat ~/.claude/channels/telegram/access.json
+# expect: dmPolicy: "allowlist", your numeric ID in allowFrom
+```
+
+`/exit` the session.
+
+#### 4. Copy the Telegram settings file
+
+```bash
+cp infra/vm-claude/telegram-settings.json.example ~/.config/lox-claude/telegram-settings.json
+```
+
+This template is **stricter** than the cron runner's `settings.json`: read-only across all MCPs by default, `mcp__lox-brain__write_note` allowed for note capture, and `Bash`/`Write`/`Edit`/`WebFetch`/`WebSearch` explicitly denied. The chat-livre blast radius is larger than a fixed slash command — any inbound message can ask for anything — so the posture starts tight and any expansion goes through phone-side permission approval.
+
+#### 5. Install the systemd unit
+
+```bash
+sed "s/__LOX_VM_USER__/$USER/g" infra/systemd/lox-claude-telegram.service | sudo tee /etc/systemd/system/lox-claude-telegram.service > /dev/null
+sudo systemctl daemon-reload
+sudo systemctl enable --now lox-claude-telegram.service
+```
+
+#### 6. Verify end-to-end
+
+```bash
+systemctl status lox-claude-telegram.service     # active (running)
+journalctl -u lox-claude-telegram.service -f     # live tail
+```
+
+From your phone, DM the bot something that exercises an MCP, e.g. `resume hoje`. Expect a reply within ~30s referencing today's calendar.
+
+From a non-allowlisted account (a friend's, ideally), DM the bot. Expect **no reply**; the journal should log the drop.
+
+Reboot the VM and confirm the service comes back up: `systemctl is-enabled lox-claude-telegram.service` should report `enabled`.
+
+### Telegram listener troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Service fails to start with `ExecStartPre` exit 1 on `.env` | `/telegram:configure` never ran | Run step 2 |
+| Service fails to start with `ExecStartPre` exit 1 on `access.json` | Pairing never completed | Run step 3 |
+| Bot replies with pairing codes to strangers | Policy still `pairing`, not `allowlist` | `/telegram:access policy allowlist` in a live channel session |
+| `bun: command not found` in journal | Bun not on `$PATH` for the service's `User=` (systemd does NOT source `.bashrc`/`.zshrc`) | Uncomment the `Environment="PATH=..."` line in the unit file. Default for the official Bun installer: `Environment="PATH=/home/__LOX_VM_USER__/.bun/bin:/usr/local/bin:/usr/bin:/bin"` (re-run the `sed` substitution after editing, then `daemon-reload` + restart) |
+| Inbound DMs from authorized user get no reply | Service down, or MCP unavailable | `systemctl status lox-claude-telegram.service`; check `claude mcp list` on the VM |
+| Bot replies but cannot answer "resume hoje" | Skill `/sync-calendar` not installed on the VM, or Calendar connector not registered | Same fix as the cron runner — see the gap warning at the top of this README |
+| Service restart loop every 15s | OAuth credentials expired (401) | `claude login` on the VM |
+
+### What's *not* in the listener
+
+- **No multi-channel** (Slack/Discord). Telegram only.
+- **No voice/audio** by default. The `elevenlabs-voice` skill can be invoked on-demand if you ask for it, but is not in the default reply flow.
+- **No multi-user / team mode.** Personal account only.
 
 ## Design spec
 

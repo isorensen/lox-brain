@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-05-09
+
+### Added
+- **VM headless Claude runner for scheduled MCP-aware tasks (#171).** Two systemd timers (`infra/systemd/lox-claude-{sync-calendar,gemini-notes}.{service,timer}`) trigger `claude -p "/sync-calendar"` on the VM at 06:00 and 19:00 daily — morning pass captures the day's new calendar events, evening pass captures Gemini meeting notes that arrive post-meeting with lag. Auth uses a long-lived OAuth token from the user's Claude Max plan via `claude setup-token` (no `ANTHROPIC_API_KEY`, no API billing). Permissions are constrained by an explicit allowlist in `~/.config/lox-claude/settings.json` — no `--dangerously-skip-permissions`. Logs flow through `journalctl`. Setup, customization, troubleshooting, and token renewal are documented in `infra/vm-claude/README.md`. Design rationale, alternatives considered, and security analysis: `docs/superpowers/specs/2026-05-09-vm-claude-runner-design.md`.
+
 ## [0.8.5] — 2026-04-13
 
 ### Fixed

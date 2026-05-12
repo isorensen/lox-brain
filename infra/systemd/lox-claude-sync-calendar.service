@@ -1,0 +1,21 @@
+[Unit]
+Description=Lox Claude Runner — sync Google Calendar to vault (morning)
+Documentation=https://github.com/isorensen/lox-brain/blob/main/docs/superpowers/specs/2026-05-09-vm-claude-runner-design.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=__LOX_VM_USER__
+EnvironmentFile=%h/.config/lox-claude/env
+ExecStartPre=/usr/bin/test -x /usr/local/bin/claude
+ExecStartPre=/usr/bin/test -n "${CLAUDE_CODE_OAUTH_TOKEN}"
+ExecStartPre=/usr/bin/test -d %h/obsidian
+ExecStart=/usr/local/bin/claude -p "/sync-calendar" --settings %h/.config/lox-claude/settings.json
+TimeoutStartSec=600
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=%h/obsidian %h/.claude %h/.config/lox-claude %h/lox-brain
+
+[Install]
+WantedBy=multi-user.target

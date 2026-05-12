@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily evening sync to capture Gemini meeting notes at 19:00
+
+[Timer]
+OnCalendar=*-*-* 19:00:00 America/Sao_Paulo
+Persistent=true
+Unit=lox-claude-gemini-notes.service
+
+[Install]
+WantedBy=timers.target

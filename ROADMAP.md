@@ -38,6 +38,7 @@ Build ecosystem and contributor base.
 - [ ] Documentation site (Docusaurus or similar)
 - [ ] Multi-LLM support — Claude, GPT-4, Llama3, Mistral via Ollama
 - [ ] Public GitHub Projects board
+- [ ] **VM headless runner** — systemd timers + Claude Code OAuth for scheduled MCP-aware skills (sync-calendar, etc.) without keeping a laptop online ([#171](https://github.com/isorensen/lox-brain/issues/171))
 
 ## Phase 3 — Managed Hosting (Optional SaaS Layer)
 

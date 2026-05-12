@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-05-12
+
+### Fixed
+- **VM Claude runner unit files failed to start because `%h` resolves to `/root` in system services (#173).** v0.9.0 used the systemd `%h` specifier in `EnvironmentFile=`, `ExecStartPre`, `ExecStart`, and `ReadWritePaths`, expecting it to resolve to the home of the `User=` user. In system services (units under `/etc/systemd/system/`), `%h` always resolves to `/root` regardless of `User=` — only user services (`systemctl --user`) get the per-user resolution. The runner therefore tried to read `/root/.config/lox-claude/env` and failed with `Failed to load environment file`. Replaced `%h` with the absolute `/home/__LOX_VM_USER__/` template; the single `sed s/__LOX_VM_USER__/$USER/g` substitution in the README setup step now handles both the `User=` directive and the home prefix in every path. `systemd-analyze verify` did not catch this — verify does not resolve specifiers against the filesystem — so a manual `systemctl start` on the obsidian-vm caught the regression during the exploration test for #171.
+
+### Changed
+- **Auth simplified: drop `CLAUDE_CODE_OAUTH_TOKEN` env var, use `~/.claude/.credentials.json` directly (#173).** The original design assumed `claude setup-token` would emit a token consumable as `CLAUDE_CODE_OAUTH_TOKEN`. Empirically, the token is rejected as `Invalid bearer token` even immediately after generation with a valid active login session — likely related to [anthropics/claude-code#50743](https://github.com/anthropics/claude-code/issues/50743) (OAuth refresh broken in headless Linux). The unit files no longer declare `EnvironmentFile=` or check for the env var; instead they verify `~/.claude/.credentials.json` exists and let `claude -p` read it natively. Setup step 1 now only requires `claude login`. Trade-off: when OAuth refresh fails (a few weeks of personal use), the user must re-run `claude login` manually. Validated end-to-end on the obsidian-vm during the exploration test for #171.
+
+### Docs
+- **README flags the MCP server + skill setup gap (#173).** Added an explicit warning at the top of the file: the systemd units and OAuth setup do not configure the `lox-brain` MCP server, any managed connectors (Google Calendar, Gmail, Drive), or the slash-command skills (e.g., `/sync-calendar`) on the VM's Claude Code installation. Those must be set up separately. The runner returns `Unknown command: /sync-calendar` if the skill is not present locally on the VM.
+
 ## [0.9.0] — 2026-05-09
 
 ### Added

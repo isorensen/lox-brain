@@ -17,11 +17,20 @@ Auth uses a long-lived OAuth token from your Claude Max plan. No `ANTHROPIC_API_
 
 This runner expects the VM's Claude Code installation to have:
 
-- The `mcp__lox-brain__*` MCP server registered (`claude mcp add lox-brain ...` — point at the local `lox-mcp.service`)
-- Any other MCPs that the slash command you invoke needs (e.g., `mcp__claude_ai_Google_Calendar__*`, `mcp__claude_ai_Gmail__*`, `mcp__claude_ai_Google_Drive__*` for `/sync-calendar`)
-- The slash command's **skill files** copied/installed into `~/.claude/skills/` on the VM (skills do not travel with OAuth login; they are local per Claude Code installation)
+- The `mcp__lox-brain__*` MCP server registered:
+  ```bash
+  claude mcp add lox-brain --scope user -- bash -c 'cd /home/$USER/lox-brain && export $(cat .env | xargs) && npx tsx packages/core/src/mcp/index.ts'
+  ```
+- Any other MCPs that the slash command you invoke needs (e.g., `mcp__claude_ai_Google_Calendar__*`, `mcp__claude_ai_Gmail__*`, `mcp__claude_ai_Google_Drive__*` for `/sync-calendar`). The managed Claude.ai connectors usually auto-register on `claude login` if your account has them enabled — verify with `claude mcp list`.
+- The slash command's **skill files** copied/installed into `~/.claude/skills/` on the VM (skills do not travel with OAuth login; they are local per Claude Code installation). Example for `/sync-calendar`:
+  ```bash
+  # On your laptop:
+  ssh obsidian-vm 'mkdir -p ~/.claude/skills/sync-calendar'
+  scp ~/.claude/skills/sync-calendar/SKILL.md obsidian-vm:~/.claude/skills/sync-calendar/
+  ```
+- The skill must support a non-interactive opt-in (e.g., an `auto` argument) so it does not block waiting for "Proceed?" confirmation. The unit files in this folder invoke `claude -p "/sync-calendar auto"` for that reason — if your skill uses a different flag name, edit `ExecStart=` accordingly.
 
-The systemd units and OAuth setup in this folder do not configure any of this. If `claude -p "/<your-skill>"` returns `Unknown command: /<your-skill>` or the journal shows MCP tool errors, that is the gap — see the project root issue tracker for the dedicated setup work.
+If `claude -p "/<your-skill>"` returns `Unknown command: /<your-skill>` or the journal shows MCP tool errors, that is the gap. If the skill runs but never finishes (or you see a "Proceed?" prompt in the journal), the skill is missing its non-interactive mode.
 
 ## Prerequisites
 

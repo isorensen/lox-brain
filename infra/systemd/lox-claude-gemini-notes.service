@@ -17,7 +17,7 @@ ExecStartPre=/usr/bin/test -d /home/__LOX_VM_USER__/obsidian
 # Intentionally invokes the same /sync-calendar skill as the morning job.
 # Reason: Gemini meeting summaries arrive after meetings end (with lag).
 # Morning run captures new events; evening run captures the post-meeting summaries.
-ExecStart=/usr/local/bin/claude -p "/sync-calendar" --settings /home/__LOX_VM_USER__/.config/lox-claude/settings.json
+ExecStart=/usr/local/bin/claude -p "/sync-calendar auto" --settings /home/__LOX_VM_USER__/.config/lox-claude/settings.json
 TimeoutStartSec=600
 NoNewPrivileges=yes
 ProtectSystem=strict

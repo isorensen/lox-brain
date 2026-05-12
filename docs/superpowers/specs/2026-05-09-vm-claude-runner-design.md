@@ -71,15 +71,15 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 User=__LOX_VM_USER__
-EnvironmentFile=%h/.config/lox-claude/env
+EnvironmentFile=/home/__LOX_VM_USER__/.config/lox-claude/env
 ExecStartPre=/usr/bin/test -x /usr/local/bin/claude
 ExecStartPre=/usr/bin/test -n "${CLAUDE_CODE_OAUTH_TOKEN}"
-ExecStartPre=/usr/bin/test -d %h/obsidian
-ExecStart=/usr/local/bin/claude -p "/sync-calendar" --settings %h/.config/lox-claude/settings.json
+ExecStartPre=/usr/bin/test -d /home/__LOX_VM_USER__/obsidian
+ExecStart=/usr/local/bin/claude -p "/sync-calendar" --settings /home/__LOX_VM_USER__/.config/lox-claude/settings.json
 TimeoutStartSec=600
 NoNewPrivileges=yes
 ProtectSystem=strict
-ReadWritePaths=%h/obsidian %h/.claude %h/.config/lox-claude %h/lox-brain
+ReadWritePaths=/home/__LOX_VM_USER__/obsidian /home/__LOX_VM_USER__/.claude /home/__LOX_VM_USER__/.config/lox-claude /home/__LOX_VM_USER__/lox-brain
 
 [Install]
 WantedBy=multi-user.target
@@ -160,7 +160,7 @@ Adiciona em Phase 2 (Community):
 ## Permissions & Security
 
 - **Allowlist explícita** em `settings.json` (acima). Sem deny, sem `--dangerously-skip-permissions`.
-- **Hardening systemd mínimo**: `User=__LOX_VM_USER__`, `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ReadWritePaths=` limitado a `%h/obsidian` + `%h/.claude` + `%h/.config/lox-claude` + `%h/lox-brain`.
+- **Hardening systemd mínimo**: `User=__LOX_VM_USER__`, `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ReadWritePaths=` limitado a `/home/__LOX_VM_USER__/obsidian` + `/home/__LOX_VM_USER__/.claude` + `/home/__LOX_VM_USER__/.config/lox-claude` + `/home/__LOX_VM_USER__/lox-brain`.
 - **Token storage**: `~/.config/lox-claude/env` mode 0600 owner = user da VM. Sem GCP Secret Manager pra MVP — VPN-only VM single-tenant não justifica.
 - **Trust boundary**: a allowlist é a defesa primária contra prompt injection (ex: evento de calendar com payload malicioso). Nada na allowlist atual permite `Bash`, `Write`, `WebFetch`, ou exfiltração — só leitura via MCPs específicos.
 

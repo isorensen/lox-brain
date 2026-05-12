@@ -25,7 +25,7 @@ Auth uses a long-lived OAuth token from your Claude Max plan. No `ANTHROPIC_API_
 - Obsidian vault at `$HOME/obsidian`
 - Lox brain repo at `$HOME/lox-brain`
 
-> The unit files use the systemd `%h` specifier, which resolves to the home directory of the user set in `User=` — so paths follow whoever you substitute in. See **Setup → step 4** below.
+> The unit files use a `__LOX_VM_USER__` placeholder in both `User=` and the home paths (e.g., `/home/__LOX_VM_USER__/.config/lox-claude/env`). A single `sed` substitution at install time replaces every occurrence with your actual user. See **Setup → step 4** below.
 
 ## Setup
 
@@ -70,7 +70,9 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now lox-claude-sync-calendar.timer lox-claude-gemini-notes.timer
 ```
 
-All other paths inside the unit files use systemd's `%h` specifier (the user's home), so they follow whoever you substitute into `User=`.
+The same `sed` substitution replaces every `__LOX_VM_USER__` in the file — `User=`, `EnvironmentFile=`, `ExecStartPre`, `ExecStart`, and `ReadWritePaths` all get the actual username inlined.
+
+> **Why not the systemd `%h` specifier?** In system services (units in `/etc/systemd/system/`), `%h` always resolves to `/root` regardless of `User=`. It only works as expected in user services. Hardcoded paths via `__LOX_VM_USER__` substitution are the correct portable approach for system units.
 
 ### 5. Verify
 
@@ -85,7 +87,7 @@ journalctl -u lox-claude-sync-calendar.service -n 50
 
 ## Customization (different paths)
 
-If your Obsidian vault or lox-brain repo lives somewhere other than `$HOME/obsidian` and `$HOME/lox-brain`, edit `ExecStartPre`, `ExecStart`, and `ReadWritePaths` in the `.service` files to point at the actual locations. The `%h` specifier already handles the home prefix; you only need to change the trailing path components.
+If your Obsidian vault or lox-brain repo lives somewhere other than `$HOME/obsidian` and `$HOME/lox-brain`, edit `ExecStartPre`, `ExecStart`, and `ReadWritePaths` in the `.service` files (or in the staged copies before substitution) to point at the actual locations. The `__LOX_VM_USER__` substitution handles the home prefix; only the trailing path components matter.
 
 Multi-VM support via the installer is a follow-up; see issue #171.
 

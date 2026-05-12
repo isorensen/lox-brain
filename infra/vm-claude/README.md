@@ -17,10 +17,16 @@ Auth uses a long-lived OAuth token from your Claude Max plan. No `ANTHROPIC_API_
 
 This runner expects the VM's Claude Code installation to have:
 
-- The `mcp__lox-brain__*` MCP server registered:
+- The `mcp__lox-brain__*` MCP server registered, pointing at the **compiled build** (not `tsx`) so the spawn is fast enough for headless `claude -p`:
   ```bash
-  claude mcp add lox-brain --scope user -- bash -c 'cd /home/$USER/lox-brain && export $(cat .env | xargs) && npx tsx packages/core/src/mcp/index.ts'
+  # First build the package (only needed once / after pulls):
+  cd ~/lox-brain && npm install && npm run build --workspaces
+
+  # Then register the MCP at user scope so headless claude sees it:
+  claude mcp add lox-brain --scope user -- bash -c 'cd /home/$USER/lox-brain && export $(cat .env | xargs) && node packages/core/dist/mcp/index.js'
   ```
+
+  > **Why `node ... dist/...` instead of `npx tsx ... src/...`?** Empirically the `npx tsx` path takes ~5 seconds to bootstrap (npx resolve + tsx transpile + schema check + ivfflat reindex). In headless `claude -p` mode, that exceeds Claude's MCP spawn window and the runner silently falls back to filesystem reads (no notes get written). Using the compiled JS skips the transpile step and the spawn lands in <1 second.
 - Any other MCPs that the slash command you invoke needs (e.g., `mcp__claude_ai_Google_Calendar__*`, `mcp__claude_ai_Gmail__*`, `mcp__claude_ai_Google_Drive__*` for `/sync-calendar`). The managed Claude.ai connectors usually auto-register on `claude login` if your account has them enabled — verify with `claude mcp list`.
 - The slash command's **skill files** copied/installed into `~/.claude/skills/` on the VM (skills do not travel with OAuth login; they are local per Claude Code installation). Example for `/sync-calendar`:
   ```bash
@@ -130,6 +136,8 @@ No restart needed — next timer fire picks up the refreshed credentials. Consid
 | `ExecStartPre fails: exit 1` for `-f .credentials.json` | `claude login` never ran on the VM, or the file got deleted | Re-run `claude login` (Setup → step 1) |
 | Journal shows `401 Invalid bearer token` | OAuth session expired (refresh failed in headless) | Re-run `claude login` on the VM |
 | Journal shows `Unknown command: /sync-calendar` | The slash command's skill is not installed in the VM's Claude Code (`~/.claude/skills/` is empty) | See the gap warning at the top of this file — install/copy the skill from your laptop |
+| Journal shows `Lox Brain MCP isn't available in this session` (or claude falls back to filesystem reads) | The MCP was registered with `npx tsx` and the spawn timed out under `-p` | Re-register pointing at the compiled build: `claude mcp remove lox-brain --scope user && claude mcp add lox-brain --scope user -- bash -c 'cd /home/$USER/lox-brain && export $(cat .env \| xargs) && node packages/core/dist/mcp/index.js'`. Run `npm run build --workspaces` first if `packages/core/dist/` is missing. |
+| Service finishes in &lt;5s with no useful output | Skill waiting for "Proceed?" prompt that nobody can answer | Confirm `ExecStart=` has `/sync-calendar auto` (or your skill's equivalent non-interactive flag) |
 | `Permission denied: <tool>` in the journal | Allowlist too tight in `settings.json` | Add the tool to the `allow` array in `~/.config/lox-claude/settings.json` |
 | Timer never fires | Not enabled | `sudo systemctl enable --now <timer>` |
 | Many runs queued at boot | `Persistent=true` is replaying missed runs | Expected on first start; clears after first run |

@@ -13,6 +13,16 @@ Timers declare `America/Sao_Paulo` explicitly via `OnCalendar=`, so they fire at
 
 Auth uses a long-lived OAuth token from your Claude Max plan. No `ANTHROPIC_API_KEY`, no per-call billing.
 
+## ⚠️ Known gap — MCP servers and skills must be configured on the VM separately
+
+This runner expects the VM's Claude Code installation to have:
+
+- The `mcp__lox-brain__*` MCP server registered (`claude mcp add lox-brain ...` — point at the local `lox-mcp.service`)
+- Any other MCPs that the slash command you invoke needs (e.g., `mcp__claude_ai_Google_Calendar__*`, `mcp__claude_ai_Gmail__*`, `mcp__claude_ai_Google_Drive__*` for `/sync-calendar`)
+- The slash command's **skill files** copied/installed into `~/.claude/skills/` on the VM (skills do not travel with OAuth login; they are local per Claude Code installation)
+
+The systemd units and OAuth setup in this folder do not configure any of this. If `claude -p "/<your-skill>"` returns `Unknown command: /<your-skill>` or the journal shows MCP tool errors, that is the gap — see the project root issue tracker for the dedicated setup work.
+
 ## Prerequisites
 
 - Ubuntu 22.04+ on the VM (systemd ≥ 247 for `OnCalendar` timezone support)
@@ -29,15 +39,30 @@ Auth uses a long-lived OAuth token from your Claude Max plan. No `ANTHROPIC_API_
 
 ## Setup
 
-### 1. Generate OAuth long-lived token
+### 1. Log in and generate an OAuth long-lived token
 
-SSH into the VM as the user that will run the timers (the user that already owns the Obsidian vault and the lox-brain repo on the VM):
+SSH into the VM as the user that will run the timers (the user that already owns the Obsidian vault and the lox-brain repo on the VM).
+
+**1a. Establish an OAuth session.** `claude setup-token` will not work standalone — it requires an active login. On a headless VM, `claude login` uses a device-code flow (prints a URL + code; open the URL in any browser, paste the code, complete login):
+
+```bash
+claude login
+```
+
+After it completes, `~/.claude/.credentials.json` should exist (mode 600). Quick sanity check:
+
+```bash
+ls -la ~/.claude/.credentials.json
+claude -p "Say hello"   # expect: "Hello!" without auth errors
+```
+
+**1b. Issue a long-lived token for automation.** Once logged in:
 
 ```bash
 claude setup-token
 ```
 
-This prints a token valid for ~1 year. Copy it. Why `setup-token` instead of `claude login`: refresh of OAuth tokens fails silently in non-interactive mode (issue [anthropics/claude-code#28827](https://github.com/anthropics/claude-code/issues/28827)). `setup-token` produces a long-lived token explicitly designed for automation.
+This prints a token valid for ~1 year. Copy it. Why this over reusing the login session: refresh of the regular OAuth session token fails silently in non-interactive mode (issue [anthropics/claude-code#28827](https://github.com/anthropics/claude-code/issues/28827)). `setup-token` issues a long-lived token explicitly designed for automation.
 
 ### 2. Save the token
 

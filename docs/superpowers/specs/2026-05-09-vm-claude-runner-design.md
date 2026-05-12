@@ -133,7 +133,8 @@ Princípio: começar tight, expandir quando run reportar `Permission denied: <to
 
 Documenta:
 1. Pré-requisitos (Claude Code instalado, MCPs `lox-brain` configurados)
-2. Geração do token: `claude setup-token` (rodar como o user da VM via SSH)
+2. Login OAuth: `claude login` (device-code flow em VM headless) — pré-requisito do `setup-token`
+3. Geração do token long-lived: `claude setup-token` (após `claude login`)
 3. Salvar token em `~/.config/lox-claude/env`
 4. Copiar `settings.json.example` → `~/.config/lox-claude/settings.json`
 5. `sudo cp infra/systemd/* /etc/systemd/system/`
@@ -149,7 +150,8 @@ Adiciona em Phase 2 (Community):
 
 ## Modelo de auth
 
-- `claude setup-token` (manual, uma vez via SSH) gera token OAuth de 1 ano scoped à conta Max
+- **Pré-requisito**: `claude login` precisa ter sido executado antes (device-code flow em VM headless). Sem login ativo, `setup-token` gera um valor inválido que 401s na primeira chamada real à API. Bug capturado no exploration test do #171.
+- `claude setup-token` (manual, uma vez via SSH, **após `claude login`**) gera token OAuth de 1 ano scoped à conta Max
 - Token vai pra `~/.config/lox-claude/env` (mode 0600) do user da VM
 - systemd injeta via `EnvironmentFile=`
 - Em ~11 meses, lembrete no Google Calendar dispara renovação manual
@@ -194,7 +196,8 @@ Sem alerting ativo. É escolha consciente: 2 jobs/dia, vault é checado humaname
 
 ## Riscos abertos
 
-1. **Plugins/connectors em headless**: documentação confirma OAuth funciona, mas comportamento exato dos `mcp__claude_ai_*` em `claude -p` headless não foi testado empiricamente. Mitigação: primeiro run manual antes de habilitar timer; ajustar allowlist conforme erros.
+1. **MCP servers e skills NÃO são configurados por este runner** (confirmado empiricamente no exploration test do #171). A VM Claude Code precisa do `mcp__lox-brain__*` registrado via `claude mcp add`, dos managed connectors (Google Calendar, Gmail, Drive) configurados separadamente, e da skill `/sync-calendar` (ou outra) instalada em `~/.claude/skills/`. Sem isso, `claude -p "/sync-calendar"` retorna `Unknown command`. Trabalho de setup tracked separadamente — esta issue apenas entrega o framework systemd + auth.
+2. **Plugins/connectors em headless**: documentação confirma OAuth funciona, mas comportamento exato dos `mcp__claude_ai_*` em `claude -p` headless ainda não validado end-to-end (depende do #1 acima estar resolvido).
 2. **Rate limit do plano Max**: 50 RPM típico. 2 runs/dia, ~50 calls cada = 100 calls/dia. Folgadíssimo. Sem risco real.
 3. **ToS Anthropic**: uso pessoal autônomo via OAuth Max está dentro do "uso ordinário e individual". Não escalar pra alta frequência sem migrar pra API key.
 4. **Token expirando silenciosamente**: lembrete manual no calendar é mitigação suficiente; piora de UX só se user esquecer 30+ dias.

@@ -6,16 +6,16 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=sorensen
-EnvironmentFile=/home/sorensen/.config/lox-claude/env
+User=__LOX_VM_USER__
+EnvironmentFile=%h/.config/lox-claude/env
 ExecStartPre=/usr/bin/test -x /usr/local/bin/claude
 ExecStartPre=/usr/bin/test -n "${CLAUDE_CODE_OAUTH_TOKEN}"
-ExecStartPre=/usr/bin/test -d /home/sorensen/obsidian
-ExecStart=/usr/local/bin/claude -p "/sync-calendar" --settings /home/sorensen/.config/lox-claude/settings.json
+ExecStartPre=/usr/bin/test -d %h/obsidian
+ExecStart=/usr/local/bin/claude -p "/sync-calendar" --settings %h/.config/lox-claude/settings.json
 TimeoutStartSec=600
 NoNewPrivileges=yes
 ProtectSystem=strict
-ReadWritePaths=/home/sorensen/obsidian /home/sorensen/.claude /home/sorensen/.config/lox-claude /home/sorensen/lox-brain
+ReadWritePaths=%h/obsidian %h/.claude %h/.config/lox-claude %h/lox-brain
 
 [Install]
 WantedBy=multi-user.target

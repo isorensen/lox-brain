@@ -22,14 +22,16 @@ Auth uses a long-lived OAuth token from your Claude Max plan. No `ANTHROPIC_API_
   ```
   or edit `ExecStart`/`ExecStartPre` paths in the `.service` files to match your install.
 - MCP server `lox-brain` configured locally (already running if this is the obsidian-vm)
-- Obsidian vault at `/home/sorensen/obsidian`
-- Lox brain repo at `/home/sorensen/lox-brain`
+- Obsidian vault at `$HOME/obsidian`
+- Lox brain repo at `$HOME/lox-brain`
+
+> The unit files use the systemd `%h` specifier, which resolves to the home directory of the user set in `User=` — so paths follow whoever you substitute in. See **Setup → step 4** below.
 
 ## Setup
 
 ### 1. Generate OAuth long-lived token
 
-SSH into the VM as the user that will run the timers (default: `sorensen`):
+SSH into the VM as the user that will run the timers (the user that already owns the Obsidian vault and the lox-brain repo on the VM):
 
 ```bash
 claude setup-token
@@ -57,12 +59,18 @@ Review the allowlist; tighten or expand as needed for your usage. The runtime pr
 
 ### 4. Install the systemd units
 
+The unit files ship with a `__LOX_VM_USER__` placeholder for the `User=` directive. Substitute it with your VM user before copying:
+
 ```bash
-sudo cp infra/systemd/lox-claude-*.service /etc/systemd/system/
+# Substitute the placeholder with the current user, then copy
+sed "s/__LOX_VM_USER__/$USER/g" infra/systemd/lox-claude-sync-calendar.service | sudo tee /etc/systemd/system/lox-claude-sync-calendar.service > /dev/null
+sed "s/__LOX_VM_USER__/$USER/g" infra/systemd/lox-claude-gemini-notes.service  | sudo tee /etc/systemd/system/lox-claude-gemini-notes.service  > /dev/null
 sudo cp infra/systemd/lox-claude-*.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now lox-claude-sync-calendar.timer lox-claude-gemini-notes.timer
 ```
+
+All other paths inside the unit files use systemd's `%h` specifier (the user's home), so they follow whoever you substitute into `User=`.
 
 ### 5. Verify
 
@@ -75,12 +83,9 @@ journalctl -u lox-claude-sync-calendar.service -n 50
 # expect: claude -p output, calendar events written to vault
 ```
 
-## Customization (different user or paths)
+## Customization (different paths)
 
-The unit files hardcode `User=sorensen` and `/home/sorensen/...` paths. To run on a VM with different user or paths:
-
-1. Edit `infra/systemd/lox-claude-*.service` — replace `sorensen` and update `EnvironmentFile`, `ExecStartPre`, `ExecStart`, `ReadWritePaths`
-2. Re-run setup steps above
+If your Obsidian vault or lox-brain repo lives somewhere other than `$HOME/obsidian` and `$HOME/lox-brain`, edit `ExecStartPre`, `ExecStart`, and `ReadWritePaths` in the `.service` files to point at the actual locations. The `%h` specifier already handles the home prefix; you only need to change the trailing path components.
 
 Multi-VM support via the installer is a follow-up; see issue #171.
 

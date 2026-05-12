@@ -35,16 +35,16 @@ A VM `obsidian-vm` (GCE, Ubuntu 24.04) já hospeda o vault, o git sync, o pgvect
 ## Arquitetura
 
 ```
-obsidian-vm (existente, user sorensen)
+obsidian-vm (existente, user existente da VM — referenciado como __LOX_VM_USER__)
 │
 ├── ~/.config/lox-claude/
 │   ├── env                  CLAUDE_CODE_OAUTH_TOKEN=... (mode 0600)
 │   └── settings.json        permissions allowlist
 │
 ├── /etc/systemd/system/
-│   ├── lox-claude-sync-calendar.service     User=sorensen, Type=oneshot
+│   ├── lox-claude-sync-calendar.service     User=__LOX_VM_USER__, Type=oneshot
 │   ├── lox-claude-sync-calendar.timer       OnCalendar=*-*-* 06:00:00
-│   ├── lox-claude-gemini-notes.service      User=sorensen, Type=oneshot
+│   ├── lox-claude-gemini-notes.service      User=__LOX_VM_USER__, Type=oneshot
 │   └── lox-claude-gemini-notes.timer        OnCalendar=*-*-* 19:00:00
 │
 └── (services chamam diretamente: claude -p "/sync-calendar" --settings ~/.config/lox-claude/settings.json)
@@ -55,7 +55,7 @@ obsidian-vm (existente, user sorensen)
 - **Dois pares `.service+.timer` flat** em vez de template `@`. Mais explícitos pra N=2; copy-paste se um dia houver um terceiro job.
 - **Sem wrapper script.** `ExecStart=` chama `claude -p` diretamente; `ExecStartPre=` valida pré-condições inline.
 - **Sem `runner.sh` / `healthcheck.sh` / `install.sh`.** Setup é README + comandos diretos.
-- **Roda como `sorensen`** (mesmo user da VM), não como `lox-claude` dedicado. VM single-tenant pessoal não justifica isolamento via user.
+- **Roda como o user existente da VM** (mesmo que roda obsidian + lox-brain + git sync hoje), não como user dedicado `lox-claude`. VM single-tenant pessoal não justifica isolamento via user. Nos unit files referenciado como placeholder `__LOX_VM_USER__`, substituído por sed no setup.
 - **Logs via `journalctl`.** Sem Cloud Logging integration pra MVP pessoal.
 
 ## Componentes & arquivos
@@ -70,16 +70,16 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=sorensen
-EnvironmentFile=/home/sorensen/.config/lox-claude/env
+User=__LOX_VM_USER__
+EnvironmentFile=%h/.config/lox-claude/env
 ExecStartPre=/usr/bin/test -x /usr/local/bin/claude
 ExecStartPre=/usr/bin/test -n "${CLAUDE_CODE_OAUTH_TOKEN}"
-ExecStartPre=/usr/bin/test -d /home/sorensen/obsidian
-ExecStart=/usr/local/bin/claude -p "/sync-calendar" --settings /home/sorensen/.config/lox-claude/settings.json
+ExecStartPre=/usr/bin/test -d %h/obsidian
+ExecStart=/usr/local/bin/claude -p "/sync-calendar" --settings %h/.config/lox-claude/settings.json
 TimeoutStartSec=600
 NoNewPrivileges=yes
 ProtectSystem=strict
-ReadWritePaths=/home/sorensen/obsidian /home/sorensen/.claude /home/sorensen/.config/lox-claude /home/sorensen/lox-brain
+ReadWritePaths=%h/obsidian %h/.claude %h/.config/lox-claude %h/lox-brain
 
 [Install]
 WantedBy=multi-user.target
@@ -133,7 +133,7 @@ Princípio: começar tight, expandir quando run reportar `Permission denied: <to
 
 Documenta:
 1. Pré-requisitos (Claude Code instalado, MCPs `lox-brain` configurados)
-2. Geração do token: `claude setup-token` (rodar como `sorensen` via SSH)
+2. Geração do token: `claude setup-token` (rodar como o user da VM via SSH)
 3. Salvar token em `~/.config/lox-claude/env`
 4. Copiar `settings.json.example` → `~/.config/lox-claude/settings.json`
 5. `sudo cp infra/systemd/* /etc/systemd/system/`
@@ -150,7 +150,7 @@ Adiciona em Phase 2 (Community):
 ## Modelo de auth
 
 - `claude setup-token` (manual, uma vez via SSH) gera token OAuth de 1 ano scoped à conta Max
-- Token vai pra `/home/sorensen/.config/lox-claude/env` mode 0600
+- Token vai pra `~/.config/lox-claude/env` (mode 0600) do user da VM
 - systemd injeta via `EnvironmentFile=`
 - Em ~11 meses, lembrete no Google Calendar dispara renovação manual
 - Detecção de expiração: `journalctl` mostrará 401; usuário roda `claude setup-token` de novo
@@ -160,8 +160,8 @@ Adiciona em Phase 2 (Community):
 ## Permissions & Security
 
 - **Allowlist explícita** em `settings.json` (acima). Sem deny, sem `--dangerously-skip-permissions`.
-- **Hardening systemd mínimo**: `User=sorensen`, `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ReadWritePaths=` limitado a vault + `~/.claude` + `~/lox-brain`.
-- **Token storage**: `~/.config/lox-claude/env` mode 0600 owner sorensen. Sem GCP Secret Manager pra MVP — VPN-only VM single-tenant não justifica.
+- **Hardening systemd mínimo**: `User=__LOX_VM_USER__`, `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ReadWritePaths=` limitado a `%h/obsidian` + `%h/.claude` + `%h/.config/lox-claude` + `%h/lox-brain`.
+- **Token storage**: `~/.config/lox-claude/env` mode 0600 owner = user da VM. Sem GCP Secret Manager pra MVP — VPN-only VM single-tenant não justifica.
 - **Trust boundary**: a allowlist é a defesa primária contra prompt injection (ex: evento de calendar com payload malicioso). Nada na allowlist atual permite `Bash`, `Write`, `WebFetch`, ou exfiltração — só leitura via MCPs específicos.
 
 ## Observabilidade

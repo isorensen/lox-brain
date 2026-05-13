@@ -5,36 +5,60 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-# Long-running (vs. oneshot used by the cron sync-calendar units).
-# Restart=on-failure recovers from MCP crashes; the plugin reconnects to Telegram on its own.
-Type=simple
+# `claude --channels` requires a real TTY + interactive stdin to spawn its plugin MCP
+# servers (the Telegram plugin's `bun server.ts` only attaches when the channel session
+# is interactive). Naive `Type=simple` exits in 4s with `Error: Input must be provided
+# through stdin` (anthropics/claude-code#40726), and `script -qfec` PTY is detected as
+# headless and the plugin MCP never spawns. tmux gives a real interactive TTY in
+# background — `Type=forking` so systemd treats the detached tmux session as the daemon.
+Type=forking
 User=__LOX_VM_USER__
+# Dedicated minimal cwd. Limits blast radius: a prompt-injection inside an inbound DM
+# cannot escape this folder via whatever read/write tool is allowed. MCP servers
+# (lox-brain, Google connectors) operate via stdio/HTTP regardless of cwd.
+WorkingDirectory=/home/__LOX_VM_USER__/lox-telegram-channel
+# bun is installed in $HOME by default and systemd does NOT inherit the user's shell PATH.
+# Without this, `claude --channels` loads the telegram plugin but the plugin's `.mcp.json`
+# fails to spawn `bun run ... start` and inbound messages are silently dropped.
+Environment="PATH=/home/__LOX_VM_USER__/.bun/bin:/usr/local/bin:/usr/bin:/bin"
+# Pin tmux's server socket location. Otherwise pam_systemd / XDG_RUNTIME_DIR can
+# redirect the socket to /run/user/<uid>/, which is outside ReadWritePaths and
+# causes tmux to fail silently. /tmp/tmux-<uid>/ is already in ReadWritePaths.
+Environment="TMUX_TMPDIR=/tmp"
 # Auth comes from ~/.claude/.credentials.json populated by `claude login` (see README).
 # We do NOT use CLAUDE_CODE_OAUTH_TOKEN — empirically the long-lived token from
 # `claude setup-token` is rejected as "Invalid bearer token" in this context
-# (see https://github.com/anthropics/claude-code/issues/50743).
+# (anthropics/claude-code#50743).
 ExecStartPre=/usr/bin/test -x /usr/local/bin/claude
+ExecStartPre=/usr/bin/test -x /usr/bin/tmux
 ExecStartPre=/usr/bin/test -f /home/__LOX_VM_USER__/.claude/.credentials.json
 # The telegram plugin keeps its bot token in .env and its allowlist/policy in access.json.
-# Refusing to start when either is missing avoids the "service runs, drops messages silently" trap.
+# Refusing to start when either is missing avoids the "service runs, drops messages silently"
+# trap during the one-time pairing setup.
 ExecStartPre=/usr/bin/test -f /home/__LOX_VM_USER__/.claude/channels/telegram/.env
 ExecStartPre=/usr/bin/test -f /home/__LOX_VM_USER__/.claude/channels/telegram/access.json
-# If `bun` is installed under the user's home (default for the official installer),
-# systemd does NOT inherit the shell's PATH — uncomment and adjust the next line so the
-# plugin's `server.ts` (which `claude --channels` spawns) can resolve `bun`.
-# Environment="PATH=/home/__LOX_VM_USER__/.bun/bin:/usr/local/bin:/usr/bin:/bin"
-ExecStart=/usr/local/bin/claude --channels plugin:telegram@claude-plugins-official --settings /home/__LOX_VM_USER__/.config/lox-claude/telegram-settings.json
+ExecStart=/usr/bin/tmux new-session -d -s lox-claude-telegram /usr/local/bin/claude --channels plugin:telegram@claude-plugins-official --settings /home/__LOX_VM_USER__/.config/lox-claude/telegram-settings.json
+# Auto-confirm the workspace-trust dialog ONLY when actually present. On warm restarts
+# where the cwd is already trusted, the dialog does NOT appear — sending "1 Enter"
+# unconditionally then enters "1" into the TUI prompt, flipping claude into local-compose
+# mode and silently dropping all subsequent inbound channel messages.
+# Poll up to ~20s (10 × 2s): catches slow cold-start renders without delaying warm
+# restarts (the loop breaks on first match). Trailing `/bin/true` ensures the unit
+# stays Active even when the dialog never appears (the desired warm-restart path).
+ExecStartPost=/bin/bash -c 'for i in $(seq 1 10); do /bin/sleep 2; /usr/bin/tmux capture-pane -t lox-claude-telegram -p | /bin/grep -q "trust this folder" && { /usr/bin/tmux send-keys -t lox-claude-telegram 1 Enter; break; }; done; /bin/true'
+ExecStop=/usr/bin/tmux kill-session -t lox-claude-telegram
 Restart=on-failure
 RestartSec=15
-# Channel session start includes Bun init + Telegram handshake + MCP spawn.
-# 30s was empirically tight; 90s leaves headroom on slow/cold VMs without masking real hangs.
+# 90s leaves headroom on slow/cold VMs: ExecStartPost can run up to ~20s polling
+# for the trust dialog, on top of tmux fork + claude TUI render + Bun MCP spawn.
+# v0.10.0 used 90s with the same reasoning.
 TimeoutStartSec=90
 NoNewPrivileges=yes
 ProtectSystem=strict
 # `.claude` is listed once and covers the recursive subtree, including
 # `.claude/channels/telegram/` where the plugin writes session state (systemd >= 232).
-# Do not narrow this to a non-recursive path without also adding `.claude/channels/telegram/`.
-ReadWritePaths=/home/__LOX_VM_USER__/obsidian /home/__LOX_VM_USER__/.claude /home/__LOX_VM_USER__/.config/lox-claude /home/__LOX_VM_USER__/lox-brain
+# `/tmp` is required for tmux's server socket (default `/tmp/tmux-<uid>/default`).
+ReadWritePaths=/home/__LOX_VM_USER__/lox-telegram-channel /home/__LOX_VM_USER__/obsidian /home/__LOX_VM_USER__/.claude /home/__LOX_VM_USER__/.config/lox-claude /home/__LOX_VM_USER__/lox-brain /tmp
 
 [Install]
 WantedBy=multi-user.target

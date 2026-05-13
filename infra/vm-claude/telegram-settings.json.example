@@ -1,6 +1,10 @@
 {
   "permissions": {
     "allow": [
+      "mcp__plugin_telegram_telegram__reply",
+      "mcp__plugin_telegram_telegram__react",
+      "mcp__plugin_telegram_telegram__edit_message",
+      "mcp__plugin_telegram_telegram__download_attachment",
       "mcp__lox-brain__read_note",
       "mcp__lox-brain__search_text",
       "mcp__lox-brain__search_semantic",

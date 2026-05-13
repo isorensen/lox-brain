@@ -170,19 +170,25 @@ systemctl --failed
 
 For MVP this is enough. If failures become silent or frequent, see follow-up: Cloud Logging + log-based alerting (out of scope for this PR).
 
-## Telegram listener (long-running)
+## Telegram listener (long-running, experimental)
 
-A second, optional VM service: `lox-claude-telegram.service` keeps a long-running `claude --channels` session listening on Telegram. Send a DM from your phone, Claude responds with full vault + connector access.
+> ⚠️ **`claude --channels` is a research-preview feature.** This service brings up a working channel listener, but inbound-message delivery in long-running background sessions hits real upstream bugs ([see Known upstream limitations below](#known-upstream-limitations-of-claude---channels)). The happy path works for interactive bursts; expect occasional message drops over long idle periods until the upstream fix lands.
 
-Unlike the cron runner (`Type=oneshot`), this service is `Type=simple` with `Restart=on-failure` so it stays up and recovers from the occasional MCP crash.
+A second, optional VM service: `lox-claude-telegram.service` keeps `claude --channels` listening on Telegram. Send a DM from your phone, Claude responds with full vault + connector access.
 
 ### Architecture
 
 ```
-claude --channels plugin:telegram@claude-plugins-official
+systemd (Type=forking)
+  └─ tmux new-session -d -s lox-claude-telegram
+       └─ claude --channels plugin:telegram@claude-plugins-official
+            └─ bun run start  (the telegram plugin's MCP server)
+                 └─ grammy → api.telegram.org (getUpdates polling)
 ```
 
-The session loads the `telegram` plugin from `claude-plugins-official`. The plugin spawns its Bun-based MCP server, which connects to Telegram via grammy. Inbound DMs/mentions arrive as user messages in the session; Claude responds; the plugin's `reply` tool sends back to Telegram. Tool-approval prompts can be relayed to the phone (permission relay) so write operations are confirmed on-device.
+**Why tmux?** `claude --channels` requires a real TTY + interactive stdin to spawn the plugin's MCP server. `Type=simple` exits in 4s with `Error: Input must be provided through stdin` ([claude-code#40726](https://github.com/anthropics/claude-code/issues/40726)); a `script -qfec ... /dev/null` PTY is detected as headless and the plugin's `bun server.ts` never spawns. `tmux new-session -d` provides a real interactive TTY in background — the only `Type=forking` shape that lets the channel listener and its MCP server come up correctly.
+
+Inbound DMs arrive as user messages in the session, claude responds, the plugin's `reply` tool sends back to Telegram. Tool-approval prompts are relayed to the phone (permission relay) so write operations are confirmed on-device.
 
 ### Security model
 
@@ -206,9 +212,14 @@ In addition to the cron-runner prerequisites:
   ```bash
   curl -fsSL https://bun.sh/install | bash
   ```
+- **tmux** installed (most distros ship it). Verify: `tmux -V`.
+  ```bash
+  sudo apt install -y tmux   # Debian/Ubuntu
+  ```
 - **Telegram plugin** installed in the VM user's Claude config (one-time, interactive). Verify: `claude plugin list | grep telegram`.
 - **Bot token** from BotFather, saved to `~/.claude/channels/telegram/.env` (handled by `/telegram:configure`).
 - **`access.json`** with at least one allowlisted Telegram numeric user ID and `dmPolicy: "allowlist"`.
+- **Dedicated working directory** at `~/lox-telegram-channel/` (created in step 4 below). The unit pins `WorkingDirectory=` here to minimize blast radius.
 
 ### Setup (interactive on the VM)
 
@@ -266,13 +277,14 @@ cat ~/.claude/channels/telegram/access.json
 
 `/exit` the session.
 
-#### 4. Copy the Telegram settings file
+#### 4. Create the dedicated working dir and copy settings
 
 ```bash
+mkdir -p ~/lox-telegram-channel
 cp infra/vm-claude/telegram-settings.json.example ~/.config/lox-claude/telegram-settings.json
 ```
 
-This template is **stricter** than the cron runner's `settings.json`: read-only across all MCPs by default, `mcp__lox-brain__write_note` allowed for note capture, and `Bash`/`Write`/`Edit`/`WebFetch`/`WebSearch` explicitly denied. The chat-livre blast radius is larger than a fixed slash command — any inbound message can ask for anything — so the posture starts tight and any expansion goes through phone-side permission approval.
+The settings template is **stricter** than the cron runner's `settings.json`: read-only across all MCPs by default, `mcp__lox-brain__write_note` allowed for note capture, the plugin's own `reply`/`react`/`edit_message`/`download_attachment` tools allowed (otherwise every inbound message triggers a permission-relay popup on your phone), and `Bash`/`Write`/`Edit`/`WebFetch`/`WebSearch` plus all Calendar/Gmail/Drive mutating tools explicitly denied. The chat-livre blast radius is larger than a fixed slash command — any inbound message can ask for anything — so the posture starts tight and any expansion goes through phone-side permission relay.
 
 #### 5. Install the systemd unit
 
@@ -281,6 +293,8 @@ sed "s/__LOX_VM_USER__/$USER/g" infra/systemd/lox-claude-telegram.service | sudo
 sudo systemctl daemon-reload
 sudo systemctl enable --now lox-claude-telegram.service
 ```
+
+The unit is `Type=forking` because the actual long-running process is the tmux server. On first start with a fresh `~/lox-telegram-channel/` the `ExecStartPost` hook detects the workspace-trust dialog and auto-confirms it with `tmux send-keys 1 Enter` — on subsequent restarts (folder already trusted) it correctly does nothing, keeping the TUI prompt clean.
 
 #### 6. Verify end-to-end
 
@@ -301,11 +315,30 @@ Reboot the VM and confirm the service comes back up: `systemctl is-enabled lox-c
 |---|---|---|
 | Service fails to start with `ExecStartPre` exit 1 on `.env` | `/telegram:configure` never ran | Run step 2 |
 | Service fails to start with `ExecStartPre` exit 1 on `access.json` | Pairing never completed | Run step 3 |
+| Service fails to start with `ExecStartPre` exit 1 on `/usr/bin/tmux` | tmux not installed | `sudo apt install -y tmux` |
 | Bot replies with pairing codes to strangers | Policy still `pairing`, not `allowlist` | `/telegram:access policy allowlist` in a live channel session |
-| `bun: command not found` in journal | Bun not on `$PATH` for the service's `User=` (systemd does NOT source `.bashrc`/`.zshrc`) | Uncomment the `Environment="PATH=..."` line in the unit file. Default for the official Bun installer: `Environment="PATH=/home/__LOX_VM_USER__/.bun/bin:/usr/local/bin:/usr/bin:/bin"` (re-run the `sed` substitution after editing, then `daemon-reload` + restart) |
-| Inbound DMs from authorized user get no reply | Service down, or MCP unavailable | `systemctl status lox-claude-telegram.service`; check `claude mcp list` on the VM |
+| Inbound DMs from authorized user get no reply, but pane is otherwise clean | Idle muting — claude is in a post-task state and the REPL is not subscribing to channel notifications ([claude-code#44380](https://github.com/anthropics/claude-code/issues/44380)) | `sudo systemctl restart lox-claude-telegram.service` — known upstream bug, no clean fix until the channel-notification handler is repaired |
+| Pane shows `❯ 1` or other stray characters after restart, no replies | `ExecStartPost` sent `1 Enter` on a warm restart where the trust dialog wasn't present — claude is in local-compose mode and ignoring inbound | Restart the service; the current unit already guards `send-keys` behind a pane grep. If you see this on the current build, file an issue. |
+| Bot responds once after fresh start, then silence for everything else | Same idle-muting bug as above ([#44380](https://github.com/anthropics/claude-code/issues/44380)). The first message is processed during warmup; subsequent ones land in a session that's no longer subscribed | Restart the service or attach a tmux client (`tmux attach -t lox-claude-telegram`) briefly to "wake" the REPL. Permanent fix waits on upstream. |
+| Every inbound DM triggers a permission popup on your phone for `mcp__plugin_telegram_telegram__reply` | The plugin's own tools are not in `~/.config/lox-claude/telegram-settings.json` `permissions.allow` | Copy `infra/vm-claude/telegram-settings.json.example` again — the v0.10.1 template includes them. Restart the service. |
+| `bun: command not found` in journal | Bun not on `$PATH` for the service's `User=` (systemd does NOT source `.bashrc`/`.zshrc`) | The current unit already sets `Environment="PATH=/home/__LOX_VM_USER__/.bun/bin:..."` — check the path matches your actual Bun install location |
 | Bot replies but cannot answer "resume hoje" | Skill `/sync-calendar` not installed on the VM, or Calendar connector not registered | Same fix as the cron runner — see the gap warning at the top of this README |
-| Service restart loop every 15s | OAuth credentials expired (401) | `claude login` on the VM |
+| Service restart loop every 15s | OAuth credentials expired (401), or tmux binary missing | `claude login` on the VM; verify `which tmux` |
+| `tmux ls` shows the session but pane is stuck at workspace-trust dialog | First-run trust auto-confirm didn't fire (`ExecStartPost` race or grep missed) | `tmux send-keys -t lox-claude-telegram 1 Enter` manually once, then never again |
+
+### Known upstream limitations of `claude --channels`
+
+These are real upstream bugs in Claude Code's channel-notification handling. They affect any long-running `--channels` deployment regardless of how it's wrapped (tmux, screen, dtach, systemd `TTYPath=`, etc.) — the issue is in the REPL/MCP-notification handler, not the surrounding plumbing.
+
+| Issue | Status | What it means here |
+|---|---|---|
+| [anthropics/claude-code#40726](https://github.com/anthropics/claude-code/issues/40726) | Open | Bare `Type=simple` exits with `Error: Input must be provided through stdin` because the REPL detects non-TTY and falls into `--print` mode. *Mitigated* by wrapping with tmux. |
+| [anthropics/claude-code#37933](https://github.com/anthropics/claude-code/issues/37933) | Closed (duplicate of [#36411](https://github.com/anthropics/claude-code/issues/36411)) | `notifications/claude/channel` MCP messages can be silently dropped — exactly the "bot pegou via getUpdates but claude didn't process" symptom. *No clean mitigation* — relies on the upstream handler fix. Watch #36411 (and #44380 below) for the actual repair. |
+| [anthropics/claude-code#44380](https://github.com/anthropics/claude-code/issues/44380) | Open | "Channel messages don't wake idle sessions" — the REPL prioritizes stdin over MCP notifications and stops subscribing after a task completes. *Workarounds: periodic restart, or external nudge via `tmux send-keys`*. |
+| [anthropics/claude-code#36477](https://github.com/anthropics/claude-code/issues/36477) | Open | `--channels` stops processing after first response. Related to #44380. |
+| [anthropics/claude-plugins-official#1594](https://github.com/anthropics/claude-plugins-official/issues/1594) | Open / draft PR | Proposed `--transport http --port 7341` for the Telegram plugin would replace stdio with an HTTP MCP server, sidestepping the REPL-notification path entirely. If/when merged, this is the *real* fix. |
+
+If you need a hardened production-style deployment today, [jaredezz.tech's `--channels` post](https://jaredezz.tech/posts/claude-code-channels-discord-openclaw-alternative/) documents an alternative pattern: external Telegram bot daemon that fires `claude -p` per-message. Heavier to operate but doesn't depend on the broken notification handler.
 
 ### What's *not* in the listener
 

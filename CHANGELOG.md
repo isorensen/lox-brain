@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.10.1] — 2026-05-13
+
+### Fixed
+- **Telegram listener now actually delivers messages headlessly.** The v0.10.0 unit shipped with `Type=simple` + bare `ExecStart=/usr/local/bin/claude --channels ...`, which exits in 4s with `Error: Input must be provided through stdin` ([anthropics/claude-code#40726](https://github.com/anthropics/claude-code/issues/40726)) — the REPL detects non-TTY systemd stdout and falls into `--print` mode, then crashes because no prompt is provided. Even after wrapping with `script -qfec ... /dev/null` (PTY), the plugin's `bun server.ts` MCP server never spawns because the channel session is still detected as headless and idle-mutes itself. **Fix**: rewrite the unit as `Type=forking` + `tmux new-session -d` wrapper. `tmux` provides a real interactive TTY in background, the plugin's MCP server attaches, `bun ... server.ts` spawns, and inbound DMs are processed. Validated end-to-end: BotFather → pairing → allowlist → DM → reply round-trip works.
+- **Plugin's own tools added to allow list.** v0.10.0 forgot to add `mcp__plugin_telegram_telegram__{reply,react,edit_message,download_attachment}` to `telegram-settings.json.example`'s `permissions.allow`, so every inbound DM triggered a permission-relay popup on the operator's phone before claude could respond. With the tools allow-listed, replies go out immediately.
+- **`Environment="PATH=..."` enabled by default in the unit (was commented).** `bun` defaults to `~/.bun/bin/` and systemd does not source the user's `.bashrc` — without an explicit `PATH=`, the plugin's `.mcp.json` cannot spawn `bun run ... start` and the channel listener silently drops every inbound message.
+- **`WorkingDirectory=` pinned to a dedicated `~/lox-telegram-channel/` folder.** Reduces blast radius (a prompt-injection inside an inbound DM cannot escape this folder via whatever read/write tool is allowed) and avoids the systemd default cwd `/`, which is not a trusted workspace and would block the session forever at the workspace-trust dialog.
+- **`ExecStartPost` auto-confirms the workspace-trust dialog idempotently.** First version sent `tmux send-keys 1 Enter` unconditionally; on warm restarts (folder already trusted) the dialog doesn't appear and the "1" landed in the TUI prompt, flipping claude into local-compose mode and silently dropping all subsequent inbound channel messages. The current hook captures the pane and only sends keys if "trust this folder" is actually present.
+
+### Changed
+- **`telegram-settings.json.example` `permissions.deny` widened** to include the Google Calendar/Gmail/Drive mutating tools (`create_event`, `update_event`, `delete_event`, `respond_to_event`, `create_draft`, label CRUD, `create_file`, `copy_file`). Defense in depth: even if a future allow-list edit accidentally widens, these mutating tools stay denied unless explicitly removed.
+- **`infra/vm-claude/README.md` rewritten** for the new architecture: `tmux` as a prerequisite, the dedicated working dir setup step, updated 6-step procedure, expanded troubleshooting table, and a new **"Known upstream limitations of `claude --channels`"** section linking the relevant open Anthropic issues ([claude-code#40726](https://github.com/anthropics/claude-code/issues/40726), [#37933](https://github.com/anthropics/claude-code/issues/37933), [#44380](https://github.com/anthropics/claude-code/issues/44380), [#36477](https://github.com/anthropics/claude-code/issues/36477), [claude-plugins-official#1594](https://github.com/anthropics/claude-plugins-official/issues/1594)).
+
+### Known limitations (not fixed here — upstream)
+- **Idle muting** ([claude-code#44380](https://github.com/anthropics/claude-code/issues/44380)): the REPL stops subscribing to channel notifications when idle, so after the first burst of activity subsequent inbound DMs may be silently dropped until a restart or external nudge. Workaround documented in README troubleshooting. Real fix waits on the upstream notification handler being repaired.
+
 ## [0.10.0] — 2026-05-12
 
 ### Added

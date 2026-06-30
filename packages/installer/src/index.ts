@@ -47,6 +47,11 @@ async function main(): Promise<void> {
     console.log('  2. Ask Claude Code to search your notes (full stack)');
     return;
   }
+  if (args[0] === 'upgrade') {
+    const { runUpgrade } = await import('./upgrade.js');
+    await runUpgrade();
+    return;
+  }
 
   let ctx: InstallerContext = { config: {}, locale: 'en' };
   let startFromStep = 1;

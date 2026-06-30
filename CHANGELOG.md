@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.13.3] — 2026-06-29
+
+### Added
+- **`lox upgrade` — self-service updater for the VM.** Pulls the latest code, rebuilds, re-applies `schema.sql` (idempotent), and restarts the watcher, streaming progress live. A thin, tested wrapper over `infra/deploy.sh` (no duplicated logic); resolves the install directory from `~/.lox/config.json` with sensible fallbacks. Replaces the removed push-coupled auto-deploy with an operator-driven flow each user runs on their own VM. Linux/macOS only (the watcher/MCP host); errors clearly on Windows.
+
 ## [0.13.2] — 2026-06-29
 
 ### Removed

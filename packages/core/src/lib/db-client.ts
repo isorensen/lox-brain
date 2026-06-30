@@ -1,5 +1,8 @@
 import type { Pool } from 'pg';
-import type { NoteRow, SearchResult, RecentNote, SearchOptions, PaginatedResult } from '@lox-brain/shared';
+import type {
+  NoteRow, SearchResult, RecentNote, SearchOptions, PaginatedResult,
+  TaskRow, TaskStatus, TaskPriority, TaskListOptions,
+} from '@lox-brain/shared';
 
 const SEMANTIC_DEFAULTS: SearchOptions = {
   limit: 5,
@@ -21,6 +24,12 @@ const RECENT_DEFAULTS: SearchOptions = {
   includeContent: false,
   contentPreviewLength: 300,
 };
+
+// A canonical UUID. Used to decide whether completeTask() should attempt a
+// lookup by primary key: passing a non-UUID to `WHERE id = $1` makes Postgres
+// raise 22P02 (invalid input syntax for type uuid) before the title fallback
+// can run.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export class DbClient {
   private readonly pool: Pool;
@@ -59,6 +68,39 @@ export class DbClient {
           ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT ''
       `);
     }
+    // NOTE: all other schema objects — the area/source_type columns and their
+    // partial indexes, the dual-language full-text GIN indexes, and the tasks
+    // table with its indexes — live in infra/postgres/schema.sql (applied by
+    // the table owner at setup). They are intentionally NOT created here: a
+    // non-owner runtime role cannot run ALTER TABLE / CREATE TABLE / CREATE
+    // INDEX (even a no-op IF NOT EXISTS) without hitting the 42501 permission
+    // error described in issue #169. Existing deployments pick them up by
+    // re-applying schema.sql.
+    //
+    // Verify those owner-applied objects are actually present. This is a
+    // read-only catalog query (safe for non-owner roles, unlike DDL): if the
+    // schema is stale, fail fast at startup with an actionable message instead
+    // of letting the first upsertNote / search_* crash with a cryptic
+    // 42703 "column \"area\" does not exist" much later.
+    const { rows: schemaRows } = await this.pool.query(`
+      SELECT
+        (SELECT COUNT(*) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'vault_embeddings'
+             AND column_name IN ('area', 'source_type')) AS metadata_cols,
+        (SELECT COUNT(*) FROM information_schema.tables
+           WHERE table_schema = 'public' AND table_name = 'tasks') AS tasks_table
+    `);
+    const metadataCols = Number(schemaRows[0]?.metadata_cols ?? 0);
+    const tasksTable = Number(schemaRows[0]?.tasks_table ?? 0);
+    if (metadataCols < 2 || tasksTable < 1) {
+      throw new Error(
+        'Database schema is out of date: the vault_embeddings.area/source_type ' +
+          'columns and/or the tasks table are missing. Re-apply ' +
+          'infra/postgres/schema.sql as the table owner — these objects are not ' +
+          'auto-created at runtime (see issue #169). ' +
+          `Found metadata columns ${metadataCols}/2, tasks table ${tasksTable}/1.`,
+      );
+    }
   }
 
   private buildSearchOptions(
@@ -92,6 +134,25 @@ export class DbClient {
     return { sql: 'content', params: [], nextParamIndex: paramIndex };
   }
 
+  private buildMetadataFilters(
+    opts: SearchOptions,
+    startParamIdx: number,
+  ): { clauses: string[]; params: unknown[]; nextParamIndex: number } {
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    let paramIdx = startParamIdx;
+
+    if (opts.area) {
+      clauses.push(`area = $${paramIdx++}`);
+      params.push(opts.area);
+    }
+    if (opts.source_type) {
+      clauses.push(`source_type = $${paramIdx++}`);
+      params.push(opts.source_type);
+    }
+    return { clauses, params, nextParamIndex: paramIdx };
+  }
+
   private buildPaginatedResult<T>(
     rows: Array<T & { total_count?: string }>,
     opts: SearchOptions,
@@ -103,8 +164,8 @@ export class DbClient {
 
   async upsertNote(note: NoteRow): Promise<void> {
     const sql = `
-      INSERT INTO vault_embeddings (id, file_path, title, content, tags, embedding, file_hash, chunk_index, created_by, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+      INSERT INTO vault_embeddings (id, file_path, title, content, tags, embedding, file_hash, chunk_index, created_by, area, source_type, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
       ON CONFLICT (file_path, chunk_index) DO UPDATE SET
         title = EXCLUDED.title,
         content = EXCLUDED.content,
@@ -112,6 +173,8 @@ export class DbClient {
         embedding = EXCLUDED.embedding,
         file_hash = EXCLUDED.file_hash,
         created_by = COALESCE(vault_embeddings.created_by, EXCLUDED.created_by),
+        area = COALESCE(EXCLUDED.area, vault_embeddings.area),
+        source_type = COALESCE(EXCLUDED.source_type, vault_embeddings.source_type),
         updated_at = NOW()
     `;
 
@@ -125,6 +188,8 @@ export class DbClient {
       note.file_hash,
       note.chunk_index,
       note.created_by ?? null,
+      note.area ?? null,
+      note.source_type ?? null,
     ]);
   }
 
@@ -158,15 +223,21 @@ export class DbClient {
     const contentCol = this.buildContentColumn(opts, paramIdx);
     paramIdx = contentCol.nextParamIndex;
 
+    const filters = this.buildMetadataFilters(opts, paramIdx);
+    paramIdx = filters.nextParamIndex;
+
     const limitIdx = paramIdx++;
     const offsetIdx = paramIdx++;
+
+    const whereClause = filters.clauses.length > 0 ? `WHERE ${filters.clauses.join(' AND ')}` : '';
 
     const sql = `
       SELECT id, file_path, title, ${contentCol.sql}, tags,
              1 - (embedding <=> $1::vector) AS similarity,
-             updated_at, created_by,
+             updated_at, created_by, area, source_type,
              COUNT(*) OVER() AS total_count
       FROM vault_embeddings
+      ${whereClause}
       ORDER BY embedding <=> $1::vector
       LIMIT $${limitIdx}
       OFFSET $${offsetIdx}
@@ -175,6 +246,7 @@ export class DbClient {
     const params = [
       JSON.stringify(embedding),
       ...contentCol.params,
+      ...filters.params,
       opts.limit,
       opts.offset,
     ];
@@ -209,19 +281,25 @@ export class DbClient {
     const contentCol = this.buildContentColumn(opts, paramIdx);
     paramIdx = contentCol.nextParamIndex;
 
+    const filters = this.buildMetadataFilters(opts, paramIdx);
+    paramIdx = filters.nextParamIndex;
+
     const limitIdx = paramIdx++;
     const offsetIdx = paramIdx++;
 
+    const whereClause = filters.clauses.length > 0 ? `WHERE ${filters.clauses.join(' AND ')}` : '';
+
     const sql = `
-      SELECT id, file_path, title, ${contentCol.sql}, tags, updated_at, created_by,
+      SELECT id, file_path, title, ${contentCol.sql}, tags, updated_at, created_by, area, source_type,
              COUNT(*) OVER() AS total_count
       FROM vault_embeddings
+      ${whereClause}
       ORDER BY updated_at DESC
       LIMIT $${limitIdx}
       OFFSET $${offsetIdx}
     `;
 
-    const params = [...contentCol.params, opts.limit, opts.offset];
+    const params = [...contentCol.params, ...filters.params, opts.limit, opts.offset];
 
     const result = await this.pool.query(sql, params);
     return this.buildPaginatedResult(result.rows, opts);
@@ -277,15 +355,17 @@ export class DbClient {
 
     let paramIdx = 1;
 
-    // $1 = query pattern
     const queryParamIdx = paramIdx++;
 
     let tagsClause = '';
-    let tagsParamIdx = 0;
     if (tags && tags.length > 0) {
-      tagsParamIdx = paramIdx++;
+      const tagsParamIdx = paramIdx++;
       tagsClause = ` AND tags @> $${tagsParamIdx}`;
     }
+
+    const filters = this.buildMetadataFilters(opts, paramIdx);
+    paramIdx = filters.nextParamIndex;
+    const metadataClause = filters.clauses.length > 0 ? ` AND ${filters.clauses.join(' AND ')}` : '';
 
     const contentCol = this.buildContentColumn(opts, paramIdx);
     paramIdx = contentCol.nextParamIndex;
@@ -293,23 +373,169 @@ export class DbClient {
     const limitIdx = paramIdx++;
     const offsetIdx = paramIdx++;
 
+    const q = `$${queryParamIdx}`;
     const sql = `
-      SELECT id, file_path, title, ${contentCol.sql}, tags, updated_at, created_by,
+      SELECT id, file_path, title, ${contentCol.sql}, tags, updated_at, created_by, area, source_type,
+             GREATEST(
+               ts_rank(to_tsvector('portuguese', content), plainto_tsquery('portuguese', ${q})),
+               ts_rank(to_tsvector('english', content), plainto_tsquery('english', ${q}))
+             ) AS rank,
              COUNT(*) OVER() AS total_count
       FROM vault_embeddings
-      WHERE content ILIKE $${queryParamIdx}${tagsClause}
-      ORDER BY updated_at DESC
+      WHERE (to_tsvector('portuguese', content) @@ plainto_tsquery('portuguese', ${q})
+         OR to_tsvector('english', content) @@ plainto_tsquery('english', ${q})
+         OR content ILIKE '%' || ${q} || '%')${tagsClause}${metadataClause}
+      ORDER BY rank DESC, updated_at DESC
       LIMIT $${limitIdx}
       OFFSET $${offsetIdx}
     `;
 
-    const params: unknown[] = [`%${query}%`];
+    const params: unknown[] = [query];
     if (tags && tags.length > 0) {
       params.push(tags);
     }
-    params.push(...contentCol.params, opts.limit, opts.offset);
+    params.push(...filters.params, ...contentCol.params, opts.limit, opts.offset);
 
     const result = await this.pool.query(sql, params);
     return this.buildPaginatedResult(result.rows, opts);
+  }
+
+  // --- Tasks ---
+
+  async addTask(params: {
+    title: string;
+    details?: string;
+    priority?: TaskPriority;
+    due_date?: string;
+    tags?: string[];
+    project_context?: string;
+    created_by?: string;
+  }): Promise<TaskRow> {
+    const result = await this.pool.query<TaskRow>(
+      `INSERT INTO tasks (title, details, priority, due_date, tags, project_context, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [
+        params.title,
+        params.details ?? null,
+        params.priority ?? 'medium',
+        params.due_date ?? null,
+        params.tags ?? [],
+        params.project_context ?? null,
+        params.created_by ?? null,
+      ],
+    );
+    return result.rows[0];
+  }
+
+  async listTasks(options: TaskListOptions = {}): Promise<{ results: TaskRow[]; total: number }> {
+    const conditions: string[] = [];
+    const values: unknown[] = [];
+    let paramIdx = 1;
+
+    const status = options.status ?? 'pending';
+    if (status) {
+      conditions.push(`status = $${paramIdx++}`);
+      values.push(status);
+    }
+    if (options.priority) {
+      conditions.push(`priority = $${paramIdx++}`);
+      values.push(options.priority);
+    }
+    if (options.project_context) {
+      conditions.push(`project_context = $${paramIdx++}`);
+      values.push(options.project_context);
+    }
+    if (options.tags && options.tags.length > 0) {
+      conditions.push(`tags && $${paramIdx++}`);
+      values.push(options.tags);
+    }
+    if (options.due_before) {
+      conditions.push(`due_date <= $${paramIdx++}`);
+      values.push(options.due_before);
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const limit = options.limit ?? 20;
+    const offset = options.offset ?? 0;
+
+    const countResult = await this.pool.query<{ count: string }>(
+      `SELECT COUNT(*) AS count FROM tasks ${where}`, values,
+    );
+    const total = Number(countResult.rows[0].count);
+
+    const result = await this.pool.query<TaskRow>(
+      `SELECT * FROM tasks ${where}
+       ORDER BY
+         CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 END,
+         due_date ASC NULLS LAST,
+         created_at DESC
+       LIMIT $${paramIdx++} OFFSET $${paramIdx}`,
+      [...values, limit, offset],
+    );
+
+    return { results: result.rows, total };
+  }
+
+  async updateTask(id: string, updates: Partial<{
+    title: string;
+    details: string;
+    status: TaskStatus;
+    priority: TaskPriority;
+    due_date: string;
+    tags: string[];
+    project_context: string;
+  }>): Promise<TaskRow | null> {
+    const setClauses: string[] = [];
+    const values: unknown[] = [];
+    let paramIdx = 1;
+
+    const idIdx = paramIdx++;
+    if (updates.title !== undefined) { setClauses.push(`title = $${paramIdx++}`); values.push(updates.title); }
+    if (updates.details !== undefined) { setClauses.push(`details = $${paramIdx++}`); values.push(updates.details); }
+    if (updates.status !== undefined) {
+      setClauses.push(`status = $${paramIdx++}`);
+      values.push(updates.status);
+      if (updates.status === 'done') {
+        setClauses.push(`completed_at = NOW()`);
+      }
+    }
+    if (updates.priority !== undefined) { setClauses.push(`priority = $${paramIdx++}`); values.push(updates.priority); }
+    if (updates.due_date !== undefined) { setClauses.push(`due_date = $${paramIdx++}`); values.push(updates.due_date); }
+    if (updates.tags !== undefined) { setClauses.push(`tags = $${paramIdx++}`); values.push(updates.tags); }
+    if (updates.project_context !== undefined) { setClauses.push(`project_context = $${paramIdx++}`); values.push(updates.project_context); }
+
+    if (setClauses.length === 0) return null;
+
+    setClauses.push('updated_at = NOW()');
+
+    const result = await this.pool.query<TaskRow>(
+      `UPDATE tasks SET ${setClauses.join(', ')} WHERE id = $${idIdx} RETURNING *`,
+      [id, ...values],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  async completeTask(idOrTitle: string): Promise<TaskRow | null> {
+    // Only attempt a primary-key lookup when the input is actually a UUID —
+    // otherwise `WHERE id = $1` throws 22P02 before the title fallback runs.
+    if (UUID_RE.test(idOrTitle)) {
+      const byId = await this.pool.query<TaskRow>(
+        `UPDATE tasks SET status = 'done', completed_at = NOW(), updated_at = NOW()
+         WHERE id = $1 RETURNING *`,
+        [idOrTitle],
+      );
+      if (byId.rows[0]) return byId.rows[0];
+    }
+
+    // Fuzzy title match: most recent not-yet-done task whose title contains the
+    // given text.
+    const byTitle = await this.pool.query<TaskRow>(
+      `UPDATE tasks SET status = 'done', completed_at = NOW(), updated_at = NOW()
+       WHERE id = (SELECT id FROM tasks WHERE title ILIKE $1 AND status != 'done' ORDER BY created_at DESC LIMIT 1)
+       RETURNING *`,
+      [`%${idOrTitle}%`],
+    );
+    return byTitle.rows[0] ?? null;
   }
 }

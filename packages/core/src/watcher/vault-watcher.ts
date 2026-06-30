@@ -43,7 +43,9 @@ export class VaultWatcher {
         chunkData.push({ content: chunkContent, embedding });
       }
 
-      // Phase 2: All embeddings succeeded — now upsert all chunks
+      // Phase 2: All embeddings succeeded — now upsert all chunks.
+      // area / source_type come from the note's own frontmatter (vault is the
+      // source of truth), so no per-vault folder taxonomy is baked into code.
       for (let i = 0; i < chunkData.length; i++) {
         await this.dbClient.upsertNote({
           id: randomUUID(),
@@ -55,6 +57,8 @@ export class VaultWatcher {
           file_hash: newHash,
           chunk_index: i,
           created_by: metadata.created_by,
+          area: metadata.area,
+          source_type: metadata.source_type,
         });
       }
 

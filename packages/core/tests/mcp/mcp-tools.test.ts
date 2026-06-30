@@ -71,9 +71,9 @@ describe('createTools', () => {
   });
 
   describe('tool definitions', () => {
-    it('should define exactly 6 tools', () => {
+    it('should define exactly 11 tools', () => {
       const tools = createTools(dbClient, embeddingService, tempVaultPath);
-      expect(tools).toHaveLength(6);
+      expect(tools).toHaveLength(11);
     });
 
     it('should define tools with correct names', () => {
@@ -85,6 +85,11 @@ describe('createTools', () => {
       expect(names).toContain('search_semantic');
       expect(names).toContain('search_text');
       expect(names).toContain('list_recent');
+      expect(names).toContain('add_task');
+      expect(names).toContain('list_tasks');
+      expect(names).toContain('update_task');
+      expect(names).toContain('complete_task');
+      expect(names).toContain('daily_log');
     });
 
     it('each tool should have name, description, inputSchema, and handler', () => {
@@ -472,6 +477,48 @@ describe('createTools', () => {
       await expect(
         tool.handler({ file_path: 'nonexistent.md' }),
       ).rejects.toThrow();
+    });
+  });
+
+  describe('daily_log handler', () => {
+    it('creates a real .md file in the vault with frontmatter on first entry', async () => {
+      const tool = createTools(dbClient, embeddingService, tempVaultPath).find((t) => t.name === 'daily_log')!;
+
+      const result = (await tool.handler({ entry: 'Learned about GIN indexes', tags: ['db'] })) as {
+        file: string;
+        entries_count: number;
+      };
+
+      // It writes a Markdown file (vault is the source of truth); it must NOT
+      // write to the derived index directly.
+      expect(dbClient.upsertNote).not.toHaveBeenCalled();
+      expect(result.file).toMatch(/^daily-logs\/\d{4}-\d{2}-\d{2}\.md$/);
+      expect(result.entries_count).toBe(1);
+
+      const written = await readFile(path.join(tempVaultPath, result.file), 'utf-8');
+      expect(written).toContain('daily_log');
+      expect(written).toContain('# Daily Log -');
+      expect(written).toContain('Learned about GIN indexes');
+    });
+
+    it('appends a second timestamped entry to the same day file', async () => {
+      const tool = createTools(dbClient, embeddingService, tempVaultPath).find((t) => t.name === 'daily_log')!;
+
+      await tool.handler({ entry: 'First thing' });
+      const result = (await tool.handler({ entry: 'Second thing' })) as {
+        file: string;
+        entries_count: number;
+      };
+
+      expect(result.entries_count).toBe(2);
+      const written = await readFile(path.join(tempVaultPath, result.file), 'utf-8');
+      expect(written).toContain('First thing');
+      expect(written).toContain('Second thing');
+    });
+
+    it('rejects an empty entry', async () => {
+      const tool = createTools(dbClient, embeddingService, tempVaultPath).find((t) => t.name === 'daily_log')!;
+      await expect(tool.handler({ entry: '   ' })).rejects.toThrow();
     });
   });
 });

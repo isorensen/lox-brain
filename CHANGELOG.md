@@ -4,6 +4,44 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-06-29
+
+### Added
+- **Task management tools: `add_task`, `list_tasks`, `update_task`, `complete_task`.** Backed by a new `tasks` table (status, priority, due date, tags, project context). `list_tasks` sorts by priority then due date; `update_task` auto-sets `completed_at` when a task is marked done. (Contributed by @LucasAmorimLima, [#166](https://github.com/isorensen/lox-brain/pull/166).)
+- **`daily_log` tool** — appends a timestamped entry to today's daily log.
+
+### Changed
+- **`daily_log` now writes a real Markdown file** (`daily-logs/YYYY-MM-DD.md`) to the vault and lets the watcher index it, instead of inserting a synthetic row straight into `vault_embeddings`. This keeps the vault as the source of truth: daily logs are visible in Obsidian, git-synced, and embedded like any other note (the original approach created index rows with no file and no embedding, lost on any reindex).
+
+### Fixed
+- **`complete_task` no longer throws when matching by title.** It guards the primary-key lookup behind a UUID check; a non-UUID argument previously raised `22P02 (invalid input syntax for type uuid)` before the fuzzy-title fallback could run, breaking the advertised "complete by partial title" feature.
+
+### Notes
+- The `tasks` table and its indexes live in `schema.sql` (owner-applied), consistent with the [#169](https://github.com/isorensen/lox-brain/issues/169) non-owner constraint — not created at runtime in `ensureSchema()`.
+- Tasks are operational state stored only in Postgres (not derived from the vault); they are intentionally outside the "vault is the source of truth" index and will not survive a from-vault rebuild.
+- **`ensureSchema()` now fails fast at startup if the owner-applied schema is stale.** A read-only `information_schema` check (safe for non-owner roles) verifies the `area`/`source_type` columns and `tasks` table exist; if not, startup aborts with an actionable "re-apply schema.sql" message instead of letting the first upsert/search crash later with a cryptic `42703`.
+
+## [0.12.0] — 2026-06-29
+
+### Added
+- **`area` and `source_type` metadata filtering on `search_semantic`, `search_text`, and `list_recent`.** Two optional nullable columns (`area`, `source_type`) on `vault_embeddings`, each backed by a partial index, let queries narrow results by domain (e.g. `search_semantic("circuit breaker", area: "programacao")`). Existing notes are unaffected — filters only apply when a value is provided. (Contributed by @LucasAmorimLima, [#168](https://github.com/isorensen/lox-brain/pull/168).)
+
+### Changed
+- **`area`/`source_type` are now read from each note's YAML frontmatter** (`area:` / `source_type:` fields) instead of being derived from a hard-coded folder taxonomy in the watcher. This keeps the vault as the source of truth and works across multiple vaults (personal + Credifit) without baking one vault's folder layout into shared code. Notes set these values via frontmatter; absent fields stay `NULL`.
+
+### Notes
+- Existing rows keep `NULL` `area`/`source_type` until each note is re-indexed (re-saved or via `index-vault`). Add the fields to a note's frontmatter to populate them.
+- Column/index DDL lives in `schema.sql` (owner-applied), consistent with the [#169](https://github.com/isorensen/lox-brain/issues/169) non-owner constraint — not created at runtime in `ensureSchema()`.
+
+## [0.11.0] — 2026-06-29
+
+### Changed
+- **`search_text` upgraded from `ILIKE` substring matching to dual-language full-text search.** Queries now run against PostgreSQL `tsvector` with both `portuguese` and `english` configs, adding stemming (e.g. "investimento" matches "investimentos"), stop-word removal, and relevance ranking via `GREATEST(ts_rank_pt, ts_rank_en)` instead of plain recency ordering. Two GIN indexes (`idx_vault_embeddings_fulltext_pt` / `_en`) in `infra/postgres/schema.sql` back the queries. (Contributed by @LucasAmorimLima, [#167](https://github.com/isorensen/lox-brain/pull/167).)
+- **Substring/prefix recall preserved via an `ILIKE` fallback.** `plainto_tsquery` only matches whole stemmed words, so a partial query like "cach" would no longer surface "caching". An additional `OR content ILIKE '%query%'` branch keeps the substring recall of the previous implementation; full-text matches still rank first, with substring-only matches ordered by recency.
+
+### Notes
+- The full-text GIN indexes live in `schema.sql` (applied by the table owner at setup) and are intentionally **not** created in `ensureSchema()` at runtime — a non-owner role cannot run `CREATE INDEX` without hitting the 42501 error from [#169](https://github.com/isorensen/lox-brain/issues/169). Existing deployments pick up the indexes by re-applying `schema.sql`.
+
 ## [0.10.1] — 2026-05-13
 
 ### Fixed

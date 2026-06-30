@@ -19,6 +19,7 @@ All notable changes to this project will be documented in this file.
 ### Notes
 - The `tasks` table and its indexes live in `schema.sql` (owner-applied), consistent with the [#169](https://github.com/isorensen/lox-brain/issues/169) non-owner constraint — not created at runtime in `ensureSchema()`.
 - Tasks are operational state stored only in Postgres (not derived from the vault); they are intentionally outside the "vault is the source of truth" index and will not survive a from-vault rebuild.
+- **`ensureSchema()` now fails fast at startup if the owner-applied schema is stale.** A read-only `information_schema` check (safe for non-owner roles) verifies the `area`/`source_type` columns and `tasks` table exist; if not, startup aborts with an actionable "re-apply schema.sql" message instead of letting the first upsert/search crash later with a cryptic `42703`.
 
 ## [0.12.0] — 2026-06-29
 

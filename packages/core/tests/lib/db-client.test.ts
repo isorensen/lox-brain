@@ -15,35 +15,50 @@ describe('DbClient', () => {
 
   describe('ensureSchema', () => {
     it('probes information_schema and skips ALTER when created_by already exists', async () => {
-      // information_schema read returns a row -> column already present
-      mockPool.query.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] });
+      mockPool.query
+        // information_schema read returns a row -> created_by already present
+        .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+        // read-only schema-currency check -> all owner-applied objects present
+        .mockResolvedValueOnce({ rows: [{ metadata_cols: '2', tasks_table: '1' }] });
 
       await client.ensureSchema();
 
-      // Only the information_schema probe should run — no ALTER TABLE at all.
-      // This is the no-owner path (issue #169): non-owner users cannot ALTER
-      // even when the statement would be a no-op, so we must avoid issuing it.
-      expect(mockPool.query).toHaveBeenCalledTimes(1);
+      // The created_by probe must not issue an ALTER on the no-owner path
+      // (issue #169); the only other query is the read-only currency check.
+      expect(mockPool.query).toHaveBeenCalledTimes(2);
       const [probeSql] = mockPool.query.mock.calls[0];
       expect(probeSql).toContain('information_schema.columns');
       expect(probeSql).toContain("table_name = 'vault_embeddings'");
       expect(probeSql).toContain("column_name = 'created_by'");
       expect(probeSql).not.toContain('ALTER TABLE');
+      const [checkSql] = mockPool.query.mock.calls[1];
+      expect(checkSql).toContain('information_schema');
+      expect(checkSql).not.toContain('ALTER TABLE');
+      expect(checkSql).not.toContain('CREATE');
     });
 
     it('issues ALTER TABLE ADD COLUMN when created_by is missing', async () => {
       mockPool.query
         .mockResolvedValueOnce({ rows: [] }) // probe -> missing
-        .mockResolvedValueOnce({ rowCount: 0 }); // ALTER
+        .mockResolvedValueOnce({ rowCount: 0 }) // ALTER
+        .mockResolvedValueOnce({ rows: [{ metadata_cols: '2', tasks_table: '1' }] }); // currency check
 
       await client.ensureSchema();
 
-      expect(mockPool.query).toHaveBeenCalledTimes(2);
+      expect(mockPool.query).toHaveBeenCalledTimes(3);
       const [alterSql] = mockPool.query.mock.calls[1];
       expect(alterSql).toContain('ALTER TABLE vault_embeddings');
       expect(alterSql).toContain('ADD COLUMN IF NOT EXISTS created_by');
       expect(alterSql).toContain('TEXT');
       expect(alterSql).toContain("DEFAULT ''");
+    });
+
+    it('fails fast with an actionable message when the owner-applied schema is stale', async () => {
+      mockPool.query
+        .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] }) // created_by present
+        .mockResolvedValueOnce({ rows: [{ metadata_cols: '0', tasks_table: '0' }] }); // stale
+
+      await expect(client.ensureSchema()).rejects.toThrow(/schema is out of date/i);
     });
 
     it('propagates pool.query rejection from the probe', async () => {

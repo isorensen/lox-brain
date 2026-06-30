@@ -76,6 +76,31 @@ export class DbClient {
     // INDEX (even a no-op IF NOT EXISTS) without hitting the 42501 permission
     // error described in issue #169. Existing deployments pick them up by
     // re-applying schema.sql.
+    //
+    // Verify those owner-applied objects are actually present. This is a
+    // read-only catalog query (safe for non-owner roles, unlike DDL): if the
+    // schema is stale, fail fast at startup with an actionable message instead
+    // of letting the first upsertNote / search_* crash with a cryptic
+    // 42703 "column \"area\" does not exist" much later.
+    const { rows: schemaRows } = await this.pool.query(`
+      SELECT
+        (SELECT COUNT(*) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'vault_embeddings'
+             AND column_name IN ('area', 'source_type')) AS metadata_cols,
+        (SELECT COUNT(*) FROM information_schema.tables
+           WHERE table_schema = 'public' AND table_name = 'tasks') AS tasks_table
+    `);
+    const metadataCols = Number(schemaRows[0]?.metadata_cols ?? 0);
+    const tasksTable = Number(schemaRows[0]?.tasks_table ?? 0);
+    if (metadataCols < 2 || tasksTable < 1) {
+      throw new Error(
+        'Database schema is out of date: the vault_embeddings.area/source_type ' +
+          'columns and/or the tasks table are missing. Re-apply ' +
+          'infra/postgres/schema.sql as the table owner — these objects are not ' +
+          'auto-created at runtime (see issue #169). ' +
+          `Found metadata columns ${metadataCols}/2, tasks table ${tasksTable}/1.`,
+      );
+    }
   }
 
   private buildSearchOptions(

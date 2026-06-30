@@ -3,6 +3,8 @@ export interface NoteMetadata {
   tags: string[];
   content: string;
   created_by?: string;
+  area?: string | null;
+  source_type?: string | null;
 }
 
 export interface NoteRow {

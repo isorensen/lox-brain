@@ -175,6 +175,57 @@ Plain content with no frontmatter.`;
 
       expect(result.created_by).toBeUndefined();
     });
+
+    it('should extract area and source_type from frontmatter when present', () => {
+      const rawContent = `---
+title: Circuit Breakers
+area: programacao
+source_type: study
+---
+
+Notes about circuit breakers.`;
+
+      const result: NoteMetadata = service.parseNote(rawContent);
+
+      expect(result.area).toBe('programacao');
+      expect(result.source_type).toBe('study');
+    });
+
+    it('should strip quotes from area and source_type values', () => {
+      const rawContent = `---
+title: Leadership
+area: "lideranca"
+source_type: 'book_summary'
+---
+
+Content.`;
+
+      const result: NoteMetadata = service.parseNote(rawContent);
+
+      expect(result.area).toBe('lideranca');
+      expect(result.source_type).toBe('book_summary');
+    });
+
+    it('should return null area and source_type when absent from frontmatter', () => {
+      const rawContent = `---
+title: Free Note
+tags: [misc]
+---
+
+A note without domain metadata.`;
+
+      const result: NoteMetadata = service.parseNote(rawContent);
+
+      expect(result.area).toBeNull();
+      expect(result.source_type).toBeNull();
+    });
+
+    it('should return null area and source_type when no frontmatter at all', () => {
+      const result: NoteMetadata = service.parseNote('# Heading\n\nPlain content.');
+
+      expect(result.area).toBeNull();
+      expect(result.source_type).toBeNull();
+    });
   });
 
   describe('chunkText', () => {

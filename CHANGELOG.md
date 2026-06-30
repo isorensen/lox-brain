@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-06-29
+
+### Added
+- **`area` and `source_type` metadata filtering on `search_semantic`, `search_text`, and `list_recent`.** Two optional nullable columns (`area`, `source_type`) on `vault_embeddings`, each backed by a partial index, let queries narrow results by domain (e.g. `search_semantic("circuit breaker", area: "programacao")`). Existing notes are unaffected — filters only apply when a value is provided. (Contributed by @LucasAmorimLima, [#168](https://github.com/isorensen/lox-brain/pull/168).)
+
+### Changed
+- **`area`/`source_type` are now read from each note's YAML frontmatter** (`area:` / `source_type:` fields) instead of being derived from a hard-coded folder taxonomy in the watcher. This keeps the vault as the source of truth and works across multiple vaults (personal + Credifit) without baking one vault's folder layout into shared code. Notes set these values via frontmatter; absent fields stay `NULL`.
+
+### Notes
+- Existing rows keep `NULL` `area`/`source_type` until each note is re-indexed (re-saved or via `index-vault`). Add the fields to a note's frontmatter to populate them.
+- Column/index DDL lives in `schema.sql` (owner-applied), consistent with the [#169](https://github.com/isorensen/lox-brain/issues/169) non-owner constraint — not created at runtime in `ensureSchema()`.
+
 ## [0.11.0] — 2026-06-29
 
 ### Changed

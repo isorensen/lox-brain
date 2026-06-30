@@ -35,6 +35,8 @@ export class EmbeddingService {
     let tags: string[] = [];
     let content: string;
     let created_by: string | undefined;
+    let area: string | null = null;
+    let source_type: string | null = null;
 
     if (frontmatterMatch) {
       const frontmatter = frontmatterMatch[1];
@@ -69,6 +71,18 @@ export class EmbeddingService {
         created_by = createdByMatch[1].trim();
       }
 
+      // Extract area / source_type from frontmatter for domain filtering.
+      // These are declared by the note itself (vault is the source of truth),
+      // so the taxonomy is not hard-coded and works across vaults.
+      const areaMatch = frontmatter.match(/^area:\s*(.+)$/m);
+      if (areaMatch) {
+        area = areaMatch[1].trim().replace(/^["']|["']$/g, '') || null;
+      }
+      const sourceTypeMatch = frontmatter.match(/^source_type:\s*(.+)$/m);
+      if (sourceTypeMatch) {
+        source_type = sourceTypeMatch[1].trim().replace(/^["']|["']$/g, '') || null;
+      }
+
       // Content is everything after the frontmatter block
       content = rawContent.slice(frontmatterMatch[0].length).trim();
     } else {
@@ -83,7 +97,7 @@ export class EmbeddingService {
       }
     }
 
-    return { title, tags, content, created_by };
+    return { title, tags, content, created_by, area, source_type };
   }
 
   chunkText(text: string, maxTokens = CHUNK_MAX_TOKENS, overlapTokens = CHUNK_OVERLAP_TOKENS): string[] {

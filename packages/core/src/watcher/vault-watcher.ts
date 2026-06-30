@@ -22,26 +22,6 @@ export class VaultWatcher {
     return path.relative(this.vaultPath, filePath).replace(/\\/g, '/');
   }
 
-  deriveArea(relativePath: string): string | null {
-    const parts = relativePath.split('/');
-    if (parts.length >= 2 && (parts[0] === 'studies' || parts[0] === 'Livros')) {
-      const validAreas = ['ia', 'programacao', 'lideranca', 'comunicacao', 'financas'];
-      if (validAreas.includes(parts[1])) return parts[1];
-    }
-    if (parts[0] === 'api-docs') return 'programacao';
-    return null;
-  }
-
-  deriveSourceType(relativePath: string): string | null {
-    const parts = relativePath.split('/');
-    if (parts[0] === 'studies') return 'study';
-    if (parts[0] === 'Livros' && path.basename(relativePath).startsWith('summary')) return 'book_summary';
-    if (parts[0] === 'news') return 'news';
-    if (parts[0] === 'daily-logs') return 'daily_log';
-    if (parts[0] === 'api-docs') return 'study';
-    return 'free_note';
-  }
-
   async handleFileChange(filePath: string, content: string): Promise<void> {
     const relative = this.relativePath(filePath);
     const newHash = this.embeddingService.computeHash(content);
@@ -63,10 +43,9 @@ export class VaultWatcher {
         chunkData.push({ content: chunkContent, embedding });
       }
 
-      // Phase 2: All embeddings succeeded — now upsert all chunks
-      const area = this.deriveArea(relative);
-      const sourceType = this.deriveSourceType(relative);
-
+      // Phase 2: All embeddings succeeded — now upsert all chunks.
+      // area / source_type come from the note's own frontmatter (vault is the
+      // source of truth), so no per-vault folder taxonomy is baked into code.
       for (let i = 0; i < chunkData.length; i++) {
         await this.dbClient.upsertNote({
           id: randomUUID(),
@@ -78,8 +57,8 @@ export class VaultWatcher {
           file_hash: newHash,
           chunk_index: i,
           created_by: metadata.created_by,
-          area,
-          source_type: sourceType,
+          area: metadata.area,
+          source_type: metadata.source_type,
         });
       }
 

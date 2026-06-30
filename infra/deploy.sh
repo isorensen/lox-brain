@@ -43,11 +43,20 @@ echo "--- kill stale MCP processes ---"
 pkill -f 'tsx src/mcp/index.ts' || true
 pkill -f 'tsx packages/core/src/mcp/index.ts' || true
 
-echo "--- restart watcher ---"
+echo "--- restart services ---"
 sudo systemctl restart lox-watcher
+# Team mode also runs the MCP server as a systemd service (HTTP transport).
+# Restart it too when the unit exists so it picks up the new code; personal
+# (stdio) installs have no such unit and skip this.
+if systemctl cat lox-mcp.service >/dev/null 2>&1; then
+  sudo systemctl restart lox-mcp
+fi
 
-echo "--- verify watcher ---"
+echo "--- verify services ---"
 systemctl is-active lox-watcher
+if systemctl cat lox-mcp.service >/dev/null 2>&1; then
+  systemctl is-active lox-mcp
+fi
 
 echo "=== Lox deploy completed at $(date -u) ==="
 echo "DEPLOY_SUCCESS"

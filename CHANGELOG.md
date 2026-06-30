@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.13.4] — 2026-06-30
+
+### Fixed
+- **`infra/deploy.sh` now also restarts `lox-mcp.service` when the unit exists (team mode).** Team-mode deployments run the MCP server over HTTP as a systemd service; previously only `lox-watcher` was restarted, so after an upgrade the MCP server kept running the old code. Personal/stdio installs have no such unit and are unaffected (the restart is guarded by `systemctl cat lox-mcp.service`).
+
 ## [0.13.3] — 2026-06-29
 
 ### Added

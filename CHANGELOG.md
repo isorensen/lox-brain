@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.13.1] — 2026-06-29
+
+### Fixed
+- **Restore the 80% branch-coverage CI gate.** The v0.13.0 merge dropped branch coverage to 79.66% because the new MCP task tool handlers (`add_task`/`list_tasks`/`update_task`/`complete_task`) were untested — only the underlying `db-client` methods were covered. Added handler tests (success, validation-error, and not-found paths), lifting branch coverage to 85.33%. No production code changes.
+
 ## [0.13.0] — 2026-06-29
 
 ### Added

@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-06-29
+
+### Changed
+- **`search_text` upgraded from `ILIKE` substring matching to dual-language full-text search.** Queries now run against PostgreSQL `tsvector` with both `portuguese` and `english` configs, adding stemming (e.g. "investimento" matches "investimentos"), stop-word removal, and relevance ranking via `GREATEST(ts_rank_pt, ts_rank_en)` instead of plain recency ordering. Two GIN indexes (`idx_vault_embeddings_fulltext_pt` / `_en`) in `infra/postgres/schema.sql` back the queries. (Contributed by @LucasAmorimLima, [#167](https://github.com/isorensen/lox-brain/pull/167).)
+- **Substring/prefix recall preserved via an `ILIKE` fallback.** `plainto_tsquery` only matches whole stemmed words, so a partial query like "cach" would no longer surface "caching". An additional `OR content ILIKE '%query%'` branch keeps the substring recall of the previous implementation; full-text matches still rank first, with substring-only matches ordered by recency.
+
+### Notes
+- The full-text GIN indexes live in `schema.sql` (applied by the table owner at setup) and are intentionally **not** created in `ensureSchema()` at runtime — a non-owner role cannot run `CREATE INDEX` without hitting the 42501 error from [#169](https://github.com/isorensen/lox-brain/issues/169). Existing deployments pick up the indexes by re-applying `schema.sql`.
+
 ## [0.10.1] — 2026-05-13
 
 ### Fixed

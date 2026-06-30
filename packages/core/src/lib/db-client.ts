@@ -306,8 +306,9 @@ export class DbClient {
              COUNT(*) OVER() AS total_count
       FROM vault_embeddings
       WHERE (to_tsvector('portuguese', content) @@ plainto_tsquery('portuguese', ${q})
-         OR to_tsvector('english', content) @@ plainto_tsquery('english', ${q}))${tagsClause}
-      ORDER BY rank DESC
+         OR to_tsvector('english', content) @@ plainto_tsquery('english', ${q})
+         OR content ILIKE '%' || ${q} || '%')${tagsClause}
+      ORDER BY rank DESC, updated_at DESC
       LIMIT $${limitIdx}
       OFFSET $${offsetIdx}
     `;

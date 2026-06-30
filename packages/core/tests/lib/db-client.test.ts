@@ -469,6 +469,21 @@ describe('DbClient', () => {
       expect(params[0]).toBe('query');
     });
 
+    it('keeps an ILIKE fallback so substring/prefix queries still match', async () => {
+      mockPool.query.mockResolvedValue({ rows: [] });
+
+      // plainto_tsquery only matches whole stemmed words, so "cach" would no
+      // longer find "caching". The ILIKE branch preserves the substring recall
+      // the previous implementation had, while tsvector adds stemming/ranking.
+      await client.searchText('cach');
+
+      const [sql, params] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('content ILIKE');
+      expect(sql).toContain('ORDER BY rank DESC, updated_at DESC');
+      // single bound param reused across both tsquery and ILIKE branches
+      expect(params[0]).toBe('cach');
+    });
+
     it('should SELECT created_by in text search results', async () => {
       const fakeRows = [
         {

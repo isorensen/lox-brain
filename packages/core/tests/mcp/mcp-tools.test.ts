@@ -71,9 +71,9 @@ describe('createTools', () => {
   });
 
   describe('tool definitions', () => {
-    it('should define exactly 6 tools', () => {
+    it('should define exactly 11 tools', () => {
       const tools = createTools(dbClient, embeddingService, tempVaultPath);
-      expect(tools).toHaveLength(6);
+      expect(tools).toHaveLength(11);
     });
 
     it('should define tools with correct names', () => {
@@ -85,6 +85,11 @@ describe('createTools', () => {
       expect(names).toContain('search_semantic');
       expect(names).toContain('search_text');
       expect(names).toContain('list_recent');
+      expect(names).toContain('add_task');
+      expect(names).toContain('list_tasks');
+      expect(names).toContain('update_task');
+      expect(names).toContain('complete_task');
+      expect(names).toContain('daily_log');
     });
 
     it('each tool should have name, description, inputSchema, and handler', () => {

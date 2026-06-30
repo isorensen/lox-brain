@@ -46,3 +46,25 @@ CREATE INDEX IF NOT EXISTS idx_vault_embeddings_area
 
 CREATE INDEX IF NOT EXISTS idx_vault_embeddings_source_type
   ON vault_embeddings(source_type) WHERE source_type IS NOT NULL;
+
+-- Tasks table
+CREATE TABLE IF NOT EXISTS tasks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  details TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  priority TEXT NOT NULL DEFAULT 'medium',
+  due_date DATE,
+  tags TEXT[] DEFAULT '{}',
+  project_context TEXT,
+  created_by TEXT,
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_due_date
+  ON tasks(due_date) WHERE status NOT IN ('done', 'cancelled');
+CREATE INDEX IF NOT EXISTS idx_tasks_tags ON tasks USING GIN(tags);
+CREATE INDEX IF NOT EXISTS idx_tasks_project_context ON tasks(project_context);

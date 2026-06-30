@@ -25,6 +25,12 @@ const RECENT_DEFAULTS: SearchOptions = {
   contentPreviewLength: 300,
 };
 
+// A canonical UUID. Used to decide whether completeTask() should attempt a
+// lookup by primary key: passing a non-UUID to `WHERE id = $1` makes Postgres
+// raise 22P02 (invalid input syntax for type uuid) before the title fallback
+// can run.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export class DbClient {
   private readonly pool: Pool;
 
@@ -486,62 +492,25 @@ export class DbClient {
   }
 
   async completeTask(idOrTitle: string): Promise<TaskRow | null> {
-    // Try by ID first
-    let result = await this.pool.query<TaskRow>(
-      `UPDATE tasks SET status = 'done', completed_at = NOW(), updated_at = NOW()
-       WHERE id = $1 RETURNING *`,
-      [idOrTitle],
-    );
-    if (result.rows[0]) return result.rows[0];
+    // Only attempt a primary-key lookup when the input is actually a UUID —
+    // otherwise `WHERE id = $1` throws 22P02 before the title fallback runs.
+    if (UUID_RE.test(idOrTitle)) {
+      const byId = await this.pool.query<TaskRow>(
+        `UPDATE tasks SET status = 'done', completed_at = NOW(), updated_at = NOW()
+         WHERE id = $1 RETURNING *`,
+        [idOrTitle],
+      );
+      if (byId.rows[0]) return byId.rows[0];
+    }
 
-    // Fallback to fuzzy title match
-    result = await this.pool.query<TaskRow>(
+    // Fuzzy title match: most recent not-yet-done task whose title contains the
+    // given text.
+    const byTitle = await this.pool.query<TaskRow>(
       `UPDATE tasks SET status = 'done', completed_at = NOW(), updated_at = NOW()
        WHERE id = (SELECT id FROM tasks WHERE title ILIKE $1 AND status != 'done' ORDER BY created_at DESC LIMIT 1)
        RETURNING *`,
       [`%${idOrTitle}%`],
     );
-    return result.rows[0] ?? null;
-  }
-
-  // --- Daily Log ---
-
-  async appendDailyLog(entry: string, tags?: string[], createdBy?: string): Promise<{ id: string; date: string; entries_count: number }> {
-    const today = new Date().toISOString().split('T')[0];
-    const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
-    const formattedEntry = `\n### ${timestamp}\n${entry}`;
-
-    // Try to find existing daily log for today
-    const existing = await this.pool.query<{ id: string; content: string; tags: string[] }>(
-      `SELECT id, content, tags FROM vault_embeddings
-       WHERE file_path = $1 AND chunk_index = 0`,
-      [`daily-logs/${today}.md`],
-    );
-
-    if (existing.rows[0]) {
-      const updatedContent = existing.rows[0].content + formattedEntry;
-      const mergedTags = [...new Set([...existing.rows[0].tags, ...(tags ?? [])])];
-      await this.pool.query(
-        `UPDATE vault_embeddings SET content = $1, tags = $2, updated_at = NOW()
-         WHERE id = $3`,
-        [updatedContent, mergedTags, existing.rows[0].id],
-      );
-      const entriesCount = (updatedContent.match(/^### \d{2}:\d{2}/gm) ?? []).length;
-      return { id: existing.rows[0].id, date: today, entries_count: entriesCount };
-    }
-
-    // Create new daily log
-    const content = `# Daily Log - ${today}${formattedEntry}`;
-    const allTags = ['daily_log', ...(tags ?? [])];
-    const { randomUUID } = await import('node:crypto');
-    const id = randomUUID();
-
-    await this.pool.query(
-      `INSERT INTO vault_embeddings (id, file_path, title, content, tags, embedding, file_hash, chunk_index, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 0, $8)`,
-      [id, `daily-logs/${today}.md`, today, content, allTags, null, '', createdBy ?? ''],
-    );
-
-    return { id, date: today, entries_count: 1 };
+    return byTitle.rows[0] ?? null;
   }
 }

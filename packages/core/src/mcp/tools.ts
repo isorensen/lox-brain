@@ -2,7 +2,7 @@ import { readFile, writeFile, unlink, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import type { DbClient } from '../lib/db-client.js';
 import type { EmbeddingService } from '../lib/embedding-service.js';
-import type { SearchOptions, TaskStatus, TaskPriority, TASK_STATUSES, TASK_PRIORITIES } from '@lox-brain/shared';
+import type { SearchOptions, TaskStatus, TaskPriority } from '@lox-brain/shared';
 
 export interface Tool {
   name: string;
@@ -343,12 +343,12 @@ export function createTools(
 
     {
       name: 'daily_log',
-      description: 'Append a timestamped entry to today\'s daily log. Auto-creates if no log exists for today.',
+      description: "Append a timestamped entry to today's daily log (a real Markdown file in the vault). Auto-creates the file if none exists for today; the vault watcher indexes it like any other note.",
       inputSchema: {
         type: 'object',
         properties: {
           entry: { type: 'string', description: 'What you learned, solved, or observed' },
-          tags: { type: 'array', items: { type: 'string' }, description: 'Tags for this entry' },
+          tags: { type: 'array', items: { type: 'string' }, description: 'Tags for the day (applied to frontmatter when the log is first created)' },
         },
         required: ['entry'],
       },
@@ -357,9 +357,41 @@ export function createTools(
         if (typeof entry !== 'string' || entry.trim() === '') {
           throw new Error('entry must be a non-empty string');
         }
-        const tags = args.tags as string[] | undefined;
+        const tags = (args.tags as string[] | undefined) ?? [];
         const createdBy = typeof args._created_by === 'string' ? args._created_by : undefined;
-        return dbClient.appendDailyLog(entry, tags, createdBy);
+
+        // Daily logs are real Markdown files (vault is the source of truth).
+        // We append to a per-day file and let the watcher index it — no direct
+        // writes to the derived vault_embeddings index.
+        const today = new Date().toISOString().split('T')[0];
+        const timestamp = new Date().toLocaleTimeString('en-US', {
+          hour12: false,
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+        const relativePath = `daily-logs/${today}.md`;
+        const resolved = safePath(normalizedVault, relativePath);
+        await mkdir(path.dirname(resolved), { recursive: true });
+
+        let existing = '';
+        try {
+          existing = await readFile(resolved, 'utf-8');
+        } catch {
+          // No log for today yet — a new file will be created below.
+        }
+
+        const formattedEntry = `### ${timestamp}\n${entry}\n`;
+        let content: string;
+        if (existing.trim() === '') {
+          const body = `# Daily Log - ${today}\n\n${formattedEntry}`;
+          content = addFrontmatter(body, ['daily_log', ...tags], createdBy);
+        } else {
+          content = `${existing.replace(/\s*$/, '')}\n\n${formattedEntry}`;
+        }
+        await writeFile(resolved, content, 'utf-8');
+
+        const entriesCount = (content.match(/^### \d{2}:\d{2}/gm) ?? []).length;
+        return { file: relativePath, date: today, entries_count: entriesCount };
       },
     },
   ];

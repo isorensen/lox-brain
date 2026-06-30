@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-06-29
+
+### Added
+- **Task management tools: `add_task`, `list_tasks`, `update_task`, `complete_task`.** Backed by a new `tasks` table (status, priority, due date, tags, project context). `list_tasks` sorts by priority then due date; `update_task` auto-sets `completed_at` when a task is marked done. (Contributed by @LucasAmorimLima, [#166](https://github.com/isorensen/lox-brain/pull/166).)
+- **`daily_log` tool** — appends a timestamped entry to today's daily log.
+
+### Changed
+- **`daily_log` now writes a real Markdown file** (`daily-logs/YYYY-MM-DD.md`) to the vault and lets the watcher index it, instead of inserting a synthetic row straight into `vault_embeddings`. This keeps the vault as the source of truth: daily logs are visible in Obsidian, git-synced, and embedded like any other note (the original approach created index rows with no file and no embedding, lost on any reindex).
+
+### Fixed
+- **`complete_task` no longer throws when matching by title.** It guards the primary-key lookup behind a UUID check; a non-UUID argument previously raised `22P02 (invalid input syntax for type uuid)` before the fuzzy-title fallback could run, breaking the advertised "complete by partial title" feature.
+
+### Notes
+- The `tasks` table and its indexes live in `schema.sql` (owner-applied), consistent with the [#169](https://github.com/isorensen/lox-brain/issues/169) non-owner constraint — not created at runtime in `ensureSchema()`.
+- Tasks are operational state stored only in Postgres (not derived from the vault); they are intentionally outside the "vault is the source of truth" index and will not survive a from-vault rebuild.
+
 ## [0.12.0] — 2026-06-29
 
 ### Added

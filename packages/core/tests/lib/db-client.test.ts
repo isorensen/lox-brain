@@ -611,4 +611,79 @@ describe('DbClient', () => {
       expect(result.results[0]).not.toHaveProperty('total_count');
     });
   });
+
+  describe('tasks', () => {
+    it('addTask inserts with parameterized values and returns the row', async () => {
+      const row = { id: 'u1', title: 'Write tests', status: 'pending', priority: 'high' };
+      mockPool.query.mockResolvedValue({ rows: [row] });
+
+      const result = await client.addTask({ title: 'Write tests', priority: 'high' });
+
+      const [sql, params] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('INSERT INTO tasks');
+      expect(sql).toContain('RETURNING *');
+      expect(params[0]).toBe('Write tests');
+      expect(params).toContain('high');
+      expect(result).toEqual(row);
+    });
+
+    it('listTasks defaults to pending status and orders by priority then due date', async () => {
+      mockPool.query
+        .mockResolvedValueOnce({ rows: [{ count: '2' }] })
+        .mockResolvedValueOnce({ rows: [{ id: 'a' }, { id: 'b' }] });
+
+      const result = await client.listTasks();
+
+      const [countSql, countParams] = mockPool.query.mock.calls[0];
+      const [listSql] = mockPool.query.mock.calls[1];
+      expect(countSql).toContain('SELECT COUNT(*)');
+      expect(countParams).toContain('pending');
+      expect(listSql).toContain('ORDER BY');
+      expect(result.total).toBe(2);
+      expect(result.results).toHaveLength(2);
+    });
+
+    it('updateTask sets completed_at when status becomes done', async () => {
+      mockPool.query.mockResolvedValue({ rows: [{ id: 'u1', status: 'done' }] });
+
+      await client.updateTask('550e8400-e29b-41d4-a716-446655440000', { status: 'done' });
+
+      const [sql] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('status = $');
+      expect(sql).toContain('completed_at = NOW()');
+    });
+
+    it('updateTask returns null and issues no query when there is nothing to update', async () => {
+      const result = await client.updateTask('550e8400-e29b-41d4-a716-446655440000', {});
+
+      expect(result).toBeNull();
+      expect(mockPool.query).not.toHaveBeenCalled();
+    });
+
+    it('completeTask matches by id when given a UUID', async () => {
+      const uuid = '550e8400-e29b-41d4-a716-446655440000';
+      mockPool.query.mockResolvedValue({ rows: [{ id: uuid, status: 'done' }] });
+
+      const result = await client.completeTask(uuid);
+
+      const [sql, params] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('WHERE id = $1');
+      expect(params).toEqual([uuid]);
+      expect(result?.status).toBe('done');
+    });
+
+    it('completeTask falls back to title match without throwing on non-UUID input', async () => {
+      mockPool.query.mockResolvedValue({ rows: [{ id: 'x', status: 'done' }] });
+
+      const result = await client.completeTask('buy milk');
+
+      // Only the title query runs — the `WHERE id = $1` lookup (which would
+      // raise 22P02 for a non-UUID) is skipped entirely.
+      expect(mockPool.query).toHaveBeenCalledTimes(1);
+      const [sql, params] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('title ILIKE $1');
+      expect(params).toEqual(['%buy milk%']);
+      expect(result?.status).toBe('done');
+    });
+  });
 });

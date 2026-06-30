@@ -1,6 +1,6 @@
 {
   "name": "lox",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "private": true,
   "description": "Lox installer \u2014 set up your personal AI-powered Second Brain",
   "bin": {
@@ -23,9 +23,9 @@
   "devDependencies": {
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.3.5",
-    "@vitest/coverage-v8": "^4.0.18",
+    "@vitest/coverage-v8": "^4.1.9",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.18"
+    "vitest": "^4.1.9"
   }
 }

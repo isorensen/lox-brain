@@ -16,6 +16,10 @@ function createMockDbClient(): DbClient {
     listRecent: vi.fn().mockResolvedValue(emptyPaginated),
     getFileHash: vi.fn().mockResolvedValue(null),
     deleteChunksAbove: vi.fn().mockResolvedValue(undefined),
+    addTask: vi.fn().mockResolvedValue({ id: 't1', title: 'T', status: 'pending' }),
+    listTasks: vi.fn().mockResolvedValue({ results: [], total: 0 }),
+    updateTask: vi.fn().mockResolvedValue({ id: 't1', title: 'T', status: 'in_progress' }),
+    completeTask: vi.fn().mockResolvedValue({ id: 't1', title: 'T', status: 'done' }),
   } as unknown as DbClient;
 }
 
@@ -519,6 +523,73 @@ describe('createTools', () => {
     it('rejects an empty entry', async () => {
       const tool = createTools(dbClient, embeddingService, tempVaultPath).find((t) => t.name === 'daily_log')!;
       await expect(tool.handler({ entry: '   ' })).rejects.toThrow();
+    });
+  });
+
+  describe('task tool handlers', () => {
+    function tool(name: string) {
+      return createTools(dbClient, embeddingService, tempVaultPath).find((t) => t.name === name)!;
+    }
+
+    it('add_task forwards fields (incl. _created_by) to dbClient.addTask', async () => {
+      await tool('add_task').handler({
+        title: 'Ship it',
+        details: 'do the thing',
+        priority: 'high',
+        due_date: '2026-07-01',
+        tags: ['work'],
+        project_context: 'lox',
+        _created_by: 'eduardo',
+      });
+
+      expect(dbClient.addTask).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'Ship it', priority: 'high', created_by: 'eduardo' }),
+      );
+    });
+
+    it('add_task rejects an empty title', async () => {
+      await expect(tool('add_task').handler({ title: '  ' })).rejects.toThrow(/title/);
+    });
+
+    it('list_tasks forwards filters to dbClient.listTasks', async () => {
+      await tool('list_tasks').handler({ status: 'done', priority: 'low', tags: ['x'], due_before: '2026-07-01' });
+
+      expect(dbClient.listTasks).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'done', priority: 'low' }),
+      );
+    });
+
+    it('update_task forwards updates and strips id/_created_by', async () => {
+      await tool('update_task').handler({ id: 't1', _created_by: 'eduardo', status: 'in_progress', title: 'New' });
+
+      const [, updates] = (dbClient.updateTask as unknown as { mock: { calls: unknown[][] } }).mock.calls[0];
+      expect(updates).not.toHaveProperty('id');
+      expect(updates).not.toHaveProperty('_created_by');
+      expect(updates).toMatchObject({ status: 'in_progress', title: 'New' });
+    });
+
+    it('update_task rejects a missing id', async () => {
+      await expect(tool('update_task').handler({ status: 'done' })).rejects.toThrow(/id/);
+    });
+
+    it('update_task throws when the task does not exist', async () => {
+      (dbClient.updateTask as unknown as { mockResolvedValueOnce: (v: unknown) => void }).mockResolvedValueOnce(null);
+      await expect(tool('update_task').handler({ id: 't404', status: 'done' })).rejects.toThrow(/not found/i);
+    });
+
+    it('complete_task returns the completed task', async () => {
+      const result = (await tool('complete_task').handler({ id_or_title: 'Ship it' })) as { status: string };
+      expect(dbClient.completeTask).toHaveBeenCalledWith('Ship it');
+      expect(result.status).toBe('done');
+    });
+
+    it('complete_task rejects an empty argument', async () => {
+      await expect(tool('complete_task').handler({ id_or_title: '' })).rejects.toThrow();
+    });
+
+    it('complete_task throws when no task matches', async () => {
+      (dbClient.completeTask as unknown as { mockResolvedValueOnce: (v: unknown) => void }).mockResolvedValueOnce(null);
+      await expect(tool('complete_task').handler({ id_or_title: 'nope' })).rejects.toThrow(/no pending task/i);
     });
   });
 });

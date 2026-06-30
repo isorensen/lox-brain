@@ -1,6 +1,6 @@
 {
   "name": "@lox-brain/shared",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "private": true,
   "license": "MIT",
   "main": "dist/index.js",
@@ -11,7 +11,7 @@
   },
   "devDependencies": {
     "typescript": "^5.9.3",
-    "vitest": "^4.0.18"
+    "vitest": "^4.1.9"
   },
   "type": "commonjs"
 }

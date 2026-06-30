@@ -1,8 +1,10 @@
 name: Deploy
 
+# Manual-only: this repo is public, so production CD is NOT coupled to pushes.
+# A merge to main must never touch production on its own — deploy is triggered
+# deliberately via the GitHub "Run workflow" button (or `gh workflow run`).
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
   deploy:

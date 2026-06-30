@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.13.2] — 2026-06-29
+
+### Fixed
+- **`infra/deploy.sh` now re-applies `schema.sql` on every deploy** (idempotent DDL, applied as the table owner via `SET ROLE`). The v0.13.0 schema added the `area`/`source_type` columns and `tasks` table as owner-applied objects (#169); the deploy script previously only pulled + built + restarted, so the watcher boot-aborted on the new stale-schema check. Deploys are now self-sufficient.
+
+### Changed
+- **Deploy workflow is now manual (`workflow_dispatch`), not `on: push`.** This repo is public, so coupling production CD to every merge was both a footgun (a merge silently redeployed and could break prod — which it did) and an open-source smell. Production deploys are now triggered deliberately via the GitHub "Run workflow" button / `gh workflow run deploy.yml`. Secrets remain repo-scoped and unavailable to forks.
+
 ## [0.13.1] — 2026-06-29
 
 ### Fixed

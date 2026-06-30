@@ -44,4 +44,7 @@ jobs:
 
       - name: Security audit (ubuntu only)
         if: matrix.os == 'ubuntu-latest'
+        # Audit all dependencies (prod + dev) at high+. Kept full-scope because
+        # the known advisories were genuinely fixable: hono (prod, VPN-exposed
+        # transport) and vitest (dev) were both bumped to patched versions.
         run: npm audit --audit-level=high

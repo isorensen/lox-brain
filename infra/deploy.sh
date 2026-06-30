@@ -24,6 +24,21 @@ npm ci
 echo "--- npm run build ---"
 npm run build --workspaces
 
+echo "--- apply schema.sql (idempotent DDL, as table owner) ---"
+# Schema objects (area/source_type columns, indexes, the tasks table) are
+# owner-applied — the non-owner runtime role cannot run DDL (issue #169), and
+# the watcher now aborts on boot if they are missing. Apply as the table
+# owner so new objects (e.g. tasks) are reachable by the runtime:
+#   - psql runs as the postgres superuser, then SET ROLE <owner> so created
+#     objects are owned by the runtime's role, not by postgres.
+#   - the file is read by this user and piped via stdin (postgres cannot read
+#     files under $HOME).
+# schema.sql is fully idempotent (IF NOT EXISTS), so this is safe to re-run.
+DB_NAME="${LOX_DB_NAME:-lox_brain}"
+DB_OWNER="${LOX_DB_OWNER:-lox}"
+{ echo "SET ROLE ${DB_OWNER};"; cat "$PROJECT_DIR/infra/postgres/schema.sql"; } \
+  | sudo -u postgres psql -d "$DB_NAME" -v ON_ERROR_STOP=1
+
 echo "--- kill stale MCP processes ---"
 pkill -f 'tsx src/mcp/index.ts' || true
 pkill -f 'tsx packages/core/src/mcp/index.ts' || true

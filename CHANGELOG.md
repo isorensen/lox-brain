@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.13.2] — 2026-06-29
+
+### Removed
+- **Removed the `deploy.yml` GitHub Actions workflow (auto-deploy on push).** This is a public repo; wiring production CD into every merge — via an exported `GCP_SA_KEY` service-account secret — was both a footgun (a merge silently redeployed and broke prod, which it did) and an open-source smell. Deployment is now operator-driven and self-hosted: run `infra/deploy.sh` on the VM today, and a `lox upgrade` self-service CLI command going forward. No secrets or infra topology remain coupled to repo pushes.
+
+### Fixed
+- **`infra/deploy.sh` now re-applies `schema.sql` before restarting** (idempotent DDL, applied as the table owner via `SET ROLE` so new objects like the `tasks` table are owned by the runtime role, not `postgres`). The v0.13.0 schema added the `area`/`source_type` columns and `tasks` table as owner-applied objects (#169); the script previously only pulled + built + restarted, so the watcher boot-aborted on the new stale-schema check. The upgrade flow is now self-sufficient. Parameterized via `LOX_DB_NAME` / `LOX_DB_OWNER`.
+
 ## [0.13.1] — 2026-06-29
 
 ### Fixed

@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.13.5] — 2026-07-05
+
+### Added
+- **VM daily Telegram digest examples (`sync-calendar` drop-ins + silent-failure runner) in `infra/vm-claude`.** Versioned templates for turning the `lox-claude-sync-calendar` timer into a daily Telegram digest: a `.timer.d` drop-in to change the schedule, a `.service.d` drop-in to point `ExecStart=` at the runner, and `sync-calendar-run.sh.example`. The runner treats the absence of the skill's success marker as a failure (`exit 1`) so an empty `exit 0` no longer slips past `OnFailure=`. Docs only — no personal values or secrets; a new README section covers install and the UTC-conversion gotcha in `systemctl list-timers`.
+
 ## [0.13.4] — 2026-06-30
 
 ### Fixed

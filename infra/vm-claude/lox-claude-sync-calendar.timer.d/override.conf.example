@@ -1,0 +1,6 @@
+[Timer]
+# Drop-in para ajustar o horario do digest diario. A linha OnCalendar= vazia
+# RESETA o valor herdado do .timer base (senao os dois valores se somam).
+# Ajuste o horario e o timezone ao seu gosto (systemd >= 252 honra o timezone).
+OnCalendar=
+OnCalendar=*-*-* 07:00 America/Sao_Paulo

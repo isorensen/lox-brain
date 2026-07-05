@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Runner do digest diario, com deteccao de falha silenciosa.
+# `claude -p "/sync-calendar auto"` pode sair com codigo 0 SEM ter feito o sync
+# (ex.: conectores Google ausentes em headless, skill abortando cedo). Esse "exit 0
+# vazio" passava batido e nao disparava o OnFailure. Aqui tratamos a AUSENCIA do
+# marcador de sucesso da skill como falha (exit 1), acionando o unit OnFailure
+# (alerta no Telegram).
+set -uo pipefail
+
+SETTINGS="$HOME/.config/lox-claude/settings.json"
+PROMPT='/sync-calendar auto
+
+(After the skill finishes, send a Telegram summary of the calendar via the telegram reply tool.)
+
+(Then send a SECOND, separate Telegram message to the same chat — do NOT merge it with the calendar summary. Build it from open tasks: call the lox-brain list_tasks tool with status pending, then again with status in_progress. Title the message "📋 Atividades em aberto". Group by priority in this order: high, medium, low. One line per task: "- <title> [<project_context>] <due if present>". Prefix any task whose due_date is before today with "⚠️ ". If both lists are empty, send exactly "📋 Nenhuma atividade em aberto." Keep it concise and do not invent tasks.)'
+
+OUT="$(/usr/local/bin/claude -p "$PROMPT" --settings "$SETTINGS" 2>&1)"
+CODE=$?
+
+printf '%s\n' "$OUT"
+
+if [ "$CODE" -ne 0 ]; then
+  printf '[runner] claude saiu com codigo %s\n' "$CODE" >&2
+  exit "$CODE"
+fi
+
+# Marcador emitido pela skill ao concluir. Sem ele, o run nao fez o trabalho.
+if ! printf '%s' "$OUT" | grep -qiE 'Sync complete|Sync summary'; then
+  printf '[runner] sem marcador de sucesso na saida — tratando como falha silenciosa\n' >&2
+  exit 1
+fi
+
+exit 0

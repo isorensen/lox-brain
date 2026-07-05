@@ -120,6 +120,57 @@ If your Obsidian vault or lox-brain repo lives somewhere other than `$HOME/obsid
 
 Multi-VM support via the installer is a follow-up; see issue #171.
 
+## Daily Telegram digest
+
+The `lox-claude-sync-calendar` timer can double as a **daily Telegram digest**. Instead of only writing calendar notes to the vault, the runner invokes `/sync-calendar auto` and then sends **two separate Telegram messages** via the telegram reply tool:
+
+1. A summary of the day's calendar.
+2. `📋 Atividades em aberto` — open tasks pulled from the `lox-brain` MCP (`list_tasks` for `pending` + `in_progress`), grouped by priority (high → medium → low), with overdue tasks flagged `⚠️`.
+
+Both the schedule and the command are customized with **systemd drop-ins** layered over the base `lox-claude-sync-calendar.{timer,service}` — no edits to the shipped units. Three examples live in this folder:
+
+- `lox-claude-sync-calendar.timer.d/override.conf.example` — overrides `OnCalendar=` (the empty `OnCalendar=` line first resets the inherited value, so the two don't add up).
+- `lox-claude-sync-calendar.service.d/execstart.conf.example` — points `ExecStart=` at the runner and puts `bun` on `PATH` (systemd does not inherit your shell's `PATH`).
+- `sync-calendar-run.sh.example` — the runner itself, with silent-failure detection.
+
+### Install the drop-ins
+
+```bash
+# Timer drop-in — change the schedule
+sudo mkdir -p /etc/systemd/system/lox-claude-sync-calendar.timer.d/
+sudo cp infra/vm-claude/lox-claude-sync-calendar.timer.d/override.conf.example \
+        /etc/systemd/system/lox-claude-sync-calendar.timer.d/override.conf
+
+# Service drop-in — point ExecStart at the runner
+sudo mkdir -p /etc/systemd/system/lox-claude-sync-calendar.service.d/
+sudo cp infra/vm-claude/lox-claude-sync-calendar.service.d/execstart.conf.example \
+        /etc/systemd/system/lox-claude-sync-calendar.service.d/execstart.conf
+
+# The runner script (referenced by the service drop-in)
+cp infra/vm-claude/sync-calendar-run.sh.example ~/.config/lox-claude/sync-calendar-run.sh
+chmod +x ~/.config/lox-claude/sync-calendar-run.sh
+
+sudo systemctl daemon-reload
+sudo systemctl restart lox-claude-sync-calendar.timer
+```
+
+Verify the next run:
+
+```bash
+systemctl list-timers | grep lox-claude-sync-calendar
+# NOTE: if the VM is in UTC, the LEFT/NEXT columns show the time converted to UTC,
+# not the America/Sao_Paulo wall-clock time in your OnCalendar= line.
+```
+
+> The `execstart.conf.example` drop-in uses the same `__LOX_VM_USER__` placeholder as the base units (see **Setup → step 3**). Substitute it with your actual VM user before installing the drop-in:
+> ```bash
+> sed -i "s/__LOX_VM_USER__/$USER/g" infra/vm-claude/lox-claude-sync-calendar.service.d/execstart.conf.example
+> ```
+
+### Silent-failure detection
+
+`claude -p "/sync-calendar auto"` can exit `0` **without having synced anything** (Google connectors missing in headless, or the skill aborting early). That empty success used to slip past `OnFailure=`. The runner treats the **absence of the skill's success marker** (`Sync complete` / `Sync summary`) in the output as a failure (`exit 1`), so the unit's `OnFailure=` fires a Telegram alert instead of a silent no-op.
+
 ## Refreshing auth when it expires
 
 The OAuth session in `~/.claude/.credentials.json` includes a refresh token, but per [anthropics/claude-code#50743](https://github.com/anthropics/claude-code/issues/50743), automatic refresh is unreliable in headless Linux. Practically: expect to re-login every few weeks.

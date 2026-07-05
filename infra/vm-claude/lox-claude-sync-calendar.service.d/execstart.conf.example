@@ -1,0 +1,9 @@
+[Service]
+# bun no PATH (systemd nao herda o PATH do shell) — necessario p/ o plugin telegram.
+# Troque __LOX_VM_USER__ pelo seu usuario (o padrao das units base usa sed no install).
+Environment="PATH=/home/__LOX_VM_USER__/.bun/bin:/usr/local/bin:/usr/bin:/bin"
+
+# Substitui o ExecStart do unit base por um wrapper que detecta falha silenciosa
+# (ver sync-calendar-run.sh.example). A linha ExecStart= vazia reseta o valor herdado.
+ExecStart=
+ExecStart=/home/__LOX_VM_USER__/.config/lox-claude/sync-calendar-run.sh

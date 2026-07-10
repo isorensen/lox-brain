@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-07-09
+
+### Added
+- **`assigned_to` on tasks — track who a task is *for* (#188).** Tasks already recorded `created_by` (author, derived from the caller's WireGuard IP); this adds a separate, optional `assigned_to` field for the responsible person. Unlike `created_by`, it is a deliberate client-supplied value (you assign to someone else, not yourself), is editable via `update_task` (reassignment), and is filterable in `list_tasks` (enables "tasks for X" / "my tasks"). `add_task`, `update_task`, and `list_tasks` all accept `assigned_to`. New nullable `tasks.assigned_to TEXT` column, applied by the table owner via `infra/postgres/schema.sql` (re-apply on existing DBs); `ensureSchema()` now fail-fasts at boot if the column is missing, consistent with the #169 owner-applied-DDL model. Deliberately out of scope: assignment notifications, multi-assignee, workflow state.
+
 ## [0.13.6] — 2026-07-09
 
 ### Fixed

@@ -76,6 +76,7 @@ export interface TaskRow {
   tags: string[];
   project_context: string | null;
   created_by: string | null;
+  assigned_to: string | null;
   completed_at: Date | null;
   created_at: Date;
   updated_at: Date;
@@ -85,6 +86,7 @@ export interface TaskListOptions {
   status?: TaskStatus;
   priority?: TaskPriority;
   project_context?: string;
+  assigned_to?: string;
   tags?: string[];
   due_before?: string;
   limit?: number;

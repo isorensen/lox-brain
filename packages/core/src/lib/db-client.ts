@@ -88,17 +88,22 @@ export class DbClient {
            WHERE table_schema = 'public' AND table_name = 'vault_embeddings'
              AND column_name IN ('area', 'source_type')) AS metadata_cols,
         (SELECT COUNT(*) FROM information_schema.tables
-           WHERE table_schema = 'public' AND table_name = 'tasks') AS tasks_table
+           WHERE table_schema = 'public' AND table_name = 'tasks') AS tasks_table,
+        (SELECT COUNT(*) FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'tasks'
+             AND column_name = 'assigned_to') AS tasks_assigned_to
     `);
     const metadataCols = Number(schemaRows[0]?.metadata_cols ?? 0);
     const tasksTable = Number(schemaRows[0]?.tasks_table ?? 0);
-    if (metadataCols < 2 || tasksTable < 1) {
+    const tasksAssignedTo = Number(schemaRows[0]?.tasks_assigned_to ?? 0);
+    if (metadataCols < 2 || tasksTable < 1 || tasksAssignedTo < 1) {
       throw new Error(
         'Database schema is out of date: the vault_embeddings.area/source_type ' +
-          'columns and/or the tasks table are missing. Re-apply ' +
-          'infra/postgres/schema.sql as the table owner — these objects are not ' +
-          'auto-created at runtime (see issue #169). ' +
-          `Found metadata columns ${metadataCols}/2, tasks table ${tasksTable}/1.`,
+          'columns, the tasks table, and/or the tasks.assigned_to column are ' +
+          'missing. Re-apply infra/postgres/schema.sql as the table owner — these ' +
+          'objects are not auto-created at runtime (see issue #169). ' +
+          `Found metadata columns ${metadataCols}/2, tasks table ${tasksTable}/1, ` +
+          `tasks.assigned_to ${tasksAssignedTo}/1.`,
       );
     }
   }
@@ -410,10 +415,11 @@ export class DbClient {
     tags?: string[];
     project_context?: string;
     created_by?: string;
+    assigned_to?: string;
   }): Promise<TaskRow> {
     const result = await this.pool.query<TaskRow>(
-      `INSERT INTO tasks (title, details, priority, due_date, tags, project_context, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO tasks (title, details, priority, due_date, tags, project_context, created_by, assigned_to)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
       [
         params.title,
@@ -423,6 +429,7 @@ export class DbClient {
         params.tags ?? [],
         params.project_context ?? null,
         params.created_by ?? null,
+        params.assigned_to ?? null,
       ],
     );
     return result.rows[0];
@@ -445,6 +452,10 @@ export class DbClient {
     if (options.project_context) {
       conditions.push(`project_context = $${paramIdx++}`);
       values.push(options.project_context);
+    }
+    if (options.assigned_to) {
+      conditions.push(`assigned_to = $${paramIdx++}`);
+      values.push(options.assigned_to);
     }
     if (options.tags && options.tags.length > 0) {
       conditions.push(`tags && $${paramIdx++}`);
@@ -485,6 +496,7 @@ export class DbClient {
     due_date: string;
     tags: string[];
     project_context: string;
+    assigned_to: string | null;
   }>): Promise<TaskRow | null> {
     const setClauses: string[] = [];
     const values: unknown[] = [];
@@ -504,6 +516,7 @@ export class DbClient {
     if (updates.due_date !== undefined) { setClauses.push(`due_date = $${paramIdx++}`); values.push(updates.due_date); }
     if (updates.tags !== undefined) { setClauses.push(`tags = $${paramIdx++}`); values.push(updates.tags); }
     if (updates.project_context !== undefined) { setClauses.push(`project_context = $${paramIdx++}`); values.push(updates.project_context); }
+    if (updates.assigned_to !== undefined) { setClauses.push(`assigned_to = $${paramIdx++}`); values.push(updates.assigned_to); }
 
     if (setClauses.length === 0) return null;
 

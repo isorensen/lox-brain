@@ -26,6 +26,8 @@ Client --VPN--> VM (10.10.0.1) --> MCP Server --> tools
 - `stdio` (default) — used for single-user personal mode, launched by Claude Code directly
 - `http` — used for team mode; binds to `MCP_HOST` (default `127.0.0.1`, set to VPN interface for multi-user), port `MCP_PORT` (default `3100`). Uses session-based `StreamableHTTPServerTransport`. The caller's VPN IP is extracted from `req.socket.remoteAddress` for peer attribution.
 
+**Identity attribution (`created_by`):** resolved server-side per request, never from client-supplied args. Resolution order: (a) trusted-proxy actor — a caller presenting a valid `X-Lox-Proxy-Secret` (matching `LOX_TRUSTED_PROXY_SECRET`) may forward an `X-Lox-Actor` header, for backend integrations that reach the MCP over the private network without being a registered WireGuard peer; (b) the caller's WireGuard peer, resolved from source IP; (c) stripped (anti-spoofing) when neither resolves. See `packages/core/.env.example` and `packages/core/src/mcp/trusted-proxy.ts`.
+
 **Data flow:** Local edit -> git push -> VM git pull (cron 2min) -> Watcher -> OpenAI embedding -> pgvector upsert. Reverse: Claude Code -> MCP Server -> creates .md -> Watcher -> embedding -> pgvector -> git push -> local pull.
 
 ## Tech Stack
@@ -75,6 +77,7 @@ lox-brain/
           index.ts         # Server entry point, transport selection
           tools.ts         # Tool definitions
           transports.ts    # TransportConfig, getTransportConfig()
+          trusted-proxy.ts # resolveTrustedActor() — trusted-proxy identity forwarding
         watcher/           # Vault watcher (chokidar)
         scripts/           # index-vault, migrations
       tests/
@@ -82,6 +85,11 @@ lox-brain/
       src/
         steps/             # step-*.ts — ordered install steps
         utils/             # shell(), windows-acl, etc.
+    team/                  # Team mode (commercial license; see README "Team Mode")
+      src/
+        license/           # License validation
+        multi-user/        # peer-resolver.ts, created-by-middleware.ts
+        mcp-extensions/    # Team-only tools (list_team_activity, search_by_author)
   infra/
     systemd/               # lox-mcp.service, lox-watcher.service
     wireguard/             # WireGuard config templates

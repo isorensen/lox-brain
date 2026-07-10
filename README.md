@@ -160,7 +160,8 @@ for corporate teams. It is available under a commercial license.
 - **Multi-user identity** via WireGuard VPN peers -- each user is identified
   by their VPN IP, no auth server needed.
 - **`created_by` attribution** -- every note is tagged with its author
-  automatically.
+  automatically (from the caller's VPN peer, or from an authenticated trusted
+  proxy such as the chat backend via a shared-secret-gated identity header).
 - **Team MCP tools** -- `list_team_activity` and `search_by_author` for
   cross-team knowledge discovery.
 - **Installer team flow** -- guided setup for license validation, peer

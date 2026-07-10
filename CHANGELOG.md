@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-07-10
+
+### Added
+- **Team mode: trusted-proxy identity forwarding — chat-created tasks now record the real sender in `created_by` (#191).** `created_by` is derived server-side from the caller's WireGuard IP, so writes that arrive through the chat integration (a separate backend that proxies chat messages to the MCP over the private network, not as a registered peer) resolved to no peer and were stored with `created_by: null` — #187 only fixed the direct-peer path. The MCP now accepts a forwarded identity **only** from an authenticated trusted proxy: on write calls it constant-time-compares the `X-Lox-Proxy-Secret` header against the new `LOX_TRUSTED_PROXY_SECRET` env; on a match it captures `X-Lox-Actor` (the authenticated sender's name) into a request-scoped `actorStorage` (AsyncLocalStorage, parallel to `clientIpStorage`). The authorship middleware resolves `_created_by` in order: **(a)** trusted actor → actor name; **(b)** else the caller's WireGuard peer (the #187 behavior); **(c)** else strip any client-supplied value (anti-spoofing). Normal peers cannot spoof identity — a missing, empty, wrong, or duplicated secret makes the actor header ignored entirely, and when `LOX_TRUSTED_PROXY_SECRET` is unset the whole path is a no-op, so the MCP can ship before the backend starts sending headers (no broken window). Applies to every authored write (`add_task`, `daily_log`, `write_note`). The backend-side change (sending the headers) is tracked privately in the chat bot repo. Personal/stdio mode is unaffected; no schema change.
+
 ## [0.14.0] — 2026-07-09
 
 ### Added

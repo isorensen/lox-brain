@@ -34,6 +34,7 @@ declare module '@lox-brain/team' {
     publicKey: string,
     options?: {
       getClientIp?: () => string | null;
+      getTrustedActor?: () => string | null;
       dbClient?: {
         listRecent(options?: unknown): Promise<unknown>;
         searchByAuthor(author: string, query?: string, options?: unknown): Promise<unknown>;

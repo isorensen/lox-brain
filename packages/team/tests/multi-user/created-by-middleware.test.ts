@@ -19,6 +19,30 @@ describe('wrapToolWithCreatedBy', () => {
     });
   });
 
+  it('should inject _created_by into add_task args', async () => {
+    const innerHandler = vi.fn().mockResolvedValue({ id: 'task-1' });
+    const tool = { name: 'add_task', description: 'Add task', inputSchema: {}, handler: innerHandler };
+    const wrapped = wrapToolWithCreatedBy(tool, resolver, () => '10.20.0.2');
+    await wrapped.handler({ title: 'Ship Lox' });
+    expect(innerHandler).toHaveBeenCalledWith({ title: 'Ship Lox', _created_by: 'eduardo' });
+  });
+
+  it('should inject _created_by into daily_log args', async () => {
+    const innerHandler = vi.fn().mockResolvedValue({ written: 'daily-logs/2026-07-09.md' });
+    const tool = { name: 'daily_log', description: 'Daily log', inputSchema: {}, handler: innerHandler };
+    const wrapped = wrapToolWithCreatedBy(tool, resolver, () => '10.20.0.2');
+    await wrapped.handler({ entry: 'shipped the fix' });
+    expect(innerHandler).toHaveBeenCalledWith({ entry: 'shipped the fix', _created_by: 'eduardo' });
+  });
+
+  it('should not inject _created_by for update_task (must not overwrite original author)', async () => {
+    const innerHandler = vi.fn().mockResolvedValue({ id: 'task-1' });
+    const tool = { name: 'update_task', description: 'Update task', inputSchema: {}, handler: innerHandler };
+    const wrapped = wrapToolWithCreatedBy(tool, resolver, () => '10.20.0.2');
+    await wrapped.handler({ id: 'task-1', status: 'done' });
+    expect(innerHandler).toHaveBeenCalledWith({ id: 'task-1', status: 'done' });
+  });
+
   it('should not inject _created_by for read_note', async () => {
     const innerHandler = vi.fn().mockResolvedValue({ content: 'data' });
     const tool = { name: 'read_note', description: 'Read', inputSchema: {}, handler: innerHandler };

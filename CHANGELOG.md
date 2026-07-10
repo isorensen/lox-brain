@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.13.6] — 2026-07-09
+
+### Fixed
+- **Team mode: `add_task` and `daily_log` now record the authoring peer in `created_by` (#187).** The authorship middleware's `WRITE_TOOLS` allowlist only contained `write_note`, so the task/daily-log tools added in #166 were returned unwrapped — their handlers already read `_created_by`, but the middleware never injected the peer identity (resolved from the caller's WireGuard IP), leaving `created_by` as `null` on every created task. Added `add_task` and `daily_log` to the allowlist. `update_task` stays excluded by design so edits from other peers don't overwrite the original author. Regression tests cover injection for the new tools. No schema change (the `tasks.created_by` column already exists); personal/stdio mode is unaffected.
+
 ## [0.13.5] — 2026-07-05
 
 ### Added

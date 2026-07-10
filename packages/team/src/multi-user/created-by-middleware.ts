@@ -7,8 +7,13 @@ export interface Tool {
   handler: (args: Record<string, unknown>) => Promise<unknown>;
 }
 
-/** Tools that mutate vault state and require authorship attribution. */
-const WRITE_TOOLS = new Set(['write_note']);
+/**
+ * Tools that create authored content and require authorship attribution.
+ * The middleware injects the resolved peer's name as `_created_by` for these.
+ * `update_task` is intentionally excluded — it must not overwrite the original
+ * author when a different peer edits the task.
+ */
+const WRITE_TOOLS = new Set(['write_note', 'add_task', 'daily_log']);
 
 export function wrapToolWithCreatedBy(
   tool: Tool,

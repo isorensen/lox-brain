@@ -68,3 +68,11 @@ CREATE INDEX IF NOT EXISTS idx_tasks_due_date
   ON tasks(due_date) WHERE status NOT IN ('done', 'cancelled');
 CREATE INDEX IF NOT EXISTS idx_tasks_tags ON tasks USING GIN(tags);
 CREATE INDEX IF NOT EXISTS idx_tasks_project_context ON tasks(project_context);
+
+-- Task assignee (who the task is for) — added after initial tasks table
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assigned_to TEXT;
+
+-- Filtered by list_tasks (e.g. "tasks assigned to me"); partial index mirrors
+-- the sibling project_context filter column.
+CREATE INDEX IF NOT EXISTS idx_tasks_assigned_to
+  ON tasks(assigned_to) WHERE assigned_to IS NOT NULL;

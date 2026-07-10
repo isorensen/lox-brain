@@ -19,7 +19,7 @@ describe('DbClient', () => {
         // information_schema read returns a row -> created_by already present
         .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
         // read-only schema-currency check -> all owner-applied objects present
-        .mockResolvedValueOnce({ rows: [{ metadata_cols: '2', tasks_table: '1' }] });
+        .mockResolvedValueOnce({ rows: [{ metadata_cols: '2', tasks_table: '1', tasks_assigned_to: '1' }] });
 
       await client.ensureSchema();
 
@@ -41,7 +41,7 @@ describe('DbClient', () => {
       mockPool.query
         .mockResolvedValueOnce({ rows: [] }) // probe -> missing
         .mockResolvedValueOnce({ rowCount: 0 }) // ALTER
-        .mockResolvedValueOnce({ rows: [{ metadata_cols: '2', tasks_table: '1' }] }); // currency check
+        .mockResolvedValueOnce({ rows: [{ metadata_cols: '2', tasks_table: '1', tasks_assigned_to: '1' }] }); // currency check
 
       await client.ensureSchema();
 
@@ -59,6 +59,15 @@ describe('DbClient', () => {
         .mockResolvedValueOnce({ rows: [{ metadata_cols: '0', tasks_table: '0' }] }); // stale
 
       await expect(client.ensureSchema()).rejects.toThrow(/schema is out of date/i);
+    });
+
+    it('fails fast when the tasks.assigned_to column is missing', async () => {
+      mockPool.query
+        .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] }) // created_by present
+        // metadata cols + tasks table present, but assigned_to not yet applied
+        .mockResolvedValueOnce({ rows: [{ metadata_cols: '2', tasks_table: '1', tasks_assigned_to: '0' }] });
+
+      await expect(client.ensureSchema()).rejects.toThrow(/assigned_to/i);
     });
 
     it('propagates pool.query rejection from the probe', async () => {
@@ -640,6 +649,59 @@ describe('DbClient', () => {
       expect(params[0]).toBe('Write tests');
       expect(params).toContain('high');
       expect(result).toEqual(row);
+    });
+
+    it('addTask includes assigned_to in the INSERT when provided', async () => {
+      const row = { id: 'u1', title: 'Review PR', assigned_to: 'matheus' };
+      mockPool.query.mockResolvedValue({ rows: [row] });
+
+      await client.addTask({ title: 'Review PR', assigned_to: 'matheus' });
+
+      const [sql, params] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('assigned_to');
+      expect(params).toContain('matheus');
+    });
+
+    it('addTask passes null assigned_to when not provided', async () => {
+      mockPool.query.mockResolvedValue({ rows: [{ id: 'u1', title: 'Solo task' }] });
+
+      await client.addTask({ title: 'Solo task' });
+
+      const [sql, params] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('assigned_to');
+      expect(params).toContain(null);
+    });
+
+    it('listTasks filters by assigned_to when provided', async () => {
+      mockPool.query
+        .mockResolvedValueOnce({ rows: [{ count: '1' }] })
+        .mockResolvedValueOnce({ rows: [{ id: 'a' }] });
+
+      await client.listTasks({ assigned_to: 'eduardo' });
+
+      const [countSql, countParams] = mockPool.query.mock.calls[0];
+      expect(countSql).toContain('assigned_to = $');
+      expect(countParams).toContain('eduardo');
+    });
+
+    it('updateTask reassigns assigned_to', async () => {
+      mockPool.query.mockResolvedValue({ rows: [{ id: 'u1', assigned_to: 'igor' }] });
+
+      await client.updateTask('550e8400-e29b-41d4-a716-446655440000', { assigned_to: 'igor' });
+
+      const [sql, params] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('assigned_to = $');
+      expect(params).toContain('igor');
+    });
+
+    it('updateTask clears assigned_to when passed null (unassign)', async () => {
+      mockPool.query.mockResolvedValue({ rows: [{ id: 'u1', assigned_to: null }] });
+
+      await client.updateTask('550e8400-e29b-41d4-a716-446655440000', { assigned_to: null });
+
+      const [sql, params] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('assigned_to = $');
+      expect(params).toContain(null);
     });
 
     it('listTasks defaults to pending status and orders by priority then due date', async () => {

@@ -547,6 +547,14 @@ describe('createTools', () => {
       );
     });
 
+    it('add_task forwards assigned_to to dbClient.addTask', async () => {
+      await tool('add_task').handler({ title: 'Review PR', assigned_to: 'matheus' });
+
+      expect(dbClient.addTask).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'Review PR', assigned_to: 'matheus' }),
+      );
+    });
+
     it('add_task rejects an empty title', async () => {
       await expect(tool('add_task').handler({ title: '  ' })).rejects.toThrow(/title/);
     });
@@ -559,6 +567,14 @@ describe('createTools', () => {
       );
     });
 
+    it('list_tasks forwards the assigned_to filter to dbClient.listTasks', async () => {
+      await tool('list_tasks').handler({ assigned_to: 'eduardo' });
+
+      expect(dbClient.listTasks).toHaveBeenCalledWith(
+        expect.objectContaining({ assigned_to: 'eduardo' }),
+      );
+    });
+
     it('update_task forwards updates and strips id/_created_by', async () => {
       await tool('update_task').handler({ id: 't1', _created_by: 'eduardo', status: 'in_progress', title: 'New' });
 
@@ -566,6 +582,13 @@ describe('createTools', () => {
       expect(updates).not.toHaveProperty('id');
       expect(updates).not.toHaveProperty('_created_by');
       expect(updates).toMatchObject({ status: 'in_progress', title: 'New' });
+    });
+
+    it('update_task forwards assigned_to as a reassignment update', async () => {
+      await tool('update_task').handler({ id: 't1', assigned_to: 'igor' });
+
+      const [, updates] = (dbClient.updateTask as unknown as { mock: { calls: unknown[][] } }).mock.calls[0];
+      expect(updates).toMatchObject({ assigned_to: 'igor' });
     });
 
     it('update_task rejects a missing id', async () => {

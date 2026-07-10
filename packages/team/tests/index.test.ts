@@ -140,6 +140,30 @@ describe('registerTeamFeatures', () => {
     expect(calledArgs._created_by).toBe('eduardo');
   });
 
+  it('should attribute the trusted actor when getTrustedActor is provided (chat backend)', async () => {
+    const token = jwt.sign(
+      { org: 'credifit', max_peers: 10, expires: '2027-04-03', issued_by: 'isorensen' },
+      privateKey,
+      { algorithm: 'RS256', expiresIn: '365d' },
+    );
+    const config = makeConfig();
+    config.license_key = token;
+
+    const innerHandler = vi.fn().mockResolvedValue({ id: 'task-1' });
+    const mockTool = { name: 'add_task', description: 'Add task', inputSchema: {}, handler: innerHandler };
+
+    // Backend caller: no peer IP resolves, but a trusted actor is forwarded.
+    const result = await registerTeamFeatures({} as any, config, [mockTool], publicKey, {
+      getClientIp: () => null,
+      getTrustedActor: () => 'Bob Silva',
+    });
+
+    expect(result.success).toBe(true);
+    const wrappedTool = result.tools!.find(t => t.name === 'add_task')!;
+    await wrappedTool.handler({ title: 'From chat' });
+    expect(innerHandler).toHaveBeenCalledWith({ title: 'From chat', _created_by: 'Bob Silva' });
+  });
+
   it('should not inject _created_by when getClientIp returns null', async () => {
     const token = jwt.sign(
       { org: 'credifit', max_peers: 10, expires: '2027-04-03', issued_by: 'isorensen' },

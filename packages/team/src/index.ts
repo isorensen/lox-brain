@@ -32,6 +32,7 @@ export async function registerTeamFeatures(
   publicKey: string,
   options?: {
     getClientIp?: () => string | null;
+    getTrustedActor?: () => string | null;
     dbClient?: DbClientLike;
   },
 ): Promise<TeamRegistrationResult> {
@@ -52,8 +53,11 @@ export async function registerTeamFeatures(
   const peers = config.vpn?.peers ?? [];
   const resolver = new PeerResolver(peers);
   const getClientIp = options?.getClientIp ?? (() => null);
+  const getTrustedActor = options?.getTrustedActor ?? (() => null);
 
-  const wrappedTools = tools.map(tool => wrapToolWithCreatedBy(tool, resolver, getClientIp));
+  const wrappedTools = tools.map(tool =>
+    wrapToolWithCreatedBy(tool, resolver, getClientIp, getTrustedActor),
+  );
 
   const teamTools: Tool[] = options?.dbClient
     ? createTeamTools(options.dbClient)

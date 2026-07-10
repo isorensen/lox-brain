@@ -84,4 +84,48 @@ describe('wrapToolWithCreatedBy', () => {
     expect(wrapped.description).toBe('My desc');
     expect(wrapped.inputSchema).toEqual({ type: 'object' });
   });
+
+  // --- Trusted-proxy actor forwarding (chat backend path, #191) ---
+
+  it('should use the trusted actor when present (chat backend path)', async () => {
+    const innerHandler = vi.fn().mockResolvedValue({ id: 'task-1' });
+    const tool = { name: 'add_task', description: 'Add task', inputSchema: {}, handler: innerHandler };
+    // Caller is the backend (not a peer): IP does not resolve, but a trusted actor is forwarded.
+    const wrapped = wrapToolWithCreatedBy(tool, resolver, () => null, () => 'Bob Silva');
+    await wrapped.handler({ title: 'From chat' });
+    expect(innerHandler).toHaveBeenCalledWith({ title: 'From chat', _created_by: 'Bob Silva' });
+  });
+
+  it('should prefer the trusted actor over a resolvable peer IP', async () => {
+    const innerHandler = vi.fn().mockResolvedValue({ id: 'task-1' });
+    const tool = { name: 'add_task', description: 'Add task', inputSchema: {}, handler: innerHandler };
+    // Both signals present — actor (b > a) must win.
+    const wrapped = wrapToolWithCreatedBy(tool, resolver, () => '10.20.0.2', () => 'Bob Silva');
+    await wrapped.handler({ title: 'From chat' });
+    expect(innerHandler).toHaveBeenCalledWith({ title: 'From chat', _created_by: 'Bob Silva' });
+  });
+
+  it('should overwrite a client-supplied _created_by with the trusted actor', async () => {
+    const innerHandler = vi.fn().mockResolvedValue({ id: 'task-1' });
+    const tool = { name: 'add_task', description: 'Add task', inputSchema: {}, handler: innerHandler };
+    const wrapped = wrapToolWithCreatedBy(tool, resolver, () => null, () => 'Bob Silva');
+    await wrapped.handler({ title: 'From chat', _created_by: 'attacker' });
+    expect(innerHandler).toHaveBeenCalledWith({ title: 'From chat', _created_by: 'Bob Silva' });
+  });
+
+  it('should fall back to peer resolution when no trusted actor is present', async () => {
+    const innerHandler = vi.fn().mockResolvedValue({ id: 'task-1' });
+    const tool = { name: 'add_task', description: 'Add task', inputSchema: {}, handler: innerHandler };
+    const wrapped = wrapToolWithCreatedBy(tool, resolver, () => '10.20.0.2', () => null);
+    await wrapped.handler({ title: 'From peer' });
+    expect(innerHandler).toHaveBeenCalledWith({ title: 'From peer', _created_by: 'eduardo' });
+  });
+
+  it('should strip _created_by when neither trusted actor nor peer resolves', async () => {
+    const innerHandler = vi.fn().mockResolvedValue({ id: 'task-1' });
+    const tool = { name: 'add_task', description: 'Add task', inputSchema: {}, handler: innerHandler };
+    const wrapped = wrapToolWithCreatedBy(tool, resolver, () => null, () => null);
+    await wrapped.handler({ title: 'orphan', _created_by: 'attacker' });
+    expect(innerHandler).toHaveBeenCalledWith({ title: 'orphan' });
+  });
 });

@@ -15,10 +15,25 @@ import { DbClient } from '../lib/db-client.js';
 import { createPool } from '../lib/create-pool.js';
 import { createTools } from './tools.js';
 import { getTransportConfig } from './transports.js';
+import { resolveTrustedActor } from './trusted-proxy.js';
 
 const clientIpStorage = new AsyncLocalStorage<string>();
+const actorStorage = new AsyncLocalStorage<string>();
 
-export { clientIpStorage };
+export { clientIpStorage, actorStorage };
+
+/**
+ * Run `fn` with the per-request identity context in place: always the caller's
+ * IP, plus the trusted-proxy actor when one was authenticated for this request.
+ */
+function runWithIdentity(
+  clientIp: string,
+  actor: string | null,
+  fn: () => Promise<void>,
+): Promise<void> {
+  const withIp = () => clientIpStorage.run(clientIp, fn);
+  return actor ? actorStorage.run(actor, withIp) : withIp();
+}
 
 const VAULT_PATH = process.env.VAULT_PATH;
 if (!VAULT_PATH) {
@@ -138,12 +153,15 @@ async function loadTeamFeatures(): Promise<void> {
 
     const transportConfig = getTransportConfig();
     let clientIpGetter: (() => string | null) | undefined;
+    let trustedActorGetter: (() => string | null) | undefined;
     if (transportConfig.type === 'http') {
       clientIpGetter = () => clientIpStorage.getStore() ?? null;
+      trustedActorGetter = () => actorStorage.getStore() ?? null;
     }
 
     const result = await registerTeamFeatures(server, config, tools, PUBLIC_KEY, {
       getClientIp: clientIpGetter,
+      getTrustedActor: trustedActorGetter,
       dbClient,
     });
 
@@ -190,12 +208,21 @@ async function main(): Promise<void> {
       const clientIp = req.socket.remoteAddress ?? '';
       req.headers['x-real-ip'] = clientIp;
 
+      // A trusted proxy (the chat backend) may forward the authenticated sender's
+      // identity; honored only when the shared secret matches (null otherwise).
+      const trustedActor = resolveTrustedActor(req.headers, process.env.LOX_TRUSTED_PROXY_SECRET);
+      if (trustedActor) {
+        // Audit trail: this write is attributed via the static-secret proxy path,
+        // which bypasses WireGuard topological trust (Zero-Trust posture). Never log the secret.
+        console.error(`[audit] trusted-proxy actor="${trustedActor}" from ip=${clientIp}`);
+      }
+
       const sessionId = req.headers['mcp-session-id'] as string | undefined;
 
       if (sessionId && sessions.has(sessionId)) {
         // Existing session — route to its transport.
         const session = sessions.get(sessionId)!;
-        await clientIpStorage.run(clientIp, async () => {
+        await runWithIdentity(clientIp, trustedActor, async () => {
           await session.transport.handleRequest(req, res);
         });
       } else if (req.method === 'POST') {
@@ -216,7 +243,7 @@ async function main(): Promise<void> {
 
         await sessionServer.connect(transport);
 
-        await clientIpStorage.run(clientIp, async () => {
+        await runWithIdentity(clientIp, trustedActor, async () => {
           await transport.handleRequest(req, res);
         });
 

@@ -20,7 +20,8 @@ source: claude-skill
 
 ## Componentes Core
 
-- [[Lox - MCP Server]] -- MCP Server com 6 tools (stdio over SSH)
+- [[Lox - MCP Server]] -- MCP Server: transportes stdio (pessoal) e HTTP (team), 11 tools core + 2 team
+- [[Lox - Atribuicao de Identidade created_by]] -- Resolução server-side de autoria: trusted-proxy actor -> WireGuard peer -> stripped
 - [[Lox - Servico de Embedding]] -- Biblioteca de embeddings, parsing e chunking
 - [[Lox - Vault Watcher]] -- Chokidar v5 + pipeline de indexacao automatica
 - [[Lox - Banco pgvector]] -- PostgreSQL 16 + pgvector, schema e DbClient
@@ -55,6 +56,7 @@ Lox - Arquitetura Geral
   +-- Lox - MCP Server
   |     +-- Lox - Banco pgvector
   |     +-- Lox - Servico de Embedding
+  |     +-- Lox - Atribuicao de Identidade created_by
   +-- Lox - Infraestrutura GCP
   |     +-- Lox - CI CD GitHub Actions
   +-- Lox - Seguranca Zero Trust
@@ -71,4 +73,5 @@ Lox - Arquitetura Geral
 *Zettelkasten gerado em 2026-03-14 via claude-skill (Mode 1: Full Project Scan)*
 *Atualizado em 2026-03-25: correcoes de precisao + 3 notas de skills adicionadas*
 *Atualizado em 2026-04-03: renomeado de Open Brain para Lox (repo: isorensen/lox-brain, monorepo, 150 testes)*
-*14 notas atomicas | Cobertura: arquitetura, componentes, infra, seguranca, qualidade, skills*
+*Atualizado em 2026-07-10: mcp-server atualizado (2 transportes, 11+2 tools) + nota de atribuicao created_by (#187/#191, team mode)*
+*15 notas atomicas | Cobertura: arquitetura, componentes, infra, seguranca, qualidade, skills*

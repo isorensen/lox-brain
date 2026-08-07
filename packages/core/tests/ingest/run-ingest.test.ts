@@ -187,13 +187,64 @@ describe('runIngest', () => {
       false,
     );
 
-    expect(result.inaccessible).toEqual(['2026-07-15 Squad sync']);
+    expect(result.inaccessible).toEqual([
+      '2026-07-15 Squad sync — 403 caller does not have permission',
+    ]);
     // It still becomes a skeleton note, and the following event is still processed.
     expect(result.created).toBe(2);
     expect(writeFile).toHaveBeenCalledWith(
       pathFor('Squad sync', 'Alpha'),
       expect.stringContaining('Status: #baby'),
     );
+  });
+
+  it('names a delegation failure differently from a Drive permission failure', async () => {
+    // Production mints the token inside the export closure, so a broken domain-wide
+    // delegation surfaces through the same catch as a Drive 403.
+    const broken = createTokenResolver(
+      config,
+      vi.fn(async () => {
+        throw new Error('unauthorized_client: Client is unauthorized to retrieve access tokens');
+      }),
+    );
+    const mintingExportDocAs = (subject: string) => async (fileId: string) => {
+      await broken.tokenFor(subject);
+      return exportDoc(fileId);
+    };
+
+    const authVault = vault();
+    const authRun = await runIngest(
+      {
+        fetchPage: calendars({ 'cal-a': [rawEvent('evt-1', 'Weekly', [geminiDoc])] }),
+        resolver: broken,
+        exportDocAs: mintingExportDocAs,
+        readFile: authVault.readFile,
+        writeFile: authVault.writeFile,
+      },
+      config,
+      '2026-07-01',
+      '2026-08-01',
+      false,
+    );
+
+    const driveVault = vault();
+    const driveRun = await runIngest(
+      {
+        fetchPage: calendars({ 'cal-a': [rawEvent('evt-1', 'Weekly', [brokenDoc])] }),
+        resolver,
+        exportDocAs,
+        readFile: driveVault.readFile,
+        writeFile: driveVault.writeFile,
+      },
+      config,
+      '2026-07-01',
+      '2026-08-01',
+      false,
+    );
+
+    expect(authRun.inaccessible[0]).toContain('unauthorized_client');
+    expect(driveRun.inaccessible[0]).toContain('403 caller does not have permission');
+    expect(authRun.inaccessible[0]).not.toEqual(driveRun.inaccessible[0]);
   });
 
   it('does not report an event whose only attachment is not a notes Doc', async () => {
@@ -281,7 +332,9 @@ describe('runIngest organizer fallback', () => {
     const result = await run;
 
     expect(asked).toEqual(['capture@example.com']);
-    expect(result.inaccessible).toEqual(['2026-07-15 Weekly']);
+    expect(result.inaccessible).toEqual([
+      '2026-07-15 Weekly — 403 caller does not have permission',
+    ]);
     expect(writeFile).toHaveBeenCalledWith(
       pathFor('Weekly', 'Alpha'),
       expect.stringContaining('Status: #baby'),

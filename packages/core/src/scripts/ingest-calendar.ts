@@ -84,12 +84,22 @@ export async function runIngest(
     const events = await listEvents(deps.fetchPage, calendar, from, to, config.impersonateSubject);
     for (const event of events) {
       let notes: GeminiNotes | null = null;
+      const failures: string[] = [];
       for (const subject of deps.resolver.subjectsFor(event)) {
-        notes = await fetchNotes(deps.exportDocAs(subject), event, config.noteAttachmentPatterns);
-        if (notes) break;
+        const attempt = await fetchNotes(
+          deps.exportDocAs(subject),
+          event,
+          config.noteAttachmentPatterns,
+        );
+        failures.push(...attempt.errors);
+        if (attempt.notes) {
+          notes = attempt.notes;
+          break;
+        }
       }
       if (!notes && findNoteAttachments(event, config.noteAttachmentPatterns).length > 0) {
-        result.inaccessible.push(`${event.start.slice(0, 10)} ${event.summary}`);
+        const why = [...new Set(failures)].join('; ') || 'no exportable notes Doc';
+        result.inaccessible.push(`${event.start.slice(0, 10)} ${event.summary} — ${why}`);
       }
       const decision = await decideNote(deps.readFile, event, notes, config.notesFolder);
       if (!dryRun) await applyDecision(deps.writeFile, decision);
@@ -177,11 +187,13 @@ async function main(): Promise<void> {
       `complemented ${result.complemented}, skipped ${result.skipped}`,
   );
   if (result.inaccessible.length > 0) {
-    console.log(
-      `\n${result.inaccessible.length} event(s) had a notes attachment we could not read — ` +
-        'the capture account is probably not invited to those series:',
-    );
+    console.log(`\n${result.inaccessible.length} event(s) had a notes attachment we could not read:`);
     for (const item of result.inaccessible) console.log(`  - ${item}`);
+    console.log(
+      '\nA permission error (403/404) usually means the impersonated account was not ' +
+        'invited to that series. An auth error (unauthorized_client, invalid_grant, ' +
+        'SERVICE_DISABLED) means the delegation setup is wrong — see docs/calendar-ingest.md.',
+    );
   }
 }
 

@@ -44,15 +44,22 @@ export function parseGeminiDoc(text: string): Omit<GeminiNotes, 'docUrls'> {
   return { summary, nextSteps, details };
 }
 
+export interface FetchNotesResult {
+  notes: GeminiNotes | null;
+  /** Why each unreadable Doc failed, so the run summary can name the cause. */
+  errors: string[];
+}
+
 export async function fetchNotes(
   exportDoc: ExportDoc,
   event: NormalizedEvent,
   patterns: string[],
-): Promise<GeminiNotes | null> {
+): Promise<FetchNotesResult> {
   const attachments = findNoteAttachments(event, patterns);
-  if (attachments.length === 0) return null;
+  if (attachments.length === 0) return { notes: null, errors: [] };
 
   const merged: GeminiNotes = { summary: '', nextSteps: [], details: [], docUrls: [] };
+  const errors: string[] = [];
   let anySucceeded = false;
 
   for (const attachment of attachments) {
@@ -67,11 +74,12 @@ export async function fetchNotes(
         : parsed.summary;
       merged.nextSteps.push(...parsed.nextSteps);
       merged.details.push(...parsed.details);
-    } catch {
-      // An inaccessible Doc means the capture account was not invited to that
-      // series. Degrade to a skeleton note; the CLI summary reports it.
+    } catch (err) {
+      // A Drive 403 and a broken domain-wide delegation both land here, and they
+      // call for opposite fixes, so keep the message rather than the fact alone.
+      errors.push(err instanceof Error ? err.message : String(err));
     }
   }
 
-  return anySucceeded ? merged : null;
+  return { notes: anySucceeded ? merged : null, errors };
 }

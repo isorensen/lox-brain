@@ -338,6 +338,102 @@ describe('DbClient', () => {
     });
   });
 
+  describe('searchSemantic with sort', () => {
+    it('should produce the exact same SQL for sort omitted and sort=similarity', async () => {
+      mockPool.query.mockResolvedValue({ rows: [] });
+
+      await client.searchSemantic([0.1], { limit: 5, offset: 0 });
+      await client.searchSemantic([0.1], { limit: 5, offset: 0, sort: 'similarity' });
+
+      const [defaultSql, defaultParams] = mockPool.query.mock.calls[0];
+      const [explicitSql, explicitParams] = mockPool.query.mock.calls[1];
+      expect(explicitSql).toBe(defaultSql);
+      expect(explicitParams).toEqual(defaultParams);
+      expect(defaultSql).not.toContain('candidates');
+    });
+
+    it('should rerank a similarity-selected candidate pool by updated_at when sort=recency', async () => {
+      mockPool.query.mockResolvedValue({ rows: [] });
+
+      await client.searchSemantic([0.1], { limit: 5, offset: 0, sort: 'recency' });
+
+      const [sql] = mockPool.query.mock.calls[0];
+      // Inner stage: still selects candidates by cosine distance.
+      expect(sql).toContain('WITH candidates AS');
+      expect(sql).toContain('ORDER BY embedding <=> $1::vector');
+      // Outer stage: reorders that pool by recency.
+      expect(sql).toContain('FROM candidates');
+      expect(sql).toMatch(/ORDER BY updated_at DESC, similarity DESC/);
+    });
+
+    it('should size the candidate pool from limit+offset with a floor of 100', async () => {
+      mockPool.query.mockResolvedValue({ rows: [] });
+
+      await client.searchSemantic([0.1], { limit: 5, offset: 0, sort: 'recency' });
+      const [, smallParams] = mockPool.query.mock.calls[0];
+      expect(smallParams).toContain(100);
+
+      await client.searchSemantic([0.1], { limit: 50, offset: 200, sort: 'recency' });
+      const [, largeParams] = mockPool.query.mock.calls[1];
+      expect(largeParams).toContain(2500);
+    });
+
+    it('should pass the candidate pool size as a bound parameter, never inlined', async () => {
+      mockPool.query.mockResolvedValue({ rows: [] });
+
+      await client.searchSemantic([0.1], { limit: 5, offset: 0, sort: 'recency' });
+
+      const [sql] = mockPool.query.mock.calls[0];
+      expect(sql).not.toContain('LIMIT 100');
+      expect(sql).toMatch(/LIMIT \$\d+/);
+    });
+
+    it('should count all filter-matched rows inside the pool CTE, not the pool itself', async () => {
+      mockPool.query.mockResolvedValue({
+        rows: [{
+          id: 'id1', file_path: 'a.md', title: 'A', content: null, tags: [],
+          similarity: 0.9, updated_at: new Date(), total_count: '4711',
+        }],
+      });
+
+      const result = await client.searchSemantic([0.1], { limit: 5, sort: 'recency' });
+
+      // COUNT(*) OVER() must sit in the CTE, where window functions are
+      // evaluated before its LIMIT, so it reports the real match count.
+      const [sql] = mockPool.query.mock.calls[0];
+      const cteBody = sql.slice(sql.indexOf('WITH candidates AS'), sql.indexOf('FROM candidates'));
+      expect(cteBody).toContain('COUNT(*) OVER() AS total_count');
+      expect(result.total).toBe(4711);
+    });
+
+    it('should keep metadata filters inside the candidate pool', async () => {
+      mockPool.query.mockResolvedValue({ rows: [] });
+
+      await client.searchSemantic([0.1], { limit: 5, sort: 'recency', area: 'work', source_type: 'meeting' });
+
+      const [sql, params] = mockPool.query.mock.calls[0];
+      const cteBody = sql.slice(0, sql.indexOf('FROM candidates'));
+      expect(cteBody).toContain('WHERE area = $2 AND source_type = $3');
+      expect(params).toEqual([JSON.stringify([0.1]), 'work', 'meeting', 100, 5, 0]);
+    });
+
+    it('should honour includeContent in recency mode', async () => {
+      mockPool.query.mockResolvedValue({ rows: [] });
+
+      await client.searchSemantic([0.1], { limit: 5, sort: 'recency', includeContent: true, contentPreviewLength: 200 });
+
+      const [sql] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('LEFT(content, $2) AS content');
+    });
+
+    it('should reject a sort value outside the two literals without querying', async () => {
+      await expect(
+        client.searchSemantic([0.1], { limit: 5, sort: 'updated_at DESC --' as never }),
+      ).rejects.toThrow(/sort must be 'similarity' or 'recency'/);
+      expect(mockPool.query).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getFileHash', () => {
     it('should return hash string for known file', async () => {
       mockPool.query.mockResolvedValue({

@@ -143,6 +143,12 @@ export function createTools(
           content_preview_length: { type: 'number', description: 'Truncate content to N chars, 0 for full (default: 300)' },
           area: { type: 'string', description: "Filter by the note's `area` frontmatter field" },
           source_type: { type: 'string', description: "Filter by the note's `source_type` frontmatter field" },
+          sort: {
+            type: 'string',
+            enum: ['similarity', 'recency'],
+            description:
+              "How to order results (default: 'similarity'). Use 'recency' whenever the question is about the latest of something — \"the last 1:1\", \"our most recent decision on X\", \"what did we discuss yesterday\" — otherwise the newest note is easily outranked by an older, slightly more similar one. It ranks the semantically relevant notes by date, not the whole vault: the query still decides which notes are candidates. Keep 'similarity' for topical questions where date does not matter.",
+          },
         },
         required: ['query'],
       },
@@ -159,6 +165,7 @@ export function createTools(
           contentPreviewLength: (args.content_preview_length as number | undefined) ?? 300,
           area: args.area as string | undefined,
           source_type: args.source_type as string | undefined,
+          sort: args.sort as SearchOptions['sort'],
         };
 
         const embedding = await embeddingService.generateEmbedding(query);

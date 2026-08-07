@@ -84,7 +84,7 @@ bash scripts/install.sh
 | `write_note` | Create or update a note in the vault |
 | `read_note` | Read the full content of a note by path |
 | `delete_note` | Delete a note from the vault and index |
-| `search_semantic` | Semantic search using embeddings (cosine similarity) |
+| `search_semantic` | Semantic search using embeddings (cosine similarity); `sort: 'recency'` reranks the relevant notes by date |
 | `search_text` | Full-text search using PostgreSQL tsvector |
 | `list_recent` | List recently modified notes |
 

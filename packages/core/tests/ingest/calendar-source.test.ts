@@ -14,6 +14,7 @@ const rawEvent = {
   start: { dateTime: '2026-07-15T09:00:00-03:00' },
   end: { dateTime: '2026-07-15T09:10:00-03:00' },
   organizer: { email: 'owner@example.com' },
+  creator: { email: 'creator@example.com' },
   attendees: [{ email: 'ana@example.com', responseStatus: 'accepted' }],
   attachments: [{ title: 'Anotações do Gemini', fileUrl: 'https://docs.example/d/1' }],
 };
@@ -25,6 +26,15 @@ describe('listEvents', () => {
     expect(event.id).toBe('evt-1');
     expect(event.calendarLabel).toBe('Alpha');
     expect(event.attachments[0].fileUrl).toBe('https://docs.example/d/1');
+  });
+
+  it('normalizes the organizer and creator as separate identities', async () => {
+    // On a shared calendar `organizer` is the calendar itself; only `creator` names a person.
+    const ceremony = { ...rawEvent, organizer: { email: 'c_abc123@group.calendar.google.com' } };
+    const fetchPage = vi.fn().mockResolvedValue(page([ceremony]));
+    const [event] = await listEvents(fetchPage, cal, '2026-07-01', '2026-08-01', 'capture@example.com');
+    expect(event.organizerEmail).toBe('c_abc123@group.calendar.google.com');
+    expect(event.creatorEmail).toBe('creator@example.com');
   });
 
   it('marks attendance as observer when the capture account is not an attendee', async () => {
@@ -103,6 +113,7 @@ describe('listEvents', () => {
     expect(event.summary).toBe('Sem titulo');
     expect(event.htmlLink).toBe('');
     expect(event.organizerEmail).toBe('');
+    expect(event.creatorEmail).toBe('');
     expect(event.attachments).toEqual([]);
     expect(event.start).toBe('2026-07-15T00:00:00');
     expect(event.end).toBe('2026-07-16T00:00:00');

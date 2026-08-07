@@ -9,7 +9,7 @@ export interface IngestConfig {
   serviceAccount: string;
   notesFolder: string;
   vaultPath: string;
-  /** Accounts the backfill may impersonate as event organizers. */
+  /** Accounts the backfill may impersonate as an event's creator or organizer. */
   organizerAllowlist: string[];
   /** Lowercase substrings that identify a Gemini notes attachment. */
   noteAttachmentPatterns: string[];
@@ -35,7 +35,10 @@ export interface NormalizedEvent {
   start: string;
   end: string;
   htmlLink: string;
+  /** On a shared calendar this is the calendar's own address, not a person. */
   organizerEmail: string;
+  /** The person who scheduled the event, even on a shared calendar. */
+  creatorEmail: string;
   calendarId: string;
   calendarLabel: string;
   attendees: EventAttendee[];

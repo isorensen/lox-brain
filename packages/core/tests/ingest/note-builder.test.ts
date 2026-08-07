@@ -9,6 +9,7 @@ const base: NormalizedEvent = {
   end: '2026-07-15T09:10:00-03:00',
   htmlLink: 'https://calendar.example/evt-1',
   organizerEmail: 'owner@example.com',
+  creatorEmail: 'creator@example.com',
   calendarId: 'cal-a',
   calendarLabel: 'Alpha',
   attendees: [

@@ -8,9 +8,11 @@ export interface TokenResolver {
 }
 
 /**
- * Domain-wide delegation can impersonate anyone in the domain, so the organizer
- * is only used as a fallback subject when the allowlist names it. An event's
- * `organizer` field is attacker-influenceable on a shared calendar.
+ * Domain-wide delegation can impersonate anyone in the domain, so an event's
+ * own identities are only used as fallback subjects when the allowlist names
+ * them — both are attacker-influenceable on a shared calendar. The creator is
+ * tried before the organizer because on a shared calendar `organizer` holds the
+ * calendar's own address and only `creator` names the human who scheduled it.
  */
 export function createTokenResolver(config: IngestConfig, mint: MintToken): TokenResolver {
   const cache = new Map<string, Promise<string>>();
@@ -19,14 +21,18 @@ export function createTokenResolver(config: IngestConfig, mint: MintToken): Toke
   return {
     subjectsFor(event: NormalizedEvent): string[] {
       const subjects = [config.impersonateSubject];
-      const organizer = event.organizerEmail.toLowerCase();
-      if (
-        organizer &&
-        organizer !== config.impersonateSubject.toLowerCase() &&
-        allowlist.has(organizer)
-      ) {
+      const capture = config.impersonateSubject.toLowerCase();
+      for (const raw of [event.creatorEmail, event.organizerEmail]) {
         // Normalized, so one mailbox is one cache key however the payload cased it.
-        subjects.push(organizer);
+        const candidate = raw.toLowerCase();
+        if (
+          candidate &&
+          candidate !== capture &&
+          allowlist.has(candidate) &&
+          !subjects.includes(candidate)
+        ) {
+          subjects.push(candidate);
+        }
       }
       return subjects;
     },

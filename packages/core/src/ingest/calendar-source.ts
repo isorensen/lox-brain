@@ -50,6 +50,7 @@ export async function listEvents(
         end: raw.end?.dateTime ?? `${raw.end?.date}T00:00:00`,
         htmlLink: String(raw.htmlLink ?? ''),
         organizerEmail: String(raw.organizer?.email ?? ''),
+        creatorEmail: String(raw.creator?.email ?? ''),
         calendarId: calendar.id,
         calendarLabel: calendar.label,
         attendees,

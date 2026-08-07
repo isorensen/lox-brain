@@ -4,10 +4,13 @@ import type { IngestConfig, NormalizedEvent } from '../../src/ingest/types.js';
 
 const config = {
   impersonateSubject: 'capture@example.com',
-  organizerAllowlist: ['owner@example.com'],
+  organizerAllowlist: ['owner@example.com', 'creator@example.com'],
 } as IngestConfig;
 
-const event = { organizerEmail: 'owner@example.com' } as NormalizedEvent;
+const event = { organizerEmail: 'owner@example.com', creatorEmail: '' } as NormalizedEvent;
+
+/** A team ceremony calendar: `organizer` is the calendar itself, the human is `creator`. */
+const GROUP_CALENDAR = 'c_abc123@group.calendar.google.com';
 
 describe('subjectsFor', () => {
   it('tries the capture account first', () => {
@@ -22,26 +25,101 @@ describe('subjectsFor', () => {
 
   it('omits an organizer that is not allowlisted', () => {
     const r = createTokenResolver(config, vi.fn());
-    const stranger = { organizerEmail: 'stranger@example.com' } as NormalizedEvent;
+    const stranger = { organizerEmail: 'stranger@example.com', creatorEmail: '' } as NormalizedEvent;
     expect(r.subjectsFor(stranger)).toEqual(['capture@example.com']);
   });
 
   it('normalizes the casing an allowlisted organizer arrived with', () => {
     const r = createTokenResolver(config, vi.fn());
-    const shouty = { organizerEmail: 'Owner@Example.com' } as NormalizedEvent;
+    const shouty = { organizerEmail: 'Owner@Example.com', creatorEmail: '' } as NormalizedEvent;
     expect(r.subjectsFor(shouty)).toEqual(['capture@example.com', 'owner@example.com']);
   });
 
   it('omits an event with no organizer', () => {
     const r = createTokenResolver(config, vi.fn());
-    const orphan = { organizerEmail: '' } as NormalizedEvent;
+    const orphan = { organizerEmail: '', creatorEmail: '' } as NormalizedEvent;
     expect(r.subjectsFor(orphan)).toEqual(['capture@example.com']);
   });
 
   it('does not duplicate when the organizer is the capture account', () => {
     const r = createTokenResolver(config, vi.fn());
-    const self = { organizerEmail: 'capture@example.com' } as NormalizedEvent;
+    const self = { organizerEmail: 'capture@example.com', creatorEmail: '' } as NormalizedEvent;
     expect(r.subjectsFor(self)).toEqual(['capture@example.com']);
+  });
+
+  it('falls back to the creator when the organizer is the group calendar itself', () => {
+    const r = createTokenResolver(config, vi.fn());
+    const ceremony = {
+      organizerEmail: GROUP_CALENDAR,
+      creatorEmail: 'creator@example.com',
+    } as NormalizedEvent;
+    const subjects = r.subjectsFor(ceremony);
+    expect(subjects).toEqual(['capture@example.com', 'creator@example.com']);
+    expect(subjects).not.toContain(GROUP_CALENDAR);
+  });
+
+  it('tries the creator before the organizer when both are allowlisted', () => {
+    const r = createTokenResolver(config, vi.fn());
+    const both = {
+      organizerEmail: 'owner@example.com',
+      creatorEmail: 'creator@example.com',
+    } as NormalizedEvent;
+    expect(r.subjectsFor(both)).toEqual([
+      'capture@example.com',
+      'creator@example.com',
+      'owner@example.com',
+    ]);
+  });
+
+  it('adds an allowlisted identity once when the creator is also the organizer', () => {
+    const r = createTokenResolver(config, vi.fn());
+    const personal = {
+      organizerEmail: 'owner@example.com',
+      creatorEmail: 'owner@example.com',
+    } as NormalizedEvent;
+    expect(r.subjectsFor(personal)).toEqual(['capture@example.com', 'owner@example.com']);
+  });
+
+  it('does not duplicate when the creator is the capture account', () => {
+    const r = createTokenResolver(config, vi.fn());
+    const own = {
+      organizerEmail: GROUP_CALENDAR,
+      creatorEmail: 'capture@example.com',
+    } as NormalizedEvent;
+    expect(r.subjectsFor(own)).toEqual(['capture@example.com']);
+  });
+
+  it('omits an organizer that is not allowlisted even when the creator is', () => {
+    const r = createTokenResolver(config, vi.fn());
+    const mixed = {
+      organizerEmail: 'stranger@example.com',
+      creatorEmail: 'creator@example.com',
+    } as NormalizedEvent;
+    expect(r.subjectsFor(mixed)).toEqual(['capture@example.com', 'creator@example.com']);
+  });
+
+  it('omits both when neither the creator nor the organizer is allowlisted', () => {
+    const r = createTokenResolver(config, vi.fn());
+    const strangers = {
+      organizerEmail: GROUP_CALENDAR,
+      creatorEmail: 'stranger@example.com',
+    } as NormalizedEvent;
+    expect(r.subjectsFor(strangers)).toEqual(['capture@example.com']);
+  });
+
+  it('falls through to the organizer when the creator is empty', () => {
+    const r = createTokenResolver(config, vi.fn());
+    const noCreator = { organizerEmail: 'owner@example.com', creatorEmail: '' } as NormalizedEvent;
+    expect(r.subjectsFor(noCreator)).toEqual(['capture@example.com', 'owner@example.com']);
+  });
+
+  it('normalizes the casing an allowlisted creator arrived with', () => {
+    const r = createTokenResolver(config, vi.fn());
+    const shouty = {
+      organizerEmail: GROUP_CALENDAR,
+      creatorEmail: 'Creator@Example.com',
+    } as NormalizedEvent;
+    expect(r.subjectsFor(shouty)).toEqual(['capture@example.com', 'creator@example.com']);
   });
 });
 

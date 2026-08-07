@@ -71,6 +71,7 @@ const skeleton = (id: string) =>
       end: '2026-07-15T10:00:00-03:00',
       htmlLink: `https://calendar.example/${id}`,
       organizerEmail: 'owner@example.com',
+      creatorEmail: 'creator@example.com',
       calendarId: 'cal-a',
       calendarLabel: 'Alpha',
       attendees: [],

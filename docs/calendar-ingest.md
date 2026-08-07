@@ -170,15 +170,25 @@ Field notes:
   match your `vault_path`, not the other way around.
 - `organizer_allowlist` — a security boundary, not a convenience list. By
   default the pipeline only ever impersonates `impersonate_subject` (the
-  capture account). An event's `organizer` field is not something you fully
-  control — on a shared calendar it reflects whoever created that event — so
-  the pipeline does not impersonate it automatically. It falls back to
-  impersonating the organizer, for that one event, **only** when the
-  organizer's e-mail is explicitly listed here; an organizer not on the list
-  is never impersonated, and if the capture account also can't read the
-  notes, the event degrades to a skeleton note (see Troubleshooting). Add an
-  organizer here only when the ceremony's notes genuinely require it — most
-  setups can leave this empty.
+  capture account). When the capture account cannot read an event's notes, it
+  falls back to two other identities the event carries, in this order: the
+  event's **creator**, then its **organizer**. Neither field is something you
+  fully control — anyone who can put an event on a watched calendar sets both
+  — so each is used **only** when that exact e-mail is listed here. An address
+  not on the list is never impersonated, and if no allowlisted identity can
+  read the notes either, the event degrades to a skeleton note (see
+  Troubleshooting).
+
+  Both identities are tried because they are not interchangeable. On a
+  personal calendar they are the same person. On a **shared team calendar**,
+  which is what most ceremony calendars are, they are not: `organizer` holds
+  the calendar's own address — a `...@group.calendar.google.com` identity that
+  belongs to no one and can read nothing — and the human who scheduled the
+  ceremony appears only as the `creator`. Allowlisting the organizer alone
+  would therefore never help on exactly the calendars that need it.
+
+  Add an address here only when a ceremony's notes genuinely require it —
+  most setups can leave this empty.
 - `note_attachment_patterns` — lowercase substrings matched against
   attachment titles to identify the Gemini notes Doc (locale-dependent;
   add your organization's variant if it differs).
@@ -257,6 +267,9 @@ error tells you which of two very different problems you have:
   the impersonated account is not on that ceremony's guest list. Invite the
   capture account to the series and re-run; already-processed events are safe
   to re-ingest, since existing notes are complemented rather than duplicated.
+  If the series predates the capture account and you cannot retroactively be
+  invited, add the person who scheduled it (the event's creator) to
+  `organizer_allowlist` instead.
 - An **auth error** (`unauthorized_client`, `invalid_grant`, `SERVICE_DISABLED`)
   means the delegation setup itself is wrong, and it will affect every event,
   not just those series. Recheck the two scopes authorized against the service

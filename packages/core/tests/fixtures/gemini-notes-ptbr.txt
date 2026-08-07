@@ -1,0 +1,21 @@
+# Observações
+
+jul. 15, 2026
+
+## Daily meeting
+
+### Resumo
+
+Equipe alinhou o corte da release e reduziu o escopo.
+
+### Próximas etapas
+
+  - [Ana Lima] Congelar a branch: Fechar a branch de release ate sexta.
+  - [Bo Reis] Revisar os testes de carga antes do corte.
+
+### Detalhes
+
+  - **Escopo da release**: O escopo foi reduzido para dois itens.
+  - **Riscos**: Dependencia externa ainda sem data confirmada.
+
+Revise as anotações do Gemini para checar se estão corretas.

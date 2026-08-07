@@ -206,3 +206,23 @@ If a series produces no note at all and doesn't show up in that list
 either, check the event has a Gemini notes attachment whose title matches
 one of `note_attachment_patterns` — Gemini's default attachment title is
 locale-dependent.
+
+## Running as a systemd timer
+
+Install the daily incremental job as a systemd service + timer on the VM:
+
+```bash
+sed "s/__LOX_VM_USER__/$USER/g" infra/systemd/lox-calendar-ingest.service \
+  | sudo tee /etc/systemd/system/lox-calendar-ingest.service > /dev/null
+sudo cp infra/systemd/lox-calendar-ingest.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now lox-calendar-ingest.timer
+systemctl list-timers lox-calendar-ingest.timer
+sudo systemctl start lox-calendar-ingest.service && journalctl -u lox-calendar-ingest -n 50
+```
+
+The timer fires daily at 20:00 America/Sao_Paulo — evening, so that day's
+Gemini summaries (which land after meetings end) are already available for
+the ingest to pick up. The ingest is idempotent, so a timer misfire or a
+manual re-run from `systemctl start` never duplicates notes; already-ingested
+events are complemented, not re-created.

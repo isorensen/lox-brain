@@ -1,0 +1,15 @@
+[Unit]
+Description=Lox calendar ingest (team ceremonies -> vault)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=__LOX_VM_USER__
+WorkingDirectory=/home/__LOX_VM_USER__/lox-brain
+ExecStartPre=/usr/bin/test -f /home/__LOX_VM_USER__/.lox/config.json
+ExecStart=/bin/sh -c '/usr/bin/npm run ingest-calendar:prod --workspace=packages/core -- --since "$(date -d yesterday +%%F)"'
+TimeoutStartSec=900
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/home/__LOX_VM_USER__/obsidian

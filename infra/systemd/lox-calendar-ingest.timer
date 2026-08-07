@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Lox calendar ingest daily
+
+[Timer]
+OnCalendar=*-*-* 20:00:00 America/Sao_Paulo
+Persistent=true
+Unit=lox-calendar-ingest.service
+
+[Install]
+WantedBy=timers.target

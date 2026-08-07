@@ -18,9 +18,15 @@ CREATE TABLE IF NOT EXISTS vault_embeddings (
   UNIQUE (file_path, chunk_index)
 );
 
+-- lists = 1 is the correct size for the empty table this file creates
+-- (pgvector's rule is lists ~= rows/1000) and degenerates to exact search,
+-- which is also correct for a vault of a few thousand notes. It is NOT a
+-- placeholder to be raised by hand: the MCP server re-sizes the index from the
+-- live row count at boot (see packages/core/src/lib/ivfflat.ts). A hardcoded
+-- 100 here is what capped semantic search at ~1% recall before v0.18.0.
 CREATE INDEX IF NOT EXISTS idx_vault_embeddings_embedding
   ON vault_embeddings USING ivfflat (embedding vector_cosine_ops)
-  WITH (lists = 100);
+  WITH (lists = 1);
 
 CREATE INDEX IF NOT EXISTS idx_vault_embeddings_tags
   ON vault_embeddings USING gin (tags);

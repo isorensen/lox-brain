@@ -47,4 +47,14 @@ describe('parseArgs', () => {
     expect(() => parseArgs(['--from', '2026-8-1', '--to', '2026-08-07'])).toThrow(/YYYY-MM-DD/);
     expect(() => parseArgs(['--from', '2026-08-01', '--to', 'tomorrow'])).toThrow(/YYYY-MM-DD/);
   });
+
+  it('defaults --only-with-notes to false', () => {
+    const a = parseArgs(['--from', '2026-01-01', '--to', '2026-01-02']);
+    expect(a.onlyWithNotes).toBe(false);
+  });
+
+  it('honours --only-with-notes', () => {
+    const a = parseArgs(['--from', '2026-01-01', '--to', '2026-01-02', '--only-with-notes']);
+    expect(a.onlyWithNotes).toBe(true);
+  });
 });

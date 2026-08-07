@@ -24,7 +24,9 @@ import type { GeminiNotes, IngestConfig, NoteDecision } from '../ingest/types.js
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
-export function parseArgs(argv: string[]): { from: string; to: string; dryRun: boolean } {
+export function parseArgs(
+  argv: string[],
+): { from: string; to: string; dryRun: boolean; onlyWithNotes: boolean } {
   const get = (flag: string): string | undefined => {
     const i = argv.indexOf(flag);
     return i === -1 ? undefined : argv[i + 1];
@@ -34,6 +36,7 @@ export function parseArgs(argv: string[]): { from: string; to: string; dryRun: b
     return value;
   };
   const dryRun = argv.includes('--dry-run');
+  const onlyWithNotes = argv.includes('--only-with-notes');
   const rawFrom = get('--from') ?? get('--since');
   if (!rawFrom) {
     throw new Error('provide --from <YYYY-MM-DD> --to <YYYY-MM-DD>, or --since <YYYY-MM-DD>');
@@ -50,7 +53,7 @@ export function parseArgs(argv: string[]): { from: string; to: string; dryRun: b
     to = tomorrow.toISOString().slice(0, 10);
   }
   if (to <= from) throw new Error('--from must be before --to (the window is [from, to))');
-  return { from, to, dryRun };
+  return { from, to, dryRun, onlyWithNotes };
 }
 
 export interface IngestDeps {
@@ -66,6 +69,8 @@ export interface IngestResult {
   created: number;
   complemented: number;
   skipped: number;
+  /** Events with no Gemini notes that were passed over under --only-with-notes. */
+  skippedNoNotes: number;
   /** Events whose notes attachment could not be exported, as "YYYY-MM-DD Summary". */
   inaccessible: string[];
   decisions: NoteDecision[];
@@ -77,11 +82,13 @@ export async function runIngest(
   from: string,
   to: string,
   dryRun: boolean,
+  onlyWithNotes = false,
 ): Promise<IngestResult> {
   const result: IngestResult = {
     created: 0,
     complemented: 0,
     skipped: 0,
+    skippedNoNotes: 0,
     inaccessible: [],
     decisions: [],
   };
@@ -107,6 +114,12 @@ export async function runIngest(
         const why = [...new Set(failures)].join('; ') || 'no exportable notes Doc';
         result.inaccessible.push(`${event.start.slice(0, 10)} ${event.summary} — ${why}`);
       }
+
+      if (onlyWithNotes && !notes) {
+        result.skippedNoNotes += 1;
+        continue;
+      }
+
       const decision = await decideNote(deps.readFile, event, notes, config.notesFolder);
       if (!dryRun) await applyDecision(deps.writeFile, decision);
 
@@ -139,7 +152,7 @@ export async function assertVaultWritable(config: IngestConfig): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const { from, to, dryRun } = parseArgs(process.argv.slice(2));
+  const { from, to, dryRun, onlyWithNotes } = parseArgs(process.argv.slice(2));
   const configPath = join(homedir(), '.lox', 'config.json');
   const config = loadIngestConfig(JSON.parse(await fsReadFile(configPath, 'utf8')));
 
@@ -197,6 +210,7 @@ async function main(): Promise<void> {
     from,
     to,
     dryRun,
+    onlyWithNotes,
   );
 
   for (const decision of result.decisions) {
@@ -205,7 +219,8 @@ async function main(): Promise<void> {
 
   console.log(
     `\nIngest complete ${from}..${to} — created ${result.created}, ` +
-      `complemented ${result.complemented}, skipped ${result.skipped}`,
+      `complemented ${result.complemented}, skipped ${result.skipped}` +
+      (onlyWithNotes ? `, skipped-no-notes ${result.skippedNoNotes}` : ''),
   );
   if (result.inaccessible.length > 0) {
     console.log(`\n${result.inaccessible.length} event(s) had a notes attachment we could not read:`);

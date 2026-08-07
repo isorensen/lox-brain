@@ -313,10 +313,90 @@ describe('runIngest', () => {
       created: 0,
       complemented: 0,
       skipped: 0,
+      skippedNoNotes: 0,
       inaccessible: [],
       decisions: [],
     });
     expect(writeFile).not.toHaveBeenCalled();
+  });
+});
+
+describe('runIngest with --only-with-notes', () => {
+  it('writes no note for a note-less event, and counts it instead', async () => {
+    const fetchPage = calendars({ 'cal-a': [rawEvent('evt-a', 'Planning')] });
+    const { readFile, writeFile } = vault();
+
+    const result = await runIngest(
+      { fetchPage, resolver, exportDocAs, readFile, writeFile },
+      config,
+      '2026-07-01',
+      '2026-08-01',
+      false,
+      true,
+    );
+
+    expect(writeFile).not.toHaveBeenCalled();
+    expect(result.decisions).toEqual([]);
+    expect(result.created).toBe(0);
+    expect(result.skippedNoNotes).toBe(1);
+  });
+
+  it('still creates the note for an event that does have notes', async () => {
+    const fetchPage = calendars({ 'cal-a': [rawEvent('evt-a', 'Weekly', [geminiDoc])] });
+    const { readFile, writeFile } = vault();
+
+    const result = await runIngest(
+      { fetchPage, resolver, exportDocAs, readFile, writeFile },
+      config,
+      '2026-07-01',
+      '2026-08-01',
+      false,
+      true,
+    );
+
+    expect(writeFile).toHaveBeenCalledTimes(1);
+    expect(result.created).toBe(1);
+    expect(result.skippedNoNotes).toBe(0);
+  });
+
+  it('still reports an inaccessible Doc, even though no skeleton is written for it', async () => {
+    const fetchPage = calendars({
+      'cal-a': [rawEvent('evt-denied', 'Squad sync', [brokenDoc])],
+    });
+    const { readFile, writeFile } = vault();
+
+    const result = await runIngest(
+      { fetchPage, resolver, exportDocAs, readFile, writeFile },
+      config,
+      '2026-07-01',
+      '2026-08-01',
+      false,
+      true,
+    );
+
+    expect(result.inaccessible).toEqual([
+      '2026-07-15 Squad sync — 403 caller does not have permission',
+    ]);
+    expect(writeFile).not.toHaveBeenCalled();
+    expect(result.skippedNoNotes).toBe(1);
+  });
+
+  it('without the flag, a note-less event still gets a skeleton (regression)', async () => {
+    const fetchPage = calendars({ 'cal-a': [rawEvent('evt-a', 'Planning')] });
+    const { readFile, writeFile } = vault();
+
+    const result = await runIngest(
+      { fetchPage, resolver, exportDocAs, readFile, writeFile },
+      config,
+      '2026-07-01',
+      '2026-08-01',
+      false,
+      false,
+    );
+
+    expect(writeFile).toHaveBeenCalledTimes(1);
+    expect(result.created).toBe(1);
+    expect(result.skippedNoNotes).toBe(0);
   });
 });
 

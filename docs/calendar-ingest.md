@@ -243,6 +243,20 @@ npm run ingest-calendar:prod --workspace=packages/core -- --since 2026-08-06
 Each run prints one line per event (`created` / `complemented` / `skipped`
 and the note path) and a summary count at the end.
 
+For a historical backfill, add `--only-with-notes` so an event with no
+Gemini notes produces no note file at all, instead of a skeleton:
+
+```bash
+npm run ingest-calendar --workspace=packages/core -- --from 2025-06-01 --to 2026-08-01 --only-with-notes
+```
+
+Skeletons make sense for the daily run — a meeting that just happened may
+get its Gemini notes hours later, and the skeleton is complemented once
+they arrive. In a backfill over meetings from months ago, a note-less event
+will never gain notes, so the skeleton is permanent noise; the flag counts
+those events instead of writing them. Leave the flag off for the daily
+incremental job.
+
 ### Keep a backfill under an hour
 
 The access token is minted once at startup and is valid for one hour; the

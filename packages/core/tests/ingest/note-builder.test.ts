@@ -63,6 +63,13 @@ describe('buildNoteContent', () => {
     expect(md).toContain('[responsible:: Ana Lima]');
   });
 
+  it('stamps today as the import date, or the caller-supplied one', () => {
+    expect(buildNoteContent(base, notes)).toContain(
+      `[imported:: ${new Date().toISOString().slice(0, 10)}]`,
+    );
+    expect(buildNoteContent(base, notes, '2025-11-02')).toContain('[imported:: 2025-11-02]');
+  });
+
   it('marks the note as #baby with a callout when notes are absent', () => {
     const md = buildNoteContent(base, null);
     expect(md).toContain('Status: #baby');

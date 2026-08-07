@@ -19,6 +19,16 @@ const event: NormalizedEvent = {
 const notes: GeminiNotes = { summary: 'ok', nextSteps: [], details: ['d'], docUrls: ['u'] };
 const FOLDER = '7 - Meeting Notes';
 
+/** What the pipeline itself writes for an event with no Gemini notes yet. */
+const skeleton = (id: string, imported = '2026-07-15') =>
+  [
+    'Status: #baby',
+    `[imported:: ${imported}]`,
+    `[calendar_event_id:: ${id}]`,
+    '> [!NOTE] Sem notas automaticas',
+    '> Este evento nao possui anotacoes do Gemini. Adicione suas notas manualmente abaixo.',
+  ].join('\n');
+
 describe('decideNote', () => {
   it('creates when no note exists at the canonical path', async () => {
     const read = vi.fn().mockResolvedValue(null);
@@ -32,16 +42,54 @@ describe('decideNote', () => {
     expect((await decideNote(read, event, notes, FOLDER)).action).toBe('skip');
   });
 
-  it('complements a skeleton once Gemini notes arrive', async () => {
-    const read = vi.fn().mockResolvedValue('Status: #baby\n[calendar_event_id:: evt-1]\n');
+  it('complements an untouched skeleton once Gemini notes arrive', async () => {
+    const read = vi.fn().mockResolvedValue(skeleton('evt-1'));
     const d = await decideNote(read, event, notes, FOLDER);
     expect(d.action).toBe('complement');
     if (d.action === 'complement') expect(d.content).toContain('Status: #child');
   });
 
+  it('keeps the original import date when complementing', async () => {
+    const read = vi.fn().mockResolvedValue(skeleton('evt-1', '2025-11-02'));
+    const d = await decideNote(read, event, notes, FOLDER);
+    if (d.action === 'complement') expect(d.content).toContain('[imported:: 2025-11-02]');
+    else expect.fail(`expected complement, got ${d.action}`);
+  });
+
+  it('skips a skeleton whose callout the user replaced with their own notes', async () => {
+    const edited = [
+      'Status: #baby',
+      '[calendar_event_id:: evt-1]',
+      '### 📌 Topicos Discutidos:',
+      'Decidimos adiar o corte da release para a proxima sprint.',
+    ].join('\n');
+    const read = vi.fn().mockResolvedValue(edited);
+    const d = await decideNote(read, event, notes, FOLDER);
+    expect(d.action).toBe('skip');
+    if (d.action === 'skip') expect(d.reason).toBe('skeleton was edited by hand');
+
+    const write = vi.fn();
+    await applyDecision(write, d);
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it('does not treat a Gemini body mentioning the status marker as a skeleton', async () => {
+    const enriched = [
+      'Status: #child',
+      '[calendar_event_id:: evt-1]',
+      '- Combinamos escrever "Status: #baby" nas notas de reuniao novas.',
+    ].join('\n');
+    const read = vi.fn().mockResolvedValue(enriched);
+    const d = await decideNote(read, event, notes, FOLDER);
+    expect(d.action).toBe('skip');
+    if (d.action === 'skip') expect(d.reason).toBe('already enriched');
+  });
+
   it('skips a skeleton when there are still no notes', async () => {
-    const read = vi.fn().mockResolvedValue('Status: #baby\n[calendar_event_id:: evt-1]\n');
-    expect((await decideNote(read, event, null, FOLDER)).action).toBe('skip');
+    const read = vi.fn().mockResolvedValue(skeleton('evt-1'));
+    const d = await decideNote(read, event, null, FOLDER);
+    expect(d.action).toBe('skip');
+    if (d.action === 'skip') expect(d.reason).toBe('skeleton, no notes yet');
   });
 
   it('disambiguates with a time suffix when a different event owns the path', async () => {

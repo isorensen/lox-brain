@@ -60,7 +60,8 @@ const exportDoc = vi.fn(async (fileId: string) => {
 const resolver = createTokenResolver(config, vi.fn(async () => 'tok'));
 const exportDocAs = () => exportDoc;
 
-const skeleton = (id: string) => `Status: #baby\n[calendar_event_id:: ${id}]\n`;
+const skeleton = (id: string) =>
+  `Status: #baby\n[calendar_event_id:: ${id}]\n> [!NOTE] Sem notas automaticas\n`;
 const enriched = (id: string) => `Status: #child\n[calendar_event_id:: ${id}]\n`;
 
 describe('runIngest', () => {

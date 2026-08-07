@@ -8,6 +8,10 @@ function eventIdOf(content: string): string | null {
   return content.match(/\[calendar_event_id::\s*([^\]]+)\]/)?.[1]?.trim() ?? null;
 }
 
+function importedDateOf(content: string): string | undefined {
+  return content.match(/\[imported::\s*([^\]]+)\]/)?.[1]?.trim();
+}
+
 export async function decideNote(
   readFile: ReadFile,
   event: NormalizedEvent,
@@ -33,9 +37,18 @@ export async function decideNote(
     return { action: 'create', path, content: buildNoteContent(event, notes) };
   }
 
-  const isSkeleton = existing.includes('Status: #baby');
+  const isSkeleton = /^Status: #baby$/m.test(existing);
+  // The skeleton invites the reader to type their own notes into it, so only one that
+  // still carries the untouched "no notes" callout may be overwritten wholesale.
+  if (isSkeleton && !existing.includes('Sem notas automaticas')) {
+    return { action: 'skip', path, reason: 'skeleton was edited by hand' };
+  }
   if (isSkeleton && notes) {
-    return { action: 'complement', path, content: buildNoteContent(event, notes) };
+    return {
+      action: 'complement',
+      path,
+      content: buildNoteContent(event, notes, importedDateOf(existing)),
+    };
   }
   return { action: 'skip', path, reason: isSkeleton ? 'skeleton, no notes yet' : 'already enriched' };
 }

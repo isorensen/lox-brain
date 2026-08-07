@@ -52,7 +52,11 @@ function renderNextSteps(nextSteps: string[]): string {
     .join('\n');
 }
 
-export function buildNoteContent(event: NormalizedEvent, notes: GeminiNotes | null): string {
+export function buildNoteContent(
+  event: NormalizedEvent,
+  notes: GeminiNotes | null,
+  importedOn?: string,
+): string {
   const status = notes ? '#child' : '#baby';
   const topics = notes
     ? [
@@ -76,7 +80,7 @@ export function buildNoteContent(event: NormalizedEvent, notes: GeminiNotes | nu
     `Tags: [[meeting]]${event.calendarLabel ? ` [[${event.calendarLabel}]]` : ''}`,
     '',
     '[source:: google-calendar]',
-    `[imported:: ${isoDate(new Date().toISOString())}]`,
+    `[imported:: ${importedOn ?? isoDate(new Date().toISOString())}]`,
     `[calendar_event_id:: ${event.id}]`,
     `[calendar_source:: ${event.calendarLabel}]`,
     `[attendance:: ${event.attendance}]`,

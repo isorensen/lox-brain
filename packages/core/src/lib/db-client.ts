@@ -7,13 +7,20 @@ import {
   needsResize, parseLists, probesFor, quoteIdent, rewriteLists, setProbesSql, targetLists,
 } from './ivfflat.js';
 
+/** What happened to one ivfflat index. */
+export interface IvfflatIndexState {
+  name: string;
+  listsBefore: number;
+  listsAfter: number;
+  resized: boolean;
+}
+
 /** Outcome of {@link DbClient.reindexEmbeddings}, for the boot log. */
 export interface IvfflatState {
   rows: number;
-  listsBefore: number;
-  listsAfter: number;
+  /** Every ivfflat index on the table. More than one means duplicates exist. */
+  indexes: IvfflatIndexState[];
   probes: number;
-  resized: boolean;
   /** False when the role does not own the database; probes stays at pgvector's default. */
   probesApplied: boolean;
 }
@@ -233,13 +240,21 @@ export class DbClient {
   }
 
   /**
-   * Rebuild the ivfflat index, resizing it to the current row count first.
+   * Rebuild the table's ivfflat indexes, resizing each to the current row count.
    *
-   * A plain `REINDEX` rebuilds the index with whatever `lists` it already has,
-   * so an index sized for the wrong volume stays wrong forever — see
-   * `lib/ivfflat.ts` for why that silently caps recall. Returns what it did so
-   * the caller can log it (the absence of that log is what kept the
-   * mis-sizing invisible), or `null` when the table has no ivfflat index.
+   * A plain `REINDEX` rebuilds an index with whatever `lists` it already has,
+   * so one sized for the wrong volume stays wrong forever — see
+   * `lib/ivfflat.ts` for why that silently caps recall.
+   *
+   * Handles *every* ivfflat index on the table, not the first one found. Two
+   * creation paths named the same index differently (`schema.sql` and the
+   * installer), so a host that ran both carries two indexes over the same
+   * column; picking one arbitrarily resized whichever the planner was not
+   * using and derived `probes` from it, which is how v0.18.0 reported success
+   * while production recall stayed at ~1%.
+   *
+   * Returns what it did so the caller can log it, or `null` when the table has
+   * no ivfflat index.
    */
   async reindexEmbeddings(): Promise<IvfflatState | null> {
     const result = await this.pool.query(`
@@ -248,44 +263,59 @@ export class DbClient {
       FROM pg_indexes
       WHERE tablename = 'vault_embeddings'
         AND indexdef LIKE '%ivfflat%'
-      LIMIT 1
+      ORDER BY indexname
     `);
     if (result.rows.length === 0) return null;
 
-    const { indexname, indexdef, database } = result.rows[0];
     const rows = Number(result.rows[0].row_count);
-    const listsBefore = parseLists(indexdef);
+    const database = result.rows[0].database;
     const target = targetLists(rows);
-    const quoted = quoteIdent(indexname);
 
-    const resized = needsResize(listsBefore, target);
-    if (resized) {
-      // DROP + CREATE (not CONCURRENTLY) holds an ACCESS EXCLUSIVE lock on the
-      // table for the duration. That is imperceptible at vault scale and this
-      // runs at boot, before the server accepts requests — but on a table large
-      // enough for the rebuild to take minutes, writes would block for that long.
-      // The transaction is what keeps a failed CREATE from leaving the table with
-      // no index at all: the caller only logs a warning, so that loss would be
-      // permanent and silent.
-      const client = await this.pool.connect();
-      try {
-        await client.query('BEGIN');
-        await client.query(`DROP INDEX ${quoted}`);
-        await client.query(rewriteLists(indexdef, target));
-        await client.query('COMMIT');
-      } catch (err) {
-        await client.query('ROLLBACK').catch(() => { /* connection already broken */ });
-        throw err;
-      } finally {
-        client.release();
+    const indexes: IvfflatIndexState[] = [];
+    for (const { indexname, indexdef } of result.rows) {
+      const listsBefore = parseLists(indexdef);
+      const resized = needsResize(listsBefore, target);
+      if (resized) {
+        await this.rebuildIndex(indexname, indexdef, target);
+      } else {
+        await this.pool.query(`REINDEX INDEX ${quoteIdent(indexname)}`);
       }
-    } else {
-      await this.pool.query(`REINDEX INDEX ${quoted}`);
+      indexes.push({ name: indexname, listsBefore, listsAfter: resized ? target : listsBefore, resized });
     }
 
-    const listsAfter = resized ? target : listsBefore;
-    const probes = probesFor(listsAfter);
-    return { rows, listsBefore, listsAfter, probes, resized, probesApplied: await this.setProbes(database, probes) };
+    // `probes` is one setting shared by whichever index the planner picks, so
+    // it is derived from the widest one rather than from any single index.
+    // Over-probing costs latency and pgvector caps it at `lists`; under-probing
+    // silently drops rows, which is the failure this whole path exists to fix.
+    // After a successful pass every index sits at `target` and the max is that
+    // — the spread only matters when one of them could not be resized.
+    const probes = probesFor(Math.max(...indexes.map((i) => i.listsAfter)));
+    return { rows, indexes, probes, probesApplied: await this.setProbes(database, probes) };
+  }
+
+  /**
+   * DROP + CREATE (not CONCURRENTLY) holds an ACCESS EXCLUSIVE lock on the
+   * table for the duration. That is imperceptible at vault scale and this runs
+   * at boot, before the server accepts requests — but on a table large enough
+   * for the rebuild to take minutes, writes would block for that long.
+   *
+   * The transaction is what keeps a failed CREATE from leaving the table with
+   * no index at all: the caller only logs a warning, so that loss would be
+   * permanent and silent.
+   */
+  private async rebuildIndex(name: string, indexdef: string, lists: number): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`DROP INDEX ${quoteIdent(name)}`);
+      await client.query(rewriteLists(indexdef, lists));
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => { /* connection already broken */ });
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   /**

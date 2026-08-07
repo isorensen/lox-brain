@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.18.1] — 2026-08-07
+
+### Fixed
+- **v0.18.0's index resize repaired the wrong index on hosts that have two, so production recall never moved — still ~1%.** `vault_embeddings` can carry *two* ivfflat indexes over the same column: `infra/postgres/schema.sql` creates `idx_vault_embeddings_embedding` and the installer's VM setup created `idx_embedding_cosine`, both `IF NOT EXISTS`, both `WITH (lists = 100)`. `IF NOT EXISTS` matches on name, not definition, so a host that ran both ended up with two copies — every write maintaining both, the planner using one. `reindexEmbeddings()` selected the index with `LIMIT 1`, resized whichever the catalog happened to return, and derived `probes` from *that* index's `lists`. On the deployed VM it fixed `idx_embedding_cosine` while the planner kept using `idx_vault_embeddings_embedding` at `lists = 100`, and set `probes = ceil(sqrt(1)) = 1` from the wrong geometry. The boot log said `lists 100 -> 1 (index rebuilt), probes 1` and read as success.
+
+  `reindexEmbeddings()` now processes **every** ivfflat index on the table (`ORDER BY indexname`, no `LIMIT`), resizing each against the same row count, and derives `probes` from the **widest** resulting `lists` rather than from any single index. The max matters in a reachable case: `probes` is one setting shared by whichever index the planner picks, and two indexes can legitimately end a pass at different sizes — at 60k rows the target is 60, so an index already at 100 stays put (inside the 2× hysteresis band) while one at 1 is rebuilt to 60. `ceil(sqrt(100)) = 10` serves both; `ceil(sqrt(60)) = 8` would under-probe the wider one, and under-probing is the silent failure this whole path exists to prevent. Over-probing only costs latency — pgvector caps probes at `lists`.
+
+  The boot log now names each index — `ivfflat: 5000 rows, 2 index(es) [idx_embedding_cosine lists 5; idx_vault_embeddings_embedding lists 100 -> 5 (rebuilt)], probes 3` — and warns explicitly when more than one exists, since the duplicate is itself a defect worth seeing. Logging one line in the singular is what let a half-applied fix look complete.
+
+  The installer now creates the three indexes under the same names as `schema.sql` (`idx_vault_embeddings_embedding`, `idx_vault_embeddings_tags`, `idx_vault_embeddings_updated_at`; previously `idx_embedding_cosine`, `idx_tags`, `idx_updated_at`) with `lists = 1`, so a fresh install cannot produce the duplicate through either path. `schema.sql`'s names win because every sibling index there already follows that convention and because it is the name in use on deployed hosts — converging on it avoids inventing a third state. The GIN and btree indexes had the identical name split and the identical duplication, just without a recall symptom; they are unified in the same pass. De-duplicating **existing** deployments (dropping the extra index) is deliberately not automated here.
+
+  Verified against `pgvector/pgvector:pg16` with the deployed shape reproduced — 5000 rows, two ivfflat indexes. Half-fixed state as input (one index at `lists=5`, one at `100`, the exact v0.18.0 outcome): the planner chose the oversized one and `EXPLAIN ANALYZE` showed the scan stopping at **812 of 5000 rows**. After this fix both indexes sit at `lists=5`, `probes=3` is inherited by a brand-new pool, and the same scan reaches the full **2000** rows requested.
+
 ## [0.18.0] — 2026-08-07
 
 ### Fixed

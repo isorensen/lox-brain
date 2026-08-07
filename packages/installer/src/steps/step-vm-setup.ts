@@ -316,7 +316,13 @@ function buildDbSetupScript(dbPassword: string): string {
     // Enable pgvector extension (already idempotent)
     `sudo -u postgres psql -d ${DB_NAME} -c "CREATE EXTENSION IF NOT EXISTS vector;"`,
 
-    // Apply schema (already idempotent — all IF NOT EXISTS)
+    // Apply schema (already idempotent — all IF NOT EXISTS).
+    // Index names MUST match infra/postgres/schema.sql exactly. `IF NOT EXISTS`
+    // matches on name, not on definition, so a host that runs both this step and
+    // schema.sql gets one index per name — two copies of the same index over the
+    // same column. That is what happened to the ivfflat index before v0.18.1:
+    // every write maintained both, the planner used one, and the boot-time
+    // resizer fixed the other.
     `sudo -u postgres psql -d ${DB_NAME} -c "
       CREATE TABLE IF NOT EXISTS vault_embeddings (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -332,9 +338,9 @@ function buildDbSetupScript(dbPassword: string): string {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         UNIQUE (file_path, chunk_index)
       );
-      CREATE INDEX IF NOT EXISTS idx_embedding_cosine ON vault_embeddings USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
-      CREATE INDEX IF NOT EXISTS idx_tags ON vault_embeddings USING gin (tags);
-      CREATE INDEX IF NOT EXISTS idx_updated_at ON vault_embeddings (updated_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_vault_embeddings_embedding ON vault_embeddings USING ivfflat (embedding vector_cosine_ops) WITH (lists = 1);
+      CREATE INDEX IF NOT EXISTS idx_vault_embeddings_tags ON vault_embeddings USING gin (tags);
+      CREATE INDEX IF NOT EXISTS idx_vault_embeddings_updated_at ON vault_embeddings (updated_at DESC);
     "`,
   ].join(' && ');
 }

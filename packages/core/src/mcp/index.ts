@@ -186,15 +186,30 @@ async function main(): Promise<void> {
     if (state === null) {
       console.error('ivfflat: no embedding index on vault_embeddings, nothing to reindex');
     } else {
-      const lists = state.resized
-        ? `lists ${state.listsBefore} -> ${state.listsAfter} (index rebuilt)`
-        : `lists ${state.listsAfter}`;
-      console.error(`ivfflat: ${state.rows} rows, ${lists}, probes ${state.probes}`);
+      // Every index is named individually. v0.18.0 logged one line in the
+      // singular, which read as success while it had resized an index the
+      // planner was not using.
+      const summary = state.indexes
+        .map((i) => (i.resized
+          ? `${i.name} lists ${i.listsBefore} -> ${i.listsAfter} (rebuilt)`
+          : `${i.name} lists ${i.listsAfter}`))
+        .join('; ');
+      console.error(
+        `ivfflat: ${state.rows} rows, ${state.indexes.length} index(es) [${summary}], probes ${state.probes}`,
+      );
+      if (state.indexes.length > 1) {
+        console.error(
+          `Warning: vault_embeddings carries ${state.indexes.length} ivfflat indexes ` +
+            `(${state.indexes.map((i) => i.name).join(', ')}). They are duplicates of each other: ` +
+            `every write maintains all of them and the planner uses only one. This happens on hosts ` +
+            `that ran both infra/postgres/schema.sql and the installer, which used different names ` +
+            `for the same index before v0.18.1. Dropping the extras is safe but not automatic.`,
+        );
+      }
       if (!state.probesApplied) {
         console.error(
           `Warning: could not set ivfflat.probes (requires ownership of the database). ` +
-            `Semantic search runs at pgvector's default of 1 probe, which reads one of ` +
-            `${state.listsAfter} index clusters. Run as the database owner: ` +
+            `Semantic search runs at pgvector's default of 1 probe. Run as the database owner: ` +
             `ALTER DATABASE <db> SET ivfflat.probes = ${state.probes};`,
         );
       }

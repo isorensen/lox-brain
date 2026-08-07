@@ -30,14 +30,24 @@ This account is referred to below as the **capture account**
 
 ## Creating the service account
 
-Enable the IAM Credentials API on the project. The pipeline calls
-`iamcredentials.googleapis.com/...:signJwt` to mint its own delegated JWTs; on
-a project where the API was never enabled, the very first call fails with
-`SERVICE_DISABLED` (403):
+Enable three APIs on the project. The pipeline calls
+`iamcredentials.googleapis.com/...:signJwt` to mint its own delegated JWTs, then
+reads events and exports Docs through the Calendar and Drive APIs. On a project
+where any of them was never enabled, the corresponding call fails with
+`SERVICE_DISABLED` (403) — and because impersonation succeeds first, the failure
+surfaces only when the pipeline reaches that API, which is easy to misread as a
+permissions problem:
 
 ```bash
-gcloud services enable iamcredentials.googleapis.com --project=<project>
+gcloud services enable \
+  iamcredentials.googleapis.com \
+  calendar-json.googleapis.com \
+  drive.googleapis.com \
+  --project=<project>
 ```
+
+Note that enabling an API can take a minute or two to propagate; a call made
+immediately afterwards may still return `SERVICE_DISABLED`.
 
 Create a dedicated service account rather than reusing an existing one:
 

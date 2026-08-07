@@ -223,14 +223,41 @@ npm run ingest-calendar:prod --workspace=packages/core -- --since 2026-08-06
 Each run prints one line per event (`created` / `complemented` / `skipped`
 and the note path) and a summary count at the end.
 
+### Keep a backfill under an hour
+
+The access token is minted once at startup and is valid for one hour; the
+pipeline does not refresh it and does not retry. A run still going after that
+hour gets a 401 on every remaining Calendar and Drive call, and — because an
+unreadable Doc degrades to a skeleton rather than aborting — it would quietly
+write `#baby` notes for its entire second half.
+
+A few hundred events finish well inside the hour, so this only matters for a
+large historical backfill. Split one into several `--from`/`--to` windows and
+run them one at a time. If a window does overrun, the events it damaged are
+listed in the "could not read" summary and re-running that window repairs
+them (untouched skeletons are complemented, not duplicated).
+
 ## Troubleshooting
 
 If the end-of-run summary lists events under **"had a notes attachment we
-could not read"**, the capture account was not invited to that ceremony's
-series — the event has a Gemini notes attachment, but the pipeline's Drive
-export of it failed (a 403 from Drive, in practice). Invite the capture
-account to that series and re-run; already-processed events are safe to
-re-ingest, since existing notes are complemented rather than duplicated.
+could not read"**, each entry ends with the error that caused it, and the
+error tells you which of two very different problems you have:
+
+- A **permission error** (`403 caller does not have permission`, `404`) means
+  the impersonated account is not on that ceremony's guest list. Invite the
+  capture account to the series and re-run; already-processed events are safe
+  to re-ingest, since existing notes are complemented rather than duplicated.
+- An **auth error** (`unauthorized_client`, `invalid_grant`, `SERVICE_DISABLED`)
+  means the delegation setup itself is wrong, and it will affect every event,
+  not just those series. Recheck the two scopes authorized against the service
+  account's client ID in the Admin Console, that `impersonate_subject` is a real
+  Workspace user in the domain, and that the IAM Credentials API is enabled.
+
+A re-run only complements a note the pipeline itself wrote and nobody has
+edited since. Once you type your own text into a `#baby` note, the pipeline
+stops touching it — that note is reported as `skipped` with the reason
+`skeleton was edited by hand`, and its Gemini notes will never be filled in
+automatically. Fetch the Doc yourself in that case.
 
 If a series produces no note at all and doesn't show up in that list
 either, check the event has a Gemini notes attachment whose title matches
@@ -251,6 +278,15 @@ matches `vault_path` byte for byte.
 ## Running as a systemd timer
 
 Install the daily incremental job as a systemd service + timer on the VM:
+
+The unit runs the compiled entrypoint directly, so build first — the unit
+refuses to start when `packages/core/dist/scripts/ingest-calendar.js` is
+missing:
+
+```bash
+npm run build --workspace=packages/shared
+npm run build --workspace=packages/core
+```
 
 ```bash
 sed "s/__LOX_VM_USER__/$USER/g" infra/systemd/lox-calendar-ingest.service \

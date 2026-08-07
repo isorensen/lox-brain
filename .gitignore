@@ -47,3 +47,8 @@ coverage/
 docs/internal/
 lox-vault-credifit
 HANDOFF.md
+
+# Local runtime config (never commit; see config.json.example)
+config.json
+.lox/
+!**/config.json.example

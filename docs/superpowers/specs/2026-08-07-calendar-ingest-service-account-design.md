@@ -261,7 +261,8 @@ Isso torna a execução diária segura de repetir e o backfill seguro de re-roda
 | Evento sem anexo de notas | Cria esqueleto `#baby`. Não é erro. |
 | Doc inacessível (403/404) | Registra aviso com o ID do evento, cria `#baby`, **continua**. |
 | Falha de autenticação | Aborta imediatamente com código diferente de zero. |
-| Rate limit da API | Backoff exponencial, até 3 tentativas; depois falha a janela. |
+| Rate limit da API | **Sem retry.** O evento cai no mesmo caminho do Doc inacessível: vira esqueleto `#baby` e entra no resumo final. Re-rodar a janela conserta. |
+| Token expirado (janela > 1h) | **Sem refresh.** O token é cunhado uma vez, com validade de 1 hora; depois disso todo evento restante vira esqueleto silenciosamente. Backfill longo deve ser dividido em janelas menores. |
 | Vault indisponível | Aborta antes de processar qualquer evento. |
 
 Doc inacessível é o sinal mais importante do sistema: significa que a conta de captura não foi

@@ -41,6 +41,18 @@ function renderAttendees(event: NormalizedEvent): string {
     .join('\n');
 }
 
+/**
+ * The three literals below are shared with vault-writer, which decides whether a note is
+ * still an untouched skeleton by locating this section and comparing it to this callout.
+ * They must have exactly one definition or that guard silently stops guarding.
+ */
+export const TOPICS_HEADING = '### 📌 Topicos Discutidos:';
+export const ACTIONS_HEADING = '### ✅ Acoes e Proximos Passos:';
+export const NO_NOTES_CALLOUT = [
+  '> [!NOTE] Sem notas automaticas',
+  '> Este evento nao possui anotacoes do Gemini. Adicione suas notas manualmente abaixo.',
+].join('\n');
+
 function renderNextSteps(nextSteps: string[]): string {
   if (nextSteps.length === 0) return '_Nenhuma acao registrada._';
   return nextSteps
@@ -64,10 +76,7 @@ export function buildNoteContent(
         '',
         ...notes.details.map((d) => `- ${d}`),
       ].join('\n')
-    : [
-        '> [!NOTE] Sem notas automaticas',
-        '> Este evento nao possui anotacoes do Gemini. Adicione suas notas manualmente abaixo.',
-      ].join('\n');
+    : NO_NOTES_CALLOUT;
 
   const refs = [`- [Evento no Google Calendar](${event.htmlLink})`];
   for (const url of notes?.docUrls ?? []) {
@@ -92,10 +101,10 @@ export function buildNoteContent(
     '### 👥 Participantes:',
     renderAttendees(event),
     '',
-    '### 📌 Topicos Discutidos:',
+    TOPICS_HEADING,
     topics,
     '',
-    '### ✅ Acoes e Proximos Passos:',
+    ACTIONS_HEADING,
     renderNextSteps(notes?.nextSteps ?? []),
     '',
     '### 📂 Referencias e Anexos:',

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { decideNote, applyDecision } from '../../src/ingest/vault-writer.js';
+import { buildNoteContent } from '../../src/ingest/note-builder.js';
 import type { NormalizedEvent, GeminiNotes } from '../../src/ingest/types.js';
 
 const event: NormalizedEvent = {
@@ -19,15 +20,12 @@ const event: NormalizedEvent = {
 const notes: GeminiNotes = { summary: 'ok', nextSteps: [], details: ['d'], docUrls: ['u'] };
 const FOLDER = '7 - Meeting Notes';
 
-/** What the pipeline itself writes for an event with no Gemini notes yet. */
+/**
+ * What the pipeline itself writes for an event with no Gemini notes yet — built by the real
+ * generator, so the guard cannot drift away from the template it is supposed to recognize.
+ */
 const skeleton = (id: string, imported = '2026-07-15') =>
-  [
-    'Status: #baby',
-    `[imported:: ${imported}]`,
-    `[calendar_event_id:: ${id}]`,
-    '> [!NOTE] Sem notas automaticas',
-    '> Este evento nao possui anotacoes do Gemini. Adicione suas notas manualmente abaixo.',
-  ].join('\n');
+  buildNoteContent({ ...event, id }, null, imported);
 
 describe('decideNote', () => {
   it('creates when no note exists at the canonical path', async () => {
@@ -42,8 +40,10 @@ describe('decideNote', () => {
     expect((await decideNote(read, event, notes, FOLDER)).action).toBe('skip');
   });
 
-  it('complements an untouched skeleton once Gemini notes arrive', async () => {
-    const read = vi.fn().mockResolvedValue(skeleton('evt-1'));
+  // Round trip: real generator output fed straight back into the guard. This is what pins
+  // note-builder's template to vault-writer's notion of "untouched".
+  it('complements a skeleton the generator itself produced, once Gemini notes arrive', async () => {
+    const read = vi.fn().mockResolvedValue(buildNoteContent(event, null));
     const d = await decideNote(read, event, notes, FOLDER);
     expect(d.action).toBe('complement');
     if (d.action === 'complement') expect(d.content).toContain('Status: #child');
@@ -56,13 +56,13 @@ describe('decideNote', () => {
     else expect.fail(`expected complement, got ${d.action}`);
   });
 
-  it('skips a skeleton whose callout the user replaced with their own notes', async () => {
-    const edited = [
-      'Status: #baby',
-      '[calendar_event_id:: evt-1]',
-      '### 📌 Topicos Discutidos:',
-      'Decidimos adiar o corte da release para a proxima sprint.',
-    ].join('\n');
+  it('skips a skeleton the user typed into below the callout, as the callout instructs', async () => {
+    const edited = skeleton('evt-1').replace(
+      'manualmente abaixo.\n',
+      'manualmente abaixo.\n\nDecidimos adiar o corte da release para a proxima sprint.\n',
+    );
+    expect(edited).toContain('Sem notas automaticas');
+
     const read = vi.fn().mockResolvedValue(edited);
     const d = await decideNote(read, event, notes, FOLDER);
     expect(d.action).toBe('skip');
@@ -71,6 +71,24 @@ describe('decideNote', () => {
     const write = vi.fn();
     await applyDecision(write, d);
     expect(write).not.toHaveBeenCalled();
+  });
+
+  it('skips a skeleton whose callout the user replaced with their own notes', async () => {
+    const edited = skeleton('evt-1').replace(
+      /> \[!NOTE\][\s\S]*?abaixo\./,
+      'Decidimos adiar o corte da release para a proxima sprint.',
+    );
+    const read = vi.fn().mockResolvedValue(edited);
+    const d = await decideNote(read, event, notes, FOLDER);
+    expect(d.action).toBe('skip');
+    if (d.action === 'skip') expect(d.reason).toBe('skeleton was edited by hand');
+  });
+
+  it('skips a #baby note that has no topics section at all', async () => {
+    const read = vi.fn().mockResolvedValue('Status: #baby\n[calendar_event_id:: evt-1]\n');
+    const d = await decideNote(read, event, notes, FOLDER);
+    expect(d.action).toBe('skip');
+    if (d.action === 'skip') expect(d.reason).toBe('skeleton was edited by hand');
   });
 
   it('does not treat a Gemini body mentioning the status marker as a skeleton', async () => {

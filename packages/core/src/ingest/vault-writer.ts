@@ -1,5 +1,11 @@
 import type { GeminiNotes, NormalizedEvent, NoteDecision } from './types.js';
-import { buildNoteFilename, buildNoteContent } from './note-builder.js';
+import {
+  buildNoteFilename,
+  buildNoteContent,
+  TOPICS_HEADING,
+  ACTIONS_HEADING,
+  NO_NOTES_CALLOUT,
+} from './note-builder.js';
 
 export type ReadFile = (path: string) => Promise<string | null>;
 export type WriteFile = (path: string, content: string) => Promise<void>;
@@ -10,6 +16,18 @@ function eventIdOf(content: string): string | null {
 
 function importedDateOf(content: string): string | undefined {
   return content.match(/\[imported::\s*([^\]]+)\]/)?.[1]?.trim();
+}
+
+/**
+ * True only for a skeleton whose topics section still holds the callout and nothing else.
+ * The callout tells the reader to type *below* it, so its mere presence proves nothing —
+ * the section has to be otherwise empty for a full-file overwrite to be safe.
+ */
+function isUntouchedSkeleton(content: string): boolean {
+  const start = content.indexOf(TOPICS_HEADING);
+  const end = content.indexOf(ACTIONS_HEADING);
+  if (start === -1 || end <= start) return false;
+  return content.slice(start + TOPICS_HEADING.length, end).trim() === NO_NOTES_CALLOUT;
 }
 
 export async function decideNote(
@@ -38,9 +56,7 @@ export async function decideNote(
   }
 
   const isSkeleton = /^Status: #baby$/m.test(existing);
-  // The skeleton invites the reader to type their own notes into it, so only one that
-  // still carries the untouched "no notes" callout may be overwritten wholesale.
-  if (isSkeleton && !existing.includes('Sem notas automaticas')) {
+  if (isSkeleton && !isUntouchedSkeleton(existing)) {
     return { action: 'skip', path, reason: 'skeleton was edited by hand' };
   }
   if (isSkeleton && notes) {

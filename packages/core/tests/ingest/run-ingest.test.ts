@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { runIngest } from '../../src/scripts/ingest-calendar.js';
 import { createTokenResolver } from '../../src/ingest/token-resolver.js';
+import { buildNoteContent } from '../../src/ingest/note-builder.js';
 import type { IngestConfig } from '../../src/ingest/types.js';
 
 const FOLDER = 'Meetings';
@@ -60,8 +61,24 @@ const exportDoc = vi.fn(async (fileId: string) => {
 const resolver = createTokenResolver(config, vi.fn(async () => 'tok'));
 const exportDocAs = () => exportDoc;
 
+/** Built by the real generator so it stays recognizable to vault-writer's untouched check. */
 const skeleton = (id: string) =>
-  `Status: #baby\n[calendar_event_id:: ${id}]\n> [!NOTE] Sem notas automaticas\n`;
+  buildNoteContent(
+    {
+      id,
+      summary: 'Weekly',
+      start: '2026-07-15T09:00:00-03:00',
+      end: '2026-07-15T10:00:00-03:00',
+      htmlLink: `https://calendar.example/${id}`,
+      organizerEmail: 'owner@example.com',
+      calendarId: 'cal-a',
+      calendarLabel: 'Alpha',
+      attendees: [],
+      attachments: [],
+      attendance: 'accepted',
+    },
+    null,
+  );
 const enriched = (id: string) => `Status: #child\n[calendar_event_id:: ${id}]\n`;
 
 describe('runIngest', () => {

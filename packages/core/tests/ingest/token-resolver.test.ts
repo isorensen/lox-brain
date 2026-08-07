@@ -26,6 +26,12 @@ describe('subjectsFor', () => {
     expect(r.subjectsFor(stranger)).toEqual(['capture@example.com']);
   });
 
+  it('normalizes the casing an allowlisted organizer arrived with', () => {
+    const r = createTokenResolver(config, vi.fn());
+    const shouty = { organizerEmail: 'Owner@Example.com' } as NormalizedEvent;
+    expect(r.subjectsFor(shouty)).toEqual(['capture@example.com', 'owner@example.com']);
+  });
+
   it('omits an event with no organizer', () => {
     const r = createTokenResolver(config, vi.fn());
     const orphan = { organizerEmail: '' } as NormalizedEvent;
@@ -46,6 +52,18 @@ describe('tokenFor', () => {
     await r.tokenFor('capture@example.com');
     await r.tokenFor('capture@example.com');
     expect(mint).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries a subject whose mint failed instead of caching the rejection', async () => {
+    const mint = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('transient network failure'))
+      .mockResolvedValue('tok');
+    const r = createTokenResolver(config, mint);
+
+    await expect(r.tokenFor('owner@example.com')).rejects.toThrow('transient network failure');
+    await expect(r.tokenFor('owner@example.com')).resolves.toBe('tok');
+    expect(mint).toHaveBeenCalledTimes(2);
   });
 
   it('mints separately for different subjects', async () => {

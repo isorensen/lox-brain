@@ -25,7 +25,8 @@ export function createTokenResolver(config: IngestConfig, mint: MintToken): Toke
         organizer !== config.impersonateSubject.toLowerCase() &&
         allowlist.has(organizer)
       ) {
-        subjects.push(event.organizerEmail);
+        // Normalized, so one mailbox is one cache key however the payload cased it.
+        subjects.push(organizer);
       }
       return subjects;
     },
@@ -33,7 +34,13 @@ export function createTokenResolver(config: IngestConfig, mint: MintToken): Toke
     tokenFor(subject: string): Promise<string> {
       let pending = cache.get(subject);
       if (!pending) {
-        pending = mint(subject);
+        // A rejected promise must not stay cached: during a backfill the same
+        // organizer recurs across events, and one transient failure would
+        // otherwise poison every later event for that subject.
+        pending = mint(subject).catch((err: unknown) => {
+          cache.delete(subject);
+          throw err;
+        });
         cache.set(subject, pending);
       }
       return pending;

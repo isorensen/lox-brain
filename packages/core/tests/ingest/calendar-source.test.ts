@@ -107,4 +107,36 @@ describe('listEvents', () => {
     expect(event.start).toBe('2026-07-15T00:00:00');
     expect(event.end).toBe('2026-07-16T00:00:00');
   });
+
+  it('breaks pagination instead of looping forever when the token does not advance', async () => {
+    const CALL_LIMIT = 10;
+    let calls = 0;
+    const fetchPage = vi.fn(async () => {
+      calls += 1;
+      if (calls > CALL_LIMIT) throw new Error(`fetchPage exceeded ${CALL_LIMIT} calls — pagination guard regressed`);
+      return page([rawEvent], 'stuck-tok');
+    });
+    const events = await listEvents(fetchPage, cal, '2026-07-01', '2026-08-01', 'capture@example.com');
+    // The stuck token is only detected after the second identical page is fetched,
+    // so two calls happen before the guard breaks the loop.
+    expect(calls).toBe(2);
+    expect(events.map((e) => e.id)).toEqual(['evt-1', 'evt-1']);
+  });
+
+  it('matches the capture account against attendees case-insensitively', async () => {
+    const invited = {
+      ...rawEvent,
+      attendees: [...rawEvent.attendees, { email: 'Capture@Example.com', responseStatus: 'declined' }],
+    };
+    const fetchPage = vi.fn().mockResolvedValue(page([invited]));
+    const [event] = await listEvents(fetchPage, cal, '2026-07-01', '2026-08-01', 'capture@example.com');
+    expect(event.attendance).toBe('declined');
+  });
+
+  it('retains a timed event with no attendees', async () => {
+    const solo = { ...rawEvent, id: 'solo-1', attendees: [] };
+    const fetchPage = vi.fn().mockResolvedValue(page([solo]));
+    const events = await listEvents(fetchPage, cal, '2026-07-01', '2026-08-01', 'capture@example.com');
+    expect(events.map((e) => e.id)).toEqual(['solo-1']);
+  });
 });

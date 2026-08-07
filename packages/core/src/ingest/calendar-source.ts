@@ -57,7 +57,10 @@ export async function listEvents(
         attendance: resolveAttendance(attendees, captureAccount),
       });
     }
+    const previousToken = pageToken;
     pageToken = page.nextPageToken;
+    // Guard against a stuck API returning the same token forever.
+    if (pageToken && pageToken === previousToken) break;
   } while (pageToken);
 
   return events;

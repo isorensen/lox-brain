@@ -45,6 +45,11 @@ describe('buildNoteFilename', () => {
     const e = { ...base, summary: 'Retrospectiva Ágil', calendarLabel: '' };
     expect(buildNoteFilename(e)).toBe('2026-07-15 Retrospectiva Ágil.md');
   });
+
+  it('falls back to a placeholder title when summary is empty', () => {
+    expect(buildNoteFilename({ ...base, summary: '' }))
+      .toBe('2026-07-15 Sem titulo - Alpha.md');
+  });
 });
 
 describe('buildNoteContent', () => {
@@ -72,5 +77,50 @@ describe('buildNoteContent', () => {
     const md = buildNoteContent(base, null);
     expect(md).toContain('[[Ana Lima]] ✅ (organizador)');
     expect(md).toContain('[[Bo Reis]] ❌');
+  });
+
+  it('renders a placeholder when there are no attendees', () => {
+    const md = buildNoteContent({ ...base, attendees: [] }, null);
+    expect(md).toContain('_Sem participantes registrados._');
+  });
+
+  it('derives a display name from the email local-part when displayName is missing', () => {
+    const e = {
+      ...base,
+      attendees: [{ email: 'carlos.gomes@example.com', responseStatus: 'accepted' }],
+    };
+    const md = buildNoteContent(e, null);
+    expect(md).toContain('[[carlos gomes]] ✅');
+  });
+
+  it('falls back to the pending icon when responseStatus is missing, and uses the question mark for tentative', () => {
+    const e = {
+      ...base,
+      attendees: [
+        { email: 'xena@example.com', displayName: 'Xena Silva', responseStatus: 'tentative' },
+        { email: 'yara@example.com', displayName: 'Yara Melo' },
+      ],
+    };
+    const md = buildNoteContent(e, null);
+    expect(md).toContain('[[Xena Silva]] ❓');
+    expect(md).toContain('[[Yara Melo]] ⏳');
+  });
+
+  it('renders a next step verbatim, with no responsible field, when it has no [Name] marker', () => {
+    const notesNoMarker: GeminiNotes = {
+      summary: 'x',
+      nextSteps: ['Just do it'],
+      details: [],
+      docUrls: [],
+    };
+    const md = buildNoteContent(base, notesNoMarker);
+    expect(md).toContain('- [ ] Just do it');
+    expect(md).not.toContain('[responsible::');
+  });
+
+  it('omits the squad tag when the calendar label is empty', () => {
+    const md = buildNoteContent({ ...base, calendarLabel: '' }, null);
+    const tagsLine = md.split('\n').find((line) => line.startsWith('Tags:'));
+    expect(tagsLine).toBe('Tags: [[meeting]]');
   });
 });

@@ -6,6 +6,7 @@ import {
   extractFileId,
   parseGeminiDoc,
   fetchNotes,
+  describeFetchError,
 } from '../../src/ingest/gemini-doc.js';
 import type { NormalizedEvent } from '../../src/ingest/types.js';
 
@@ -141,4 +142,110 @@ describe('fetchNotes', () => {
     expect(await fetchNotes(exportDoc, e, PATTERNS)).toEqual({ notes: null, errors: [] });
     expect(exportDoc).not.toHaveBeenCalled();
   });
+
+  it('reduces a pretty-printed Google API error envelope to one short line', async () => {
+    const envelope = JSON.stringify(
+      {
+        error: {
+          code: 404,
+          message: 'File not found: 9zZ1FakeFileIdForTestingPurposesOnlyAbc123.',
+          errors: [
+            {
+              message: 'File not found: 9zZ1FakeFileIdForTestingPurposesOnlyAbc123.',
+              domain: 'global',
+              reason: 'notFound',
+            },
+          ],
+        },
+      },
+      null,
+      2,
+    );
+    const exportDoc = vi.fn().mockRejectedValue(new Error(envelope));
+    const { errors } = await fetchNotes(exportDoc, event, PATTERNS);
+    expect(errors).toHaveLength(1);
+    expect(errors[0].split('\n')).toHaveLength(1);
+    expect(errors[0].length).toBeLessThan(120);
+  });
 });
+
+describe('describeFetchError', () => {
+  it('reduces a Google API 404 envelope to "<code> <message>" on one line', () => {
+    const envelope = JSON.stringify(
+      {
+        error: {
+          code: 404,
+          message: 'File not found: 9zZ1FakeFileIdForTestingPurposesOnlyAbc123.',
+          errors: [{ message: 'File not found', domain: 'global', reason: 'notFound' }],
+        },
+      },
+      null,
+      2,
+    );
+    const line = describeFetchError(new Error(envelope));
+    expect(line).toContain('404');
+    expect(line).toContain('File not found');
+    expect(line.split('\n')).toHaveLength(1);
+  });
+
+  it('accepts an envelope thrown as a plain object, not wrapped in an Error', () => {
+    const line = describeFetchError({ code: 403, message: 'Caller does not have permission' });
+    expect(line).toBe('403 Caller does not have permission');
+  });
+
+  for (const token of ['unauthorized_client', 'invalid_grant', 'SERVICE_DISABLED']) {
+    it(`keeps the "${token}" token visible for an OAuth/delegation failure`, () => {
+      expect(describeFetchError(new Error(token))).toContain(token);
+    });
+  }
+
+  it('reduces a plain Error to its single-lined, trimmed message', () => {
+    expect(describeFetchError(new Error('403 caller does not have permission'))).toBe(
+      '403 caller does not have permission',
+    );
+  });
+
+  it('collapses a multi-line message to exactly one line', () => {
+    const line = describeFetchError(new Error('line one\nline two\nline three'));
+    expect(line.split('\n')).toHaveLength(1);
+    expect(line).toBe('line one line two line three');
+  });
+
+  it('stringifies a non-Error rejection, single-lined', () => {
+    expect(describeFetchError('quota exceeded')).toBe('quota exceeded');
+  });
+
+  it('truncates an unreasonably long message rather than let it dominate the report', () => {
+    const line = describeFetchError(new Error('x'.repeat(500)));
+    expect(line.length).toBeLessThan(120);
+  });
+
+  it('falls back to the plain message when a brace-prefixed string is not valid JSON', () => {
+    expect(describeFetchError(new Error('{ not actually json'))).toBe('{ not actually json');
+  });
+
+  it('falls back to the raw text when a nested envelope has no message field', () => {
+    const raw = JSON.stringify({ error: { code: 500 } });
+    expect(describeFetchError(new Error(raw))).toBe(singleLineForTest(raw));
+  });
+
+  it('formats a string status code without altering it', () => {
+    expect(
+      describeFetchError({ code: 'RESOURCE_EXHAUSTED', message: 'Quota exceeded' }),
+    ).toBe('RESOURCE_EXHAUSTED Quota exceeded');
+  });
+
+  it('omits the prefix when a nested envelope carries no code', () => {
+    const raw = JSON.stringify({ error: { message: 'Something broke upstream' } });
+    expect(describeFetchError(new Error(raw))).toBe('Something broke upstream');
+  });
+
+  it('falls back to the bare token when truncation would cut it off', () => {
+    const raw = `${'a'.repeat(90)} invalid_grant`;
+    expect(describeFetchError(new Error(raw))).toBe('invalid_grant');
+  });
+});
+
+function singleLineForTest(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}

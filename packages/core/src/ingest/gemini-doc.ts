@@ -50,6 +50,72 @@ export interface FetchNotesResult {
   errors: string[];
 }
 
+/** Delegation errors (unauthorized_client, invalid_grant, SERVICE_DISABLED) mean the
+ * capture account's domain-wide delegation is misconfigured, not that it lacks an
+ * invite — the run summary tells operators to look for these exact tokens. */
+const OAUTH_ERROR_TOKENS = ['unauthorized_client', 'invalid_grant', 'SERVICE_DISABLED'];
+
+const MAX_REPORT_LINE_LENGTH = 100;
+
+function singleLine(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+function truncate(text: string, max = MAX_REPORT_LINE_LENGTH): string {
+  return text.length > max ? `${text.slice(0, max).trimEnd()}…` : text;
+}
+
+interface GoogleApiEnvelope {
+  code?: string | number;
+  message: string;
+}
+
+function extractEnvelope(candidate: unknown): GoogleApiEnvelope | null {
+  if (typeof candidate !== 'object' || candidate === null) return null;
+  const obj = candidate as Record<string, unknown>;
+  const nested = typeof obj.error === 'object' && obj.error !== null;
+  const inner = nested ? (obj.error as Record<string, unknown>) : obj;
+  if (typeof inner.message !== 'string') return null;
+  // Nesting under "error" is itself the Google API envelope signal; for an unwrapped
+  // object, require .code or .errors[] so a plain Error (message + stack) is not misread.
+  if (!nested && inner.code === undefined && !Array.isArray(inner.errors)) return null;
+  const code = typeof inner.code === 'number' || typeof inner.code === 'string' ? inner.code : undefined;
+  return { code, message: inner.message };
+}
+
+function parseGoogleApiEnvelope(value: unknown): GoogleApiEnvelope | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed.startsWith('{')) return null;
+    try {
+      return extractEnvelope(JSON.parse(trimmed));
+    } catch {
+      return null;
+    }
+  }
+  return extractEnvelope(value);
+}
+
+/** Reduces a thrown value to one short, actionable line for the run's end-of-run report. */
+export function describeFetchError(err: unknown): string {
+  const envelope =
+    (err instanceof Error ? parseGoogleApiEnvelope(err.message) : null) ?? parseGoogleApiEnvelope(err);
+  if (envelope) {
+    const prefix = envelope.code !== undefined ? `${envelope.code} ` : '';
+    return truncate(singleLine(`${prefix}${envelope.message}`));
+  }
+
+  const raw = err instanceof Error ? err.message : String(err);
+  for (const token of OAUTH_ERROR_TOKENS) {
+    if (raw.includes(token)) {
+      const line = truncate(singleLine(raw));
+      return line.includes(token) ? line : token;
+    }
+  }
+
+  return truncate(singleLine(raw));
+}
+
 export async function fetchNotes(
   exportDoc: ExportDoc,
   event: NormalizedEvent,
@@ -76,8 +142,8 @@ export async function fetchNotes(
       merged.details.push(...parsed.details);
     } catch (err) {
       // A Drive 403 and a broken domain-wide delegation both land here, and they
-      // call for opposite fixes, so keep the message rather than the fact alone.
-      errors.push(err instanceof Error ? err.message : String(err));
+      // call for opposite fixes, so keep the reason rather than the fact alone.
+      errors.push(describeFetchError(err));
     }
   }
 

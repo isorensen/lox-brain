@@ -1779,7 +1779,7 @@ Before opening the PR:
 
 - [ ] `npm run test --workspace=packages/core` — all green
 - [ ] `npm run test:coverage --workspace=packages/core` — ≥ 80%
-- [ ] `npx tsc --noEmit` — clean
+- [ ] Type check **per package**, not from the root: `cd packages/shared && npx tsc --noEmit` then the same in `packages/core`. There is no root `tsconfig.json` (only `tsconfig.base.json`), so `npx tsc --noEmit` at the repo root finds no input files, prints its help text and exits 0 — a false green that validates nothing. Build `shared` first, or `core` reports ~21 spurious missing-export errors.
 - [ ] `npm audit` — no new advisories from the three added dependencies
 - [ ] `git grep -nE '@[a-z0-9.-]+\.(com|br|org)|c_[a-z0-9]{15,}' -- ':!*.lock' | grep -v 'gemini-notes@google.com'` — no organization identifiers anywhere in the tree
 - [ ] `npm run ingest-calendar -- --from <recent> --to <recent+3d> --dry-run` — output matches the calendar

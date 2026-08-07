@@ -126,4 +126,19 @@ describe('fetchNotes', () => {
     const { errors } = await fetchNotes(exportDoc, event, PATTERNS);
     expect(errors).toEqual(['unauthorized_client']);
   });
+
+  it('stringifies a rejection that is not an Error', async () => {
+    const exportDoc = vi.fn().mockRejectedValue('quota exceeded');
+    const { errors } = await fetchNotes(exportDoc, event, PATTERNS);
+    expect(errors).toEqual(['quota exceeded']);
+  });
+
+  it('skips a matching attachment whose url is not a Docs url, with no error to report', async () => {
+    const e = {
+      attachments: [{ title: 'Anotações do Gemini', fileUrl: 'https://example.com/nope' }],
+    } as unknown as NormalizedEvent;
+    const exportDoc = vi.fn();
+    expect(await fetchNotes(exportDoc, e, PATTERNS)).toEqual({ notes: null, errors: [] });
+    expect(exportDoc).not.toHaveBeenCalled();
+  });
 });

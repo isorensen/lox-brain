@@ -247,6 +247,22 @@ describe('runIngest', () => {
     expect(authRun.inaccessible[0]).not.toEqual(driveRun.inaccessible[0]);
   });
 
+  it('reports a notes attachment that is not a Docs url, without inventing a cause', async () => {
+    const notADoc = { title: 'Notes by Gemini', fileUrl: 'https://example.com/attachment' };
+    const fetchPage = calendars({ 'cal-a': [rawEvent('evt-odd', 'Weekly', [notADoc])] });
+    const { readFile, writeFile } = vault();
+
+    const result = await runIngest(
+      { fetchPage, resolver, exportDocAs, readFile, writeFile },
+      config,
+      '2026-07-01',
+      '2026-08-01',
+      false,
+    );
+
+    expect(result.inaccessible).toEqual(['2026-07-15 Weekly — no exportable notes Doc']);
+  });
+
   it('does not report an event whose only attachment is not a notes Doc', async () => {
     const fetchPage = calendars({ 'cal-a': [rawEvent('evt-deck', 'All hands', [slideDeck])] });
     const { readFile, writeFile } = vault();

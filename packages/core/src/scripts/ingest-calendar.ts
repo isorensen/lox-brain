@@ -5,9 +5,15 @@ import { calendar as calendarApi } from '@googleapis/calendar';
 import { drive as driveApi } from '@googleapis/drive';
 import { loadIngestConfig } from '../ingest/config.js';
 import { getAccessToken } from '../ingest/auth.js';
-import { listEvents } from '../ingest/calendar-source.js';
-import { fetchNotes, findNoteAttachments } from '../ingest/gemini-doc.js';
-import { decideNote, applyDecision } from '../ingest/vault-writer.js';
+import { listEvents, type FetchPage } from '../ingest/calendar-source.js';
+import { fetchNotes, findNoteAttachments, type ExportDoc } from '../ingest/gemini-doc.js';
+import {
+  decideNote,
+  applyDecision,
+  type ReadFile,
+  type WriteFile,
+} from '../ingest/vault-writer.js';
+import type { IngestConfig, NoteDecision } from '../ingest/types.js';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -40,6 +46,58 @@ export function parseArgs(argv: string[]): { from: string; to: string; dryRun: b
   return { from, to, dryRun };
 }
 
+export interface IngestDeps {
+  fetchPage: FetchPage;
+  exportDoc: ExportDoc;
+  readFile: ReadFile;
+  writeFile: WriteFile;
+}
+
+export interface IngestResult {
+  created: number;
+  complemented: number;
+  skipped: number;
+  /** Events whose notes attachment could not be exported, as "YYYY-MM-DD Summary". */
+  inaccessible: string[];
+  decisions: NoteDecision[];
+}
+
+export async function runIngest(
+  deps: IngestDeps,
+  config: IngestConfig,
+  from: string,
+  to: string,
+  dryRun: boolean,
+): Promise<IngestResult> {
+  const result: IngestResult = {
+    created: 0,
+    complemented: 0,
+    skipped: 0,
+    inaccessible: [],
+    decisions: [],
+  };
+
+  for (const calendar of config.calendars) {
+    const events = await listEvents(deps.fetchPage, calendar, from, to, config.impersonateSubject);
+    for (const event of events) {
+      const notes = await fetchNotes(deps.exportDoc, event, config.noteAttachmentPatterns);
+      if (!notes && findNoteAttachments(event, config.noteAttachmentPatterns).length > 0) {
+        result.inaccessible.push(`${event.start.slice(0, 10)} ${event.summary}`);
+      }
+      const decision = await decideNote(deps.readFile, event, notes, config.notesFolder);
+      if (!dryRun) await applyDecision(deps.writeFile, decision);
+
+      if (decision.action === 'create') result.created += 1;
+      else if (decision.action === 'complement') result.complemented += 1;
+      else result.skipped += 1;
+
+      result.decisions.push(decision);
+    }
+  }
+
+  return result;
+}
+
 async function main(): Promise<void> {
   const { from, to, dryRun } = parseArgs(process.argv.slice(2));
   const configPath = join(homedir(), '.lox', 'config.json');
@@ -49,59 +107,58 @@ async function main(): Promise<void> {
   const cal = calendarApi({ version: 'v3', headers: { Authorization: `Bearer ${token}` } });
   const drv = driveApi({ version: 'v3', headers: { Authorization: `Bearer ${token}` } });
 
-  const fetchPage = async (calendarId: string, params: Record<string, string>) => {
-    const res = await cal.events.list({ calendarId, ...params } as never);
+  const fetchPage: FetchPage = async (calendarId, params) => {
+    const res = await cal.events.list({
+      calendarId,
+      timeMin: params.timeMin,
+      timeMax: params.timeMax,
+      orderBy: params.orderBy,
+      singleEvents: params.singleEvents === 'true',
+      maxResults: Number(params.maxResults),
+      pageToken: params.pageToken,
+    });
     return { items: res.data.items ?? [], nextPageToken: res.data.nextPageToken ?? undefined };
   };
-  const exportDoc = async (fileId: string): Promise<string> => {
+  const exportDoc: ExportDoc = async (fileId) => {
     const res = await drv.files.export({ fileId, mimeType: 'text/plain' }, { responseType: 'text' });
     return String(res.data);
   };
 
-  const readFile = async (rel: string): Promise<string | null> => {
+  const readFile: ReadFile = async (rel) => {
     try {
       return await fsReadFile(join(config.vaultPath, rel), 'utf8');
     } catch {
       return null;
     }
   };
-  const writeFile = async (rel: string, content: string): Promise<void> => {
+  const writeFile: WriteFile = async (rel, content) => {
     const abs = join(config.vaultPath, rel);
     await mkdir(dirname(abs), { recursive: true });
     await fsWriteFile(abs, content, 'utf8');
   };
 
-  const tally = { created: 0, complemented: 0, skipped: 0 };
-  const inaccessible: string[] = [];
+  const result = await runIngest(
+    { fetchPage, exportDoc, readFile, writeFile },
+    config,
+    from,
+    to,
+    dryRun,
+  );
 
-  for (const calendar of config.calendars) {
-    const events = await listEvents(fetchPage, calendar, from, to, config.impersonateSubject);
-    for (const event of events) {
-      const notes = await fetchNotes(exportDoc, event, config.noteAttachmentPatterns);
-      if (!notes && findNoteAttachments(event, config.noteAttachmentPatterns).length > 0) {
-        inaccessible.push(`${event.start.slice(0, 10)} ${event.summary}`);
-      }
-      const decision = await decideNote(readFile, event, notes, config.notesFolder);
-      if (!dryRun) await applyDecision(writeFile, decision);
-
-      if (decision.action === 'create') tally.created += 1;
-      else if (decision.action === 'complement') tally.complemented += 1;
-      else tally.skipped += 1;
-
-      console.log(`${dryRun ? '[dry-run] ' : ''}${decision.action.padEnd(11)} ${decision.path}`);
-    }
+  for (const decision of result.decisions) {
+    console.log(`${dryRun ? '[dry-run] ' : ''}${decision.action.padEnd(11)} ${decision.path}`);
   }
 
   console.log(
-    `\nIngest complete ${from}..${to} — created ${tally.created}, ` +
-      `complemented ${tally.complemented}, skipped ${tally.skipped}`,
+    `\nIngest complete ${from}..${to} — created ${result.created}, ` +
+      `complemented ${result.complemented}, skipped ${result.skipped}`,
   );
-  if (inaccessible.length > 0) {
+  if (result.inaccessible.length > 0) {
     console.log(
-      `\n${inaccessible.length} event(s) had a notes attachment we could not read — ` +
+      `\n${result.inaccessible.length} event(s) had a notes attachment we could not read — ` +
         'the capture account is probably not invited to those series:',
     );
-    for (const item of inaccessible) console.log(`  - ${item}`);
+    for (const item of result.inaccessible) console.log(`  - ${item}`);
   }
 }
 

@@ -193,6 +193,39 @@ describe('createTools', () => {
     });
   });
 
+  describe('search_semantic sort param', () => {
+    it('should forward sort to dbClient when provided', async () => {
+      const tools = createTools(dbClient, embeddingService, tempVaultPath);
+      const tool = tools.find((t) => t.name === 'search_semantic')!;
+
+      await tool.handler({ query: 'last retro', sort: 'recency' });
+
+      expect(dbClient.searchSemantic).toHaveBeenCalledWith(
+        expect.any(Array),
+        expect.objectContaining({ sort: 'recency' }),
+      );
+    });
+
+    it('should not force a sort when omitted', async () => {
+      const tools = createTools(dbClient, embeddingService, tempVaultPath);
+      const tool = tools.find((t) => t.name === 'search_semantic')!;
+
+      await tool.handler({ query: 'test' });
+
+      const [, options] = vi.mocked(dbClient.searchSemantic).mock.calls[0];
+      expect((options as Record<string, unknown>).sort).toBeUndefined();
+    });
+
+    it('should expose sort as an enum in inputSchema with recency guidance', () => {
+      const tools = createTools(dbClient, embeddingService, tempVaultPath);
+      const tool = tools.find((t) => t.name === 'search_semantic')!;
+      const sortProp = (tool.inputSchema as any).properties.sort;
+
+      expect(sortProp.enum).toEqual(['similarity', 'recency']);
+      expect(sortProp.description).toMatch(/recen|latest|last/i);
+    });
+  });
+
   describe('search_text handler', () => {
     it('should call dbClient.searchText with query and options', async () => {
       const mockPaginated = {

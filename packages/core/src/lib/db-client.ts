@@ -31,6 +31,21 @@ const RECENT_DEFAULTS: SearchOptions = {
 // can run.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * How many similarity-ranked rows to rerank by recency.
+ *
+ * Ten times the requested window so the newest relevant note survives the
+ * cut even when many near-identical notes crowd the top of the ranking —
+ * the failure mode this exists for (47 meeting notes, all a near-tie on
+ * cosine distance). The floor keeps small windows from reranking a pool too
+ * thin to contain that note: the default limit of 5 would otherwise look at
+ * 50 candidates. Deriving it from the window, rather than fixing it, is what
+ * keeps deep pages reachable.
+ */
+function candidatePoolSize(limit: number, offset: number): number {
+  return Math.max((limit + offset) * 10, 100);
+}
+
 export class DbClient {
   private readonly pool: Pool;
 
@@ -216,12 +231,35 @@ export class DbClient {
     }
   }
 
+  /**
+   * Semantic search over the vault.
+   *
+   * `sort: 'recency'` answers "which of the relevant notes is the latest?" —
+   * a question pure cosine ranking cannot answer at all. It runs in two
+   * stages: an inner query picks a candidate pool by similarity, the outer
+   * one reorders that pool by `updated_at`. It is deliberately NOT a plain
+   * `ORDER BY updated_at DESC` over the table, which would ignore the query.
+   *
+   * `total` keeps the same meaning in both modes — the number of rows
+   * matching the metadata filters, not the pool size. `COUNT(*) OVER()` sits
+   * inside the CTE, and Postgres evaluates window functions before that
+   * query level's `LIMIT`, so the pool cap does not truncate the count.
+   * Pagination stays reachable because the pool is derived from
+   * `limit + offset`, never a fixed constant. The one caveat of any
+   * oversample-then-rerank scheme: a deeper page widens the pool, so pages
+   * are not strict continuations of each other.
+   */
   async searchSemantic(
     embedding: number[],
     limitOrOptions: number | Partial<SearchOptions> = {},
   ): Promise<PaginatedResult<SearchResult>> {
     const opts = this.buildSearchOptions(limitOrOptions, SEMANTIC_DEFAULTS);
     if (opts.limit <= 0) throw new RangeError('limit must be a positive integer');
+
+    const sort = opts.sort ?? 'similarity';
+    if (sort !== 'similarity' && sort !== 'recency') {
+      throw new RangeError(`sort must be 'similarity' or 'recency', got: ${String(sort)}`);
+    }
 
     // $1 = embedding (vector), then dynamic params follow
     let paramIdx = 2;
@@ -231,19 +269,32 @@ export class DbClient {
     const filters = this.buildMetadataFilters(opts, paramIdx);
     paramIdx = filters.nextParamIndex;
 
+    const poolIdx = sort === 'recency' ? paramIdx++ : 0;
     const limitIdx = paramIdx++;
     const offsetIdx = paramIdx++;
 
     const whereClause = filters.clauses.length > 0 ? `WHERE ${filters.clauses.join(' AND ')}` : '';
 
-    const sql = `
+    const projection = `
       SELECT id, file_path, title, ${contentCol.sql}, tags,
              1 - (embedding <=> $1::vector) AS similarity,
              updated_at, created_by, area, source_type,
              COUNT(*) OVER() AS total_count
       FROM vault_embeddings
       ${whereClause}
-      ORDER BY embedding <=> $1::vector
+      ORDER BY embedding <=> $1::vector`;
+
+    const sql = sort === 'recency'
+      ? `
+      WITH candidates AS (${projection}
+      LIMIT $${poolIdx}
+      )
+      SELECT * FROM candidates
+      ORDER BY updated_at DESC, similarity DESC
+      LIMIT $${limitIdx}
+      OFFSET $${offsetIdx}
+    `
+      : `${projection}
       LIMIT $${limitIdx}
       OFFSET $${offsetIdx}
     `;
@@ -252,6 +303,7 @@ export class DbClient {
       JSON.stringify(embedding),
       ...contentCol.params,
       ...filters.params,
+      ...(sort === 'recency' ? [candidatePoolSize(opts.limit, opts.offset)] : []),
       opts.limit,
       opts.offset,
     ];

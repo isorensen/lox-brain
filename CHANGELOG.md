@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.17.0] — 2026-08-07
+
+### Added
+- **`search_semantic` accepts `sort: 'recency'` — "which of the relevant notes is the latest?" is now answerable.** Ranking was purely cosine distance, with no notion of date at all. Against a vault holding dozens of near-identical meeting notes, the similarity scores are effectively a tie, so *which* of them survives the `LIMIT` is arbitrary — and no client could ask for the most recent one. That already cost a production bug in the chat client; fixing it in the tool rather than in each caller keeps the next consumer out of the same trap. `'recency'` runs in two stages: an inner query picks a candidate pool by similarity, the outer one reorders that pool by `updated_at DESC` (ties broken by similarity) and applies `limit`/`offset`. It is deliberately **not** `ORDER BY updated_at DESC` over the table, which would return the newest notes regardless of the query. The pool is `max((limit + offset) * 10, 100)` rows — an order of magnitude of headroom so the newest relevant note survives the cut, floored so that the default limit of 5 reranks 100 candidates rather than 50. Deriving the pool from the requested window instead of fixing it is what keeps deep pages reachable.
+
+  `total` keeps the same meaning in both modes — the number of rows matching the metadata filters, never the pool size. `COUNT(*) OVER()` sits inside the pool CTE, and Postgres evaluates window functions before that query level's `LIMIT`, so the pool cap does not silently truncate the count and break pagination. The one caveat inherent to any oversample-then-rerank scheme: a deeper page widens the pool, so pages are not strict continuations of each other. The `sort` value is validated against the two literals before any SQL is built (it never reaches the query text; the pool size is a bound parameter). Omitting `sort` is fully backward compatible — the emitted SQL and parameters are byte-identical to the previous behavior, which is asserted by a test.
+
 ## [0.16.0] — 2026-08-07
 
 ### Added

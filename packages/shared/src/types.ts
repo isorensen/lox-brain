@@ -21,6 +21,8 @@ export interface NoteRow {
   source_type?: string | null;
 }
 
+export type SearchSort = 'similarity' | 'recency';
+
 export interface SearchOptions {
   limit: number;
   offset: number;
@@ -28,6 +30,10 @@ export interface SearchOptions {
   contentPreviewLength: number; // 0 = full content, >0 = truncate at N chars
   area?: string;
   source_type?: string;
+  // Semantic search only. 'similarity' (default) ranks purely by cosine
+  // distance; 'recency' reranks a similarity-selected candidate pool by
+  // updated_at. See DbClient.searchSemantic.
+  sort?: SearchSort;
 }
 
 export interface PaginatedResult<T> {

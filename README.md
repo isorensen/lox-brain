@@ -51,6 +51,7 @@ Claude Code --VPN--> MCP Server --> tools
 - **Git sync** between local vault and VM (bidirectional, 2-min cron)
 - **Claude Skills** shipped out of the box (`/zettelkasten`, more coming) for day-one workflows
 - **CI/CD** via GitHub Actions (build, test, deploy over IAP tunnel)
+- **[Calendar ingest](docs/calendar-ingest.md)** -- captures Gemini meeting notes from Google Calendar ceremonies into vault notes, via a keyless domain-wide-delegation service account
 
 ## Quick Start
 

@@ -16,6 +16,14 @@
 
 ## Future Integrations
 
+### Meeting recording transcription (extends calendar ingest)
+- **Priority:** Medium
+- **Complexity:** Medium-High
+- The calendar ingest pipeline reads Gemini meeting notes from Google Docs, which only exist from mid-2025 onward. Meet **recordings** predate them by years and sit on the same calendar events as attachments, so they are the only route to the earlier history.
+- Deliverables to scope: detect recording attachments alongside notes docs, download via Drive, transcribe, and feed the result through the existing `note-builder` so transcribed meetings land in the vault in the same shape as Gemini-sourced ones.
+- Open questions: which transcription service, cost per hour of audio, whether speaker diarization is worth it, and how to mark a transcribed note as lower-confidence than a Gemini-summarized one.
+- See `docs/superpowers/specs/2026-08-07-calendar-ingest-service-account-design.md` (listed there as an explicit non-goal, with the reasoning).
+
 ### Claude Code Skills examples (bundle with the project)
 - **Priority:** Medium
 - **Complexity:** Low-Medium

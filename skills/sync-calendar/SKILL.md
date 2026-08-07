@@ -84,10 +84,10 @@ For multi-day ranges, make a single call per calendar spanning the full range (n
 Remove events that should not become notes:
 
 1. **Skip `workingLocation` events** — these are "working from home/office" status entries, not real meetings
-2. **Skip declined events** — where `myResponseStatus === "declined"`
-3. **Skip optional events without response** — where `myResponseStatus === "needsAction"` AND the user is marked `optional: true`
-4. **Skip all-day events without attendees** — typically holidays, OOO markers, reminders
-5. **Skip `birthday` events** — contact birthday reminders from Google Contacts (`eventType === "birthday"`)
+2. **Skip all-day events without attendees** — typically holidays, OOO markers, reminders
+3. **Skip `birthday` events** — contact birthday reminders from Google Contacts (`eventType === "birthday"`)
+
+**Record attendance instead of discarding.** Do not skip declined or unanswered events — they are still meetings that happened and may carry Gemini notes worth reading. Emit `[attendance:: <status>]` in the Dataview block, where `<status>` is `accepted`, `declined`, `tentative`, `none` (invited, never answered) or `observer` (not in the attendee list at all). This makes "what happened without me" a Dataview query.
 
 **Do NOT skip solo events (no attendees, not all-day).** Personal appointments are valid notes. Tag them appropriately (e.g., `[[personal]]`, `[[health]]`, `[[fitness]]`).
 
@@ -195,6 +195,7 @@ Tags: [[meeting]] [[calendar-label-tag]] [[meeting-type-tag]] [[gemini-notes]]
 [imported:: YYYY-MM-DD]
 [calendar_event_id:: <event id>]
 [calendar_source:: <calendar label>]
+[attendance:: <status>]
 
 # <emoji> YYYY-MM-DD <emoji> HH:MM
 
@@ -261,6 +262,7 @@ Tags: [[personal]] [[relevant-tag]]
 [imported:: YYYY-MM-DD]
 [calendar_event_id:: <event id>]
 [calendar_source:: <calendar label>]
+[attendance:: <status>]
 
 # <emoji> YYYY-MM-DD <emoji> HH:MM — <Event Title>
 

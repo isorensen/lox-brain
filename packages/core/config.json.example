@@ -1,0 +1,15 @@
+// Copy to ~/.lox/config.json and fill in. Never commit the filled version.
+{
+  "calendar_ingest": {
+    "impersonate_subject": "<capture-account>@<domain>",
+    "service_account": "<sa-name>@<project>.iam.gserviceaccount.com",
+    "notes_folder": "7 - Meeting Notes",
+    "vault_path": "/home/<user>/obsidian",
+    "organizer_allowlist": ["<organizer>@<domain>"],
+    "note_attachment_patterns": ["anotações do gemini", "notes by gemini"],
+    "calendars": [
+      { "id": "<calendar-id>", "label": "<squad-label>" },
+      { "id": "<calendar-id>", "label": "" }
+    ]
+  }
+}

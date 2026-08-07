@@ -121,7 +121,11 @@ cp packages/core/config.json.example ~/.lox/config.json
     "notes_folder": "7 - Meeting Notes",
     "vault_path": "/home/<user>/obsidian",
     "organizer_allowlist": ["<organizer>@<domain>"],
-    "note_attachment_patterns": ["anotações do gemini", "notes by gemini"],
+    "note_attachment_patterns": [
+      "anotações do gemini",
+      "anotacoes do gemini",
+      "notes by gemini"
+    ],
     "calendars": [
       { "id": "<calendar-id>", "label": "<squad-label>" },
       { "id": "<calendar-id>", "label": "" }
@@ -137,8 +141,25 @@ Field notes:
 - `service_account` — the service account created above.
 - `notes_folder` — vault-relative folder new meeting notes are written to.
 - `vault_path` — absolute path to the vault on the machine running the job.
-- `organizer_allowlist` — accounts the backfill may treat as the event
-  organizer when resolving ownership.
+  **If you run this under the systemd unit below, this value must match the
+  unit's `ReadWritePaths` exactly.** The loader does not validate or cross-check
+  it against the unit file — nothing will warn you if they diverge. The unit
+  runs with `ProtectSystem=strict`, which makes the entire filesystem
+  read-only except the paths listed in `ReadWritePaths`, so if `vault_path`
+  points anywhere else, every note write fails. When you install the unit
+  (see "Running as a systemd timer" below), edit its `ReadWritePaths` line to
+  match your `vault_path`, not the other way around.
+- `organizer_allowlist` — a security boundary, not a convenience list. By
+  default the pipeline only ever impersonates `impersonate_subject` (the
+  capture account). An event's `organizer` field is not something you fully
+  control — on a shared calendar it reflects whoever created that event — so
+  the pipeline does not impersonate it automatically. It falls back to
+  impersonating the organizer, for that one event, **only** when the
+  organizer's e-mail is explicitly listed here; an organizer not on the list
+  is never impersonated, and if the capture account also can't read the
+  notes, the event degrades to a skeleton note (see Troubleshooting). Add an
+  organizer here only when the ceremony's notes genuinely require it — most
+  setups can leave this empty.
 - `note_attachment_patterns` — lowercase substrings matched against
   attachment titles to identify the Gemini notes Doc (locale-dependent;
   add your organization's variant if it differs).
@@ -206,6 +227,17 @@ If a series produces no note at all and doesn't show up in that list
 either, check the event has a Gemini notes attachment whose title matches
 one of `note_attachment_patterns` — Gemini's default attachment title is
 locale-dependent.
+
+If the run fails on the **first note it tries to write**, with a permission
+or read-only-filesystem error — even though `vault_path` looks correct and
+the directory is writable when you `touch` a file there by hand — suspect a
+mismatch between `vault_path` in the config and `ReadWritePaths` in the
+systemd unit. `ProtectSystem=strict` makes everything outside
+`ReadWritePaths` read-only from the unit's perspective regardless of the
+directory's real permissions, so a manual write test as your own user will
+succeed while the unit's write still fails. Check
+`systemctl cat lox-calendar-ingest.service` and confirm `ReadWritePaths`
+matches `vault_path` byte for byte.
 
 ## Running as a systemd timer
 

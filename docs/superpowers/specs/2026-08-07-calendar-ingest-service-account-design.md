@@ -53,6 +53,19 @@ Levantamento feito em 01/06/2026–06/08/2026 sobre três calendários de engenh
 5. **O nome da squad no evento é instável.** O `organizer.displayName` do mesmo calendário
    aparece com três variações diferentes ao longo do período. Não serve como chave.
 
+6. **O histórico começa em meados de 2025, não antes.** Amostragem trimestral de jan/2025 a
+   abr/2026 mostra zero notas do Gemini em jan/2025 e abr/2025 nos três calendários — só
+   anexos de gravação em vídeo. A primeira nota aparece em **jun/2025**; os outros dois
+   calendários entram em jul/2025 e out/2025. O volume total da carga retroativa fica entre
+   **70 e 85 eventos** (jun/2025 a ago/2026), concentrado nas cerimônias quinzenais e não nas
+   dailies. É um volume pequeno: cabe numa única execução, sem particionamento.
+
+7. **O título do anexo de notas varia.** Foram observadas ao menos três formas: `Anotações do
+   Gemini`, o mesmo texto precedido de nome e data da reunião, e `Notes by Gemini` em inglês.
+   Casar por igualdade exata perde eventos — foi o que aconteceu na primeira contagem de um
+   dos calendários. O matching deve ser por substring case-insensitive cobrindo as variantes
+   em português e inglês.
+
 ## Goals
 
 - Ingerir todas as cerimônias dos calendários de engenharia configurados, com ou sem notas do
@@ -64,8 +77,11 @@ Levantamento feito em 01/06/2026–06/08/2026 sobre três calendários de engenh
 
 ## Non-Goals
 
-- Ingerir gravações em vídeo ou transcrição de chat do Meet (existem em um dos calendários;
-  ficam como follow-up se houver demanda).
+- Ingerir gravações em vídeo ou transcrição de chat do Meet. Elas existem nos três calendários
+  e são bem mais antigas que as notas do Gemini — há gravações desde 2025 e antes, período em
+  que não há nota nenhuma. Transcrevê-las é a **única** via para cobrir o histórico anterior a
+  jun/2025, mas é outro projeto: exige serviço de transcrição, tem custo por hora de áudio e
+  qualidade bem inferior à nota estruturada do Gemini. Fica como follow-up explícito.
 - Resumir ou reescrever conteúdo com LLM. O Gemini já entrega o Doc estruturado; a conversão
   é mecânica e determinística.
 - Substituir a skill `sync-calendar` no modo pessoal. Ela continua como está, com uma alteração
@@ -213,8 +229,14 @@ O Doc do Gemini já vem seccionado em **Resumo**, **Próximas etapas** e **Detal
 `note-builder` mapeia essas seções para o template existente sem reescrever texto. Itens de
 próxima etapa viram checkboxes com `[responsible::]` quando o Gemini nomeia o responsável.
 
-Eventos podem ter **mais de um** anexo de notas (observado quando a reunião é reiniciada). O
-ingestor concatena todos, na ordem em que aparecem, sob subtítulos.
+Eventos podem ter **mais de um** anexo de notas — foi observado um evento com quatro. O
+ingestor concatena todos, na ordem em que aparecem, sob subtítulos. Por isso o número de
+documentos a exportar fica cerca de 15–20% acima do número de eventos.
+
+A identificação do anexo é por **substring case-insensitive**, cobrindo as variantes conhecidas
+(`anotações do gemini`, `notes by gemini`), porque o título vem com prefixos variáveis e às
+vezes em inglês (descoberta 7). A lista de padrões é configurável, para que outros idiomas
+possam ser adicionados sem alterar código.
 
 ## Idempotência
 
@@ -275,8 +297,17 @@ As fases são sequenciais e cada uma é verificável isoladamente.
 | 1 | Convidar a conta de captura às séries | Ela recebe e-mail do Gemini e abre o Doc |
 | 2 | Criar SA, habilitar DWD com os dois escopos readonly | Script lista eventos e exporta um Doc |
 | 3 | Ingestor com `--dry-run` numa janela de 3 dias | Saída bate com o calendário |
-| 4 | Backfill de 30–60 dias | Notas criadas, sem duplicatas ao re-rodar |
+| 4 | Backfill de jun/2025 até hoje | Notas criadas, sem duplicatas ao re-rodar |
 | 5 | Timer diário no vault de time | Execução automática por uma semana |
+
+O backfill cobre **jun/2025 em diante** porque antes disso não existem notas do Gemini nesses
+calendários (descoberta 6). São 70–85 eventos, volume que roda de uma vez.
+
+O backfill precisa impersonar quem era convidado à época, e o organizador varia entre séries.
+Em vez de fixar uma conta, ele impersona o `organizer.email` de cada evento, restrito a uma
+allowlist na configuração. Isso evita lacunas sem precisar mapear manualmente quem participou
+de quê. A allowlist é o limite: uma conta fora dela faz o evento ser pulado com aviso, nunca
+uma impersonação silenciosa.
 
 A fase 1 é o gate real: se a conta de captura não receber as notas, nada adiante funciona.
 Vale validar em **uma única série** antes de editar todas — a Sprint Review é boa candidata

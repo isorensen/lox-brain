@@ -1,4 +1,10 @@
-import { readFile as fsReadFile, writeFile as fsWriteFile, mkdir } from 'node:fs/promises';
+import {
+  readFile as fsReadFile,
+  writeFile as fsWriteFile,
+  mkdir,
+  stat,
+  unlink,
+} from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { calendar as calendarApi } from '@googleapis/calendar';
@@ -115,14 +121,29 @@ export async function runIngest(
   return result;
 }
 
+/**
+ * Prove the vault is writable before spending any API call on a run whose every write would
+ * fail — and whose decision log would be lost with the throw. A recursive mkdir is not enough
+ * on its own: it resolves for a directory that already exists, so it would pass on every run
+ * but the first, and it would silently create a vault that is merely unmounted.
+ */
+export async function assertVaultWritable(config: IngestConfig): Promise<void> {
+  await stat(config.vaultPath);
+  const folder = join(config.vaultPath, config.notesFolder);
+  await mkdir(folder, { recursive: true });
+  // Dotfile so the vault watcher ignores it; pid-suffixed so a backfill overlapping the
+  // timer cannot unlink the other run's probe.
+  const probe = join(folder, `.lox-write-probe-${process.pid}`);
+  await fsWriteFile(probe, '', 'utf8');
+  await unlink(probe);
+}
+
 async function main(): Promise<void> {
   const { from, to, dryRun } = parseArgs(process.argv.slice(2));
   const configPath = join(homedir(), '.lox', 'config.json');
   const config = loadIngestConfig(JSON.parse(await fsReadFile(configPath, 'utf8')));
 
-  // Prove the vault is writable before spending any API call on a run whose every
-  // write would fail — and whose decision log would be lost with the throw.
-  await mkdir(join(config.vaultPath, config.notesFolder), { recursive: true });
+  await assertVaultWritable(config);
 
   const resolver = createTokenResolver(config, (subject) =>
     getAccessToken(config.serviceAccount, subject),

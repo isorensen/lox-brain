@@ -53,6 +53,30 @@ describe('decideNote', () => {
     expect(d.action).toBe('create');
     expect(d.path).toContain('(09-00)');
   });
+
+  it('skips with an unresolved collision reason when the time-suffixed path is also taken by another event', async () => {
+    const read = vi
+      .fn()
+      .mockResolvedValueOnce('Status: #child\n[calendar_event_id:: other-1]\n')
+      .mockResolvedValueOnce('Status: #baby\n[calendar_event_id:: other-2]\n');
+    const d = await decideNote(read, event, notes, FOLDER);
+    expect(d.action).toBe('skip');
+    if (d.action === 'skip') expect(d.reason).toBe('unresolved collision');
+
+    const write = vi.fn();
+    await applyDecision(write, d);
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it('disambiguates when the canonical path holds a hand-authored note with no calendar_event_id', async () => {
+    const read = vi
+      .fn()
+      .mockResolvedValueOnce('# Hand-authored note with no dataview fields\n')
+      .mockResolvedValueOnce(null);
+    const d = await decideNote(read, event, notes, FOLDER);
+    expect(d.action).toBe('create');
+    expect(d.path).toContain('(09-00)');
+  });
 });
 
 describe('applyDecision', () => {

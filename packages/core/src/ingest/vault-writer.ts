@@ -23,6 +23,10 @@ export async function decideNote(
     const time = event.start.slice(11, 16).replace(':', '-');
     path = `${notesFolder}/${filename.replace(/\.md$/, ` (${time}).md`)}`;
     existing = await readFile(path);
+    if (existing && eventIdOf(existing) !== event.id) {
+      // The disambiguated path is also taken by a different event; do not guess further.
+      return { action: 'skip', path, reason: 'unresolved collision' };
+    }
   }
 
   if (!existing) {

@@ -671,14 +671,15 @@ describe('DbClient', () => {
   });
 
   describe('reindexEmbeddings', () => {
-    const indexRow = (lists: number | null, rowCount: number) => ({
-      indexname: 'idx_embedding',
+    const named = (name: string, lists: number | null, rowCount: number) => ({
+      indexname: name,
       database: 'lox_brain',
       indexdef: lists === null
-        ? 'CREATE INDEX idx_embedding ON public.vault_embeddings USING ivfflat (embedding vector_cosine_ops)'
-        : `CREATE INDEX idx_embedding ON public.vault_embeddings USING ivfflat (embedding vector_cosine_ops) WITH (lists='${lists}')`,
+        ? `CREATE INDEX ${name} ON public.vault_embeddings USING ivfflat (embedding vector_cosine_ops)`
+        : `CREATE INDEX ${name} ON public.vault_embeddings USING ivfflat (embedding vector_cosine_ops) WITH (lists='${lists}')`,
       row_count: String(rowCount),
     });
+    const indexRow = (lists: number | null, rowCount: number) => named('idx_embedding', lists, rowCount);
 
     /** Statements issued on the pool after the catalog lookup. */
     const poolStatements = () => mockPool.query.mock.calls.slice(1).map((c: any[]) => c[0]);
@@ -698,7 +699,10 @@ describe('DbClient', () => {
       ]);
       expect(mockClient.query).not.toHaveBeenCalled();
       expect(state).toEqual({
-        rows: 812, listsBefore: 1, listsAfter: 1, probes: 1, resized: false, probesApplied: true,
+        rows: 812,
+        indexes: [{ name: 'idx_embedding', listsBefore: 1, listsAfter: 1, resized: false }],
+        probes: 1,
+        probesApplied: true,
       });
     });
 
@@ -717,8 +721,67 @@ describe('DbClient', () => {
       ]);
       expect(mockClient.release).toHaveBeenCalled();
       expect(state).toEqual({
-        rows: 812, listsBefore: 100, listsAfter: 1, probes: 1, resized: true, probesApplied: true,
+        rows: 812,
+        indexes: [{ name: 'idx_embedding', listsBefore: 100, listsAfter: 1, resized: true }],
+        probes: 1,
+        probesApplied: true,
       });
+    });
+
+    it('should resize EVERY ivfflat index, not just the first one found', async () => {
+      // Exactly the deployed VM: schema.sql and the installer each created an
+      // ivfflat index over `embedding` under a different name. v0.18.0 took
+      // `LIMIT 1`, resized whichever came back, and left the one the planner
+      // actually used at lists=100 — reporting success the whole time.
+      mockPool.query
+        .mockResolvedValueOnce({
+          rows: [named('idx_embedding_cosine', 1, 812), named('idx_vault_embeddings_embedding', 100, 812)],
+        })
+        .mockResolvedValue({ rowCount: 0 });
+      mockClient.query.mockResolvedValue({ rowCount: 0 });
+
+      const state = await client.reindexEmbeddings();
+
+      // A mock returns both rows no matter what the SQL says, so the catalog
+      // query is asserted directly: `LIMIT 1` is the defect itself, and the
+      // ordering is what makes the reported list deterministic.
+      const catalogSql = mockPool.query.mock.calls[0][0];
+      expect(catalogSql).not.toMatch(/LIMIT\s+1/i);
+      expect(catalogSql).toMatch(/ORDER BY\s+indexname/i);
+
+      expect(state!.indexes).toEqual([
+        { name: 'idx_embedding_cosine', listsBefore: 1, listsAfter: 1, resized: false },
+        { name: 'idx_vault_embeddings_embedding', listsBefore: 100, listsAfter: 1, resized: true },
+      ]);
+      // The already-correct one is reindexed in place; the oversized one rebuilt.
+      expect(poolStatements()).toEqual([
+        'REINDEX INDEX "idx_embedding_cosine"',
+        'ALTER DATABASE "lox_brain" SET ivfflat.probes = 1',
+        'SET ivfflat.probes = 1',
+      ]);
+      expect(mockClient.query.mock.calls.map((c: any[]) => c[0])).toEqual([
+        'BEGIN',
+        'DROP INDEX "idx_vault_embeddings_embedding"',
+        'CREATE INDEX idx_vault_embeddings_embedding ON public.vault_embeddings USING ivfflat (embedding vector_cosine_ops) WITH (lists = 1)',
+        'COMMIT',
+      ]);
+    });
+
+    it('should derive probes from the widest index when they end up disagreeing', async () => {
+      // 60k rows -> target 60. An index at 100 is inside the hysteresis band
+      // (100/60 < 2) so it keeps lists=100, while one at 1 is rebuilt to 60.
+      // probes must serve whichever the planner picks: ceil(sqrt(100)) = 10,
+      // not ceil(sqrt(60)) = 8. Under-probing is the silent failure.
+      mockPool.query
+        .mockResolvedValueOnce({ rows: [named('a_wide', 100, 60_000), named('b_narrow', 1, 60_000)] })
+        .mockResolvedValue({ rowCount: 0 });
+      mockClient.query.mockResolvedValue({ rowCount: 0 });
+
+      const state = await client.reindexEmbeddings();
+
+      expect(state!.indexes.map((i) => i.listsAfter)).toEqual([100, 60]);
+      expect(state!.probes).toBe(10);
+      expect(poolStatements()).toContain('ALTER DATABASE "lox_brain" SET ivfflat.probes = 10');
     });
 
     it('should grow lists and probes together as the vault grows', async () => {
@@ -732,7 +795,7 @@ describe('DbClient', () => {
         'ALTER DATABASE "lox_brain" SET ivfflat.probes = 7',
         'SET ivfflat.probes = 7',
       ]);
-      expect(state).toMatchObject({ listsAfter: 40, probes: 7, resized: true });
+      expect(state).toMatchObject({ probes: 7, indexes: [{ listsAfter: 40, resized: true }] });
     });
 
     it('should assume pgvector\'s default lists when the index carries no reloption', async () => {
@@ -742,7 +805,7 @@ describe('DbClient', () => {
       const state = await client.reindexEmbeddings();
 
       expect(mockClient.query.mock.calls[2][0]).toMatch(/WITH \(lists = 1\)$/);
-      expect(state).toMatchObject({ listsBefore: 100, resized: true });
+      expect(state).toMatchObject({ indexes: [{ listsBefore: 100, resized: true }] });
     });
 
     it('should roll back and rethrow when the rebuild fails', async () => {

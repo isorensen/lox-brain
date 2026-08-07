@@ -7,13 +7,14 @@ import { loadIngestConfig } from '../ingest/config.js';
 import { getAccessToken } from '../ingest/auth.js';
 import { listEvents, type FetchPage } from '../ingest/calendar-source.js';
 import { fetchNotes, findNoteAttachments, type ExportDoc } from '../ingest/gemini-doc.js';
+import { createTokenResolver, type TokenResolver } from '../ingest/token-resolver.js';
 import {
   decideNote,
   applyDecision,
   type ReadFile,
   type WriteFile,
 } from '../ingest/vault-writer.js';
-import type { IngestConfig, NoteDecision } from '../ingest/types.js';
+import type { GeminiNotes, IngestConfig, NoteDecision } from '../ingest/types.js';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -48,7 +49,9 @@ export function parseArgs(argv: string[]): { from: string; to: string; dryRun: b
 
 export interface IngestDeps {
   fetchPage: FetchPage;
-  exportDoc: ExportDoc;
+  resolver: TokenResolver;
+  /** Doc export bound to a subject, so a past event can be read as its organizer. */
+  exportDocAs: (subject: string) => ExportDoc;
   readFile: ReadFile;
   writeFile: WriteFile;
 }
@@ -80,7 +83,11 @@ export async function runIngest(
   for (const calendar of config.calendars) {
     const events = await listEvents(deps.fetchPage, calendar, from, to, config.impersonateSubject);
     for (const event of events) {
-      const notes = await fetchNotes(deps.exportDoc, event, config.noteAttachmentPatterns);
+      let notes: GeminiNotes | null = null;
+      for (const subject of deps.resolver.subjectsFor(event)) {
+        notes = await fetchNotes(deps.exportDocAs(subject), event, config.noteAttachmentPatterns);
+        if (notes) break;
+      }
       if (!notes && findNoteAttachments(event, config.noteAttachmentPatterns).length > 0) {
         result.inaccessible.push(`${event.start.slice(0, 10)} ${event.summary}`);
       }
@@ -103,9 +110,14 @@ async function main(): Promise<void> {
   const configPath = join(homedir(), '.lox', 'config.json');
   const config = loadIngestConfig(JSON.parse(await fsReadFile(configPath, 'utf8')));
 
-  const token = await getAccessToken(config.serviceAccount, config.impersonateSubject);
+  const resolver = createTokenResolver(config, (subject) =>
+    getAccessToken(config.serviceAccount, subject),
+  );
+
+  // Calendar read access comes from the calendar's own sharing, not from meeting
+  // attendance, so the capture account is enough here.
+  const token = await resolver.tokenFor(config.impersonateSubject);
   const cal = calendarApi({ version: 'v3', headers: { Authorization: `Bearer ${token}` } });
-  const drv = driveApi({ version: 'v3', headers: { Authorization: `Bearer ${token}` } });
 
   const fetchPage: FetchPage = async (calendarId, params) => {
     const res = await cal.events.list({
@@ -119,10 +131,19 @@ async function main(): Promise<void> {
     });
     return { items: res.data.items ?? [], nextPageToken: res.data.nextPageToken ?? undefined };
   };
-  const exportDoc: ExportDoc = async (fileId) => {
-    const res = await drv.files.export({ fileId, mimeType: 'text/plain' }, { responseType: 'text' });
-    return String(res.data);
-  };
+  const exportDocAs =
+    (subject: string): ExportDoc =>
+    async (fileId) => {
+      const drv = driveApi({
+        version: 'v3',
+        headers: { Authorization: `Bearer ${await resolver.tokenFor(subject)}` },
+      });
+      const res = await drv.files.export(
+        { fileId, mimeType: 'text/plain' },
+        { responseType: 'text' },
+      );
+      return String(res.data);
+    };
 
   const readFile: ReadFile = async (rel) => {
     try {
@@ -138,7 +159,7 @@ async function main(): Promise<void> {
   };
 
   const result = await runIngest(
-    { fetchPage, exportDoc, readFile, writeFile },
+    { fetchPage, resolver, exportDocAs, readFile, writeFile },
     config,
     from,
     to,

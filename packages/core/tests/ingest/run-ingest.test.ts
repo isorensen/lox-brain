@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { runIngest } from '../../src/scripts/ingest-calendar.js';
+import { createTokenResolver } from '../../src/ingest/token-resolver.js';
 import type { IngestConfig } from '../../src/ingest/types.js';
 
 const FOLDER = 'Meetings';
@@ -56,6 +57,9 @@ const exportDoc = vi.fn(async (fileId: string) => {
   return '### Resumo\nWe agreed on the plan.\n';
 });
 
+const resolver = createTokenResolver(config, vi.fn(async () => 'tok'));
+const exportDocAs = () => exportDoc;
+
 const skeleton = (id: string) => `Status: #baby\n[calendar_event_id:: ${id}]\n`;
 const enriched = (id: string) => `Status: #child\n[calendar_event_id:: ${id}]\n`;
 
@@ -68,7 +72,7 @@ describe('runIngest', () => {
     const { readFile, writeFile } = vault();
 
     const result = await runIngest(
-      { fetchPage, exportDoc, readFile, writeFile },
+      { fetchPage, resolver, exportDocAs, readFile, writeFile },
       config,
       '2026-07-01',
       '2026-08-01',
@@ -88,7 +92,7 @@ describe('runIngest', () => {
     const { readFile, writeFile } = vault();
 
     await runIngest(
-      { fetchPage, exportDoc, readFile, writeFile },
+      { fetchPage, resolver, exportDocAs, readFile, writeFile },
       config,
       '2026-07-01',
       '2026-08-01',
@@ -106,7 +110,7 @@ describe('runIngest', () => {
     const { readFile, writeFile } = vault();
 
     const result = await runIngest(
-      { fetchPage, exportDoc, readFile, writeFile },
+      { fetchPage, resolver, exportDocAs, readFile, writeFile },
       config,
       '2026-07-01',
       '2026-08-01',
@@ -126,7 +130,7 @@ describe('runIngest', () => {
     const { readFile, writeFile } = vault();
 
     const result = await runIngest(
-      { fetchPage, exportDoc, readFile, writeFile },
+      { fetchPage, resolver, exportDocAs, readFile, writeFile },
       config,
       '2026-07-01',
       '2026-08-01',
@@ -155,7 +159,7 @@ describe('runIngest', () => {
     });
 
     const result = await runIngest(
-      { fetchPage, exportDoc, readFile, writeFile },
+      { fetchPage, resolver, exportDocAs, readFile, writeFile },
       config,
       '2026-07-01',
       '2026-08-01',
@@ -175,7 +179,7 @@ describe('runIngest', () => {
     const { readFile, writeFile } = vault();
 
     const result = await runIngest(
-      { fetchPage, exportDoc, readFile, writeFile },
+      { fetchPage, resolver, exportDocAs, readFile, writeFile },
       config,
       '2026-07-01',
       '2026-08-01',
@@ -196,7 +200,7 @@ describe('runIngest', () => {
     const { readFile, writeFile } = vault();
 
     const result = await runIngest(
-      { fetchPage, exportDoc, readFile, writeFile },
+      { fetchPage, resolver, exportDocAs, readFile, writeFile },
       config,
       '2026-07-01',
       '2026-08-01',
@@ -212,7 +216,7 @@ describe('runIngest', () => {
     const { readFile, writeFile } = vault();
 
     const result = await runIngest(
-      { fetchPage, exportDoc, readFile, writeFile },
+      { fetchPage, resolver, exportDocAs, readFile, writeFile },
       config,
       '2026-07-01',
       '2026-08-01',
@@ -227,5 +231,59 @@ describe('runIngest', () => {
       decisions: [],
     });
     expect(writeFile).not.toHaveBeenCalled();
+  });
+});
+
+describe('runIngest organizer fallback', () => {
+  /** A historical Doc: only the organizer was an invitee, so only they can export it. */
+  function historicalDrive() {
+    const asked: string[] = [];
+    const exportDocAs = (subject: string) => async (): Promise<string> => {
+      asked.push(subject);
+      if (subject !== 'owner@example.com') throw new Error('403 caller does not have permission');
+      return '### Resumo\nWe agreed on the plan.\n';
+    };
+    return { asked, exportDocAs };
+  }
+
+  function backfillRun(organizerAllowlist: string[]) {
+    const backfill: IngestConfig = { ...config, organizerAllowlist };
+    const { asked, exportDocAs } = historicalDrive();
+    const fetchPage = calendars({ 'cal-a': [rawEvent('evt-old', 'Weekly', [geminiDoc])] });
+    const { readFile, writeFile } = vault();
+    const resolve = createTokenResolver(backfill, vi.fn(async () => 'tok'));
+
+    const run = runIngest(
+      { fetchPage, resolver: resolve, exportDocAs, readFile, writeFile },
+      backfill,
+      '2026-07-01',
+      '2026-08-01',
+      false,
+    );
+    return { run, asked, writeFile };
+  }
+
+  it('recovers the notes by impersonating an allowlisted organizer', async () => {
+    const { run, asked, writeFile } = backfillRun(['owner@example.com']);
+    const result = await run;
+
+    expect(asked).toEqual(['capture@example.com', 'owner@example.com']);
+    expect(result.inaccessible).toEqual([]);
+    expect(writeFile).toHaveBeenCalledWith(
+      pathFor('Weekly', 'Alpha'),
+      expect.stringContaining('Status: #child'),
+    );
+  });
+
+  it('never impersonates an organizer outside the allowlist', async () => {
+    const { run, asked, writeFile } = backfillRun([]);
+    const result = await run;
+
+    expect(asked).toEqual(['capture@example.com']);
+    expect(result.inaccessible).toEqual(['2026-07-15 Weekly']);
+    expect(writeFile).toHaveBeenCalledWith(
+      pathFor('Weekly', 'Alpha'),
+      expect.stringContaining('Status: #baby'),
+    );
   });
 });

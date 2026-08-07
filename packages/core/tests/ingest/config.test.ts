@@ -45,4 +45,40 @@ describe('loadIngestConfig', () => {
     raw.calendar_ingest.impersonate_subject = '';
     expect(() => loadIngestConfig(raw)).toThrow(/impersonate_subject/);
   });
+
+  it('defaults notes_folder when omitted', () => {
+    const raw = structuredClone(valid);
+    delete (raw.calendar_ingest as Record<string, unknown>).notes_folder;
+    expect(loadIngestConfig(raw).notesFolder).toBe('7 - Meeting Notes');
+  });
+
+  it('defaults organizer_allowlist to an empty array when omitted', () => {
+    const raw = structuredClone(valid);
+    delete (raw.calendar_ingest as Record<string, unknown>).organizer_allowlist;
+    expect(loadIngestConfig(raw).organizerAllowlist).toEqual([]);
+  });
+
+  it('defaults calendar label to an empty string when omitted', () => {
+    const raw = structuredClone(valid);
+    raw.calendar_ingest.calendars = [{ id: 'cal-a' } as unknown as { id: string; label: string }];
+    expect(loadIngestConfig(raw).calendars[0].label).toBe('');
+  });
+
+  it('throws when the calendars array is empty', () => {
+    const raw = structuredClone(valid);
+    raw.calendar_ingest.calendars = [];
+    expect(() => loadIngestConfig(raw)).toThrow(/calendars must not be empty/i);
+  });
+
+  it('throws when service_account is missing', () => {
+    const raw = structuredClone(valid);
+    raw.calendar_ingest.service_account = '';
+    expect(() => loadIngestConfig(raw)).toThrow(/service_account/);
+  });
+
+  it('throws when vault_path is missing', () => {
+    const raw = structuredClone(valid);
+    raw.calendar_ingest.vault_path = '';
+    expect(() => loadIngestConfig(raw)).toThrow(/vault_path/);
+  });
 });

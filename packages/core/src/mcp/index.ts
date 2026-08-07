@@ -182,8 +182,23 @@ async function main(): Promise<void> {
   console.error('Schema migration check complete');
 
   try {
-    await dbClient.reindexEmbeddings();
-    console.error('Reindexed ivfflat embedding index');
+    const state = await dbClient.reindexEmbeddings();
+    if (state === null) {
+      console.error('ivfflat: no embedding index on vault_embeddings, nothing to reindex');
+    } else {
+      const lists = state.resized
+        ? `lists ${state.listsBefore} -> ${state.listsAfter} (index rebuilt)`
+        : `lists ${state.listsAfter}`;
+      console.error(`ivfflat: ${state.rows} rows, ${lists}, probes ${state.probes}`);
+      if (!state.probesApplied) {
+        console.error(
+          `Warning: could not set ivfflat.probes (requires ownership of the database). ` +
+            `Semantic search runs at pgvector's default of 1 probe, which reads one of ` +
+            `${state.listsAfter} index clusters. Run as the database owner: ` +
+            `ALTER DATABASE <db> SET ivfflat.probes = ${state.probes};`,
+        );
+      }
+    }
   } catch (err) {
     console.error('Warning: failed to reindex embedding index:', err instanceof Error ? err.message : err);
   }

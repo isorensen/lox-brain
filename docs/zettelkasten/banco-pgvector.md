@@ -33,11 +33,11 @@ A chave unica `(file_path, chunk_index)` permite que uma nota tenha multiplos ch
 
 | Tipo | Coluna | Proposito |
 |------|--------|-----------|
-| ivfflat (cosine) | embedding | Busca semantica via `<=>` operator, lists=100 |
+| ivfflat (cosine) | embedding | Busca semantica via `<=>` operator, `lists` dimensionado em runtime |
 | GIN | tags | Filtro por tags via `@>` operator |
 | btree | updated_at DESC | Listagem de notas recentes |
 
-O ivfflat com `lists=100` e adequado para o volume atual (~243 notas). Para vaults maiores (>10k), seria necessario HNSW.
+O `lists` do ivfflat nao e uma constante: ele particiona os vetores em clusters e so faz sentido em relacao ao numero de linhas (regra do pgvector: `lists ~= rows/1000`). O valor fixo `lists=100` que o schema trazia era adequado para ~100 mil linhas, nao para um vault de centenas de notas -- com ~8 linhas por cluster e o default `ivfflat.probes = 1`, a busca semantica alcancava ~1% do vault sem erro nem log (corrigido na v0.18.0). Hoje `reindexEmbeddings()` recalcula `lists` a partir do `COUNT(*)` real no boot do MCP e recria o indice quando o valor vigente diverge por um fator >= 2, e `ivfflat.probes = ceil(sqrt(lists))` e aplicado em cada conexao do pool. Ver `packages/core/src/lib/ivfflat.ts`.
 
 ## DbClient
 

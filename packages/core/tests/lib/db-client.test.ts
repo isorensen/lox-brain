@@ -5,10 +5,13 @@ import type { NoteRow } from '@lox-brain/shared';
 describe('DbClient', () => {
   let client: DbClient;
   let mockPool: any;
+  let mockClient: any;
 
   beforeEach(() => {
+    mockClient = { query: vi.fn(), release: vi.fn() };
     mockPool = {
       query: vi.fn(),
+      connect: vi.fn().mockResolvedValue(mockClient),
     };
     client = new DbClient(mockPool);
   });
@@ -668,23 +671,113 @@ describe('DbClient', () => {
   });
 
   describe('reindexEmbeddings', () => {
-    it('should look up ivfflat index name and reindex it', async () => {
+    const indexRow = (lists: number | null, rowCount: number) => ({
+      indexname: 'idx_embedding',
+      database: 'lox_brain',
+      indexdef: lists === null
+        ? 'CREATE INDEX idx_embedding ON public.vault_embeddings USING ivfflat (embedding vector_cosine_ops)'
+        : `CREATE INDEX idx_embedding ON public.vault_embeddings USING ivfflat (embedding vector_cosine_ops) WITH (lists='${lists}')`,
+      row_count: String(rowCount),
+    });
+
+    /** Statements issued on the pool after the catalog lookup. */
+    const poolStatements = () => mockPool.query.mock.calls.slice(1).map((c: any[]) => c[0]);
+
+    it('should reindex in place when the current lists is within the hysteresis band', async () => {
       mockPool.query
-        .mockResolvedValueOnce({ rows: [{ indexname: 'idx_embedding' }] })
-        .mockResolvedValueOnce({ rowCount: 0 });
+        .mockResolvedValueOnce({ rows: [indexRow(1, 812)] })
+        .mockResolvedValue({ rowCount: 0 });
 
-      await client.reindexEmbeddings();
+      const state = await client.reindexEmbeddings();
 
-      expect(mockPool.query).toHaveBeenCalledTimes(2);
       expect(mockPool.query.mock.calls[0][0]).toContain('pg_indexes');
-      expect(mockPool.query.mock.calls[1][0]).toBe('REINDEX INDEX idx_embedding');
+      expect(poolStatements()).toEqual([
+        'REINDEX INDEX "idx_embedding"',
+        'ALTER DATABASE "lox_brain" SET ivfflat.probes = 1',
+        'SET ivfflat.probes = 1',
+      ]);
+      expect(mockClient.query).not.toHaveBeenCalled();
+      expect(state).toEqual({
+        rows: 812, listsBefore: 1, listsAfter: 1, probes: 1, resized: false, probesApplied: true,
+      });
+    });
+
+    it('should recreate the index when lists is oversized for the row count', async () => {
+      // The production bug: 812 rows indexed with lists=100.
+      mockPool.query.mockResolvedValueOnce({ rows: [indexRow(100, 812)] }).mockResolvedValue({ rowCount: 0 });
+      mockClient.query.mockResolvedValue({ rowCount: 0 });
+
+      const state = await client.reindexEmbeddings();
+
+      expect(mockClient.query.mock.calls.map((c: any[]) => c[0])).toEqual([
+        'BEGIN',
+        'DROP INDEX "idx_embedding"',
+        'CREATE INDEX idx_embedding ON public.vault_embeddings USING ivfflat (embedding vector_cosine_ops) WITH (lists = 1)',
+        'COMMIT',
+      ]);
+      expect(mockClient.release).toHaveBeenCalled();
+      expect(state).toEqual({
+        rows: 812, listsBefore: 100, listsAfter: 1, probes: 1, resized: true, probesApplied: true,
+      });
+    });
+
+    it('should grow lists and probes together as the vault grows', async () => {
+      mockPool.query.mockResolvedValueOnce({ rows: [indexRow(1, 40_000)] }).mockResolvedValue({ rowCount: 0 });
+      mockClient.query.mockResolvedValue({ rowCount: 0 });
+
+      const state = await client.reindexEmbeddings();
+
+      expect(mockClient.query.mock.calls[2][0]).toContain('WITH (lists = 40)');
+      expect(poolStatements()).toEqual([
+        'ALTER DATABASE "lox_brain" SET ivfflat.probes = 7',
+        'SET ivfflat.probes = 7',
+      ]);
+      expect(state).toMatchObject({ listsAfter: 40, probes: 7, resized: true });
+    });
+
+    it('should assume pgvector\'s default lists when the index carries no reloption', async () => {
+      mockPool.query.mockResolvedValueOnce({ rows: [indexRow(null, 812)] }).mockResolvedValue({ rowCount: 0 });
+      mockClient.query.mockResolvedValue({ rowCount: 0 });
+
+      const state = await client.reindexEmbeddings();
+
+      expect(mockClient.query.mock.calls[2][0]).toMatch(/WITH \(lists = 1\)$/);
+      expect(state).toMatchObject({ listsBefore: 100, resized: true });
+    });
+
+    it('should roll back and rethrow when the rebuild fails', async () => {
+      mockPool.query.mockResolvedValueOnce({ rows: [indexRow(100, 812)] }).mockResolvedValue({ rowCount: 0 });
+      mockClient.query.mockImplementation((sql: string) =>
+        sql.startsWith('CREATE INDEX')
+          ? Promise.reject(new Error('out of memory'))
+          : Promise.resolve({ rowCount: 0 }));
+
+      await expect(client.reindexEmbeddings()).rejects.toThrow('out of memory');
+      expect(mockClient.query.mock.calls.map((c: any[]) => c[0])).toContain('ROLLBACK');
+      expect(mockClient.release).toHaveBeenCalled();
+    });
+
+    it('should report, not throw, when the role does not own the database', async () => {
+      // `ALTER DATABASE` needs database ownership; the index rebuild needs only
+      // table ownership. A role holding the latter must not lose the resize.
+      mockPool.query
+        .mockResolvedValueOnce({ rows: [indexRow(1, 812)] })
+        .mockImplementation((sql: string) =>
+          sql.startsWith('ALTER DATABASE')
+            ? Promise.reject(new Error('must be owner of database lox_brain'))
+            : Promise.resolve({ rowCount: 0 }));
+
+      const state = await client.reindexEmbeddings();
+
+      expect(state).toMatchObject({ probesApplied: false });
+      // The session-level SET is pointless once the durable one failed.
+      expect(poolStatements()).not.toContain('SET ivfflat.probes = 1');
     });
 
     it('should skip reindex when no ivfflat index exists', async () => {
       mockPool.query.mockResolvedValueOnce({ rows: [] });
 
-      await client.reindexEmbeddings();
-
+      expect(await client.reindexEmbeddings()).toBeNull();
       expect(mockPool.query).toHaveBeenCalledTimes(1);
     });
 

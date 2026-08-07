@@ -3,6 +3,20 @@ import type {
   NoteRow, SearchResult, RecentNote, SearchOptions, PaginatedResult,
   TaskRow, TaskStatus, TaskPriority, TaskListOptions,
 } from '@lox-brain/shared';
+import {
+  needsResize, parseLists, probesFor, quoteIdent, rewriteLists, setProbesSql, targetLists,
+} from './ivfflat.js';
+
+/** Outcome of {@link DbClient.reindexEmbeddings}, for the boot log. */
+export interface IvfflatState {
+  rows: number;
+  listsBefore: number;
+  listsAfter: number;
+  probes: number;
+  resized: boolean;
+  /** False when the role does not own the database; probes stays at pgvector's default. */
+  probesApplied: boolean;
+}
 
 const SEMANTIC_DEFAULTS: SearchOptions = {
   limit: 5,
@@ -218,17 +232,85 @@ export class DbClient {
     await this.pool.query(sql, [filePath]);
   }
 
-  async reindexEmbeddings(): Promise<void> {
+  /**
+   * Rebuild the ivfflat index, resizing it to the current row count first.
+   *
+   * A plain `REINDEX` rebuilds the index with whatever `lists` it already has,
+   * so an index sized for the wrong volume stays wrong forever — see
+   * `lib/ivfflat.ts` for why that silently caps recall. Returns what it did so
+   * the caller can log it (the absence of that log is what kept the
+   * mis-sizing invisible), or `null` when the table has no ivfflat index.
+   */
+  async reindexEmbeddings(): Promise<IvfflatState | null> {
     const result = await this.pool.query(`
-      SELECT indexname FROM pg_indexes
+      SELECT indexname, indexdef, current_database() AS database,
+             (SELECT COUNT(*) FROM vault_embeddings) AS row_count
+      FROM pg_indexes
       WHERE tablename = 'vault_embeddings'
         AND indexdef LIKE '%ivfflat%'
       LIMIT 1
     `);
-    if (result.rows.length > 0) {
-      const indexName = result.rows[0].indexname;
-      await this.pool.query(`REINDEX INDEX ${indexName}`);
+    if (result.rows.length === 0) return null;
+
+    const { indexname, indexdef, database } = result.rows[0];
+    const rows = Number(result.rows[0].row_count);
+    const listsBefore = parseLists(indexdef);
+    const target = targetLists(rows);
+    const quoted = quoteIdent(indexname);
+
+    const resized = needsResize(listsBefore, target);
+    if (resized) {
+      // DROP + CREATE (not CONCURRENTLY) holds an ACCESS EXCLUSIVE lock on the
+      // table for the duration. That is imperceptible at vault scale and this
+      // runs at boot, before the server accepts requests — but on a table large
+      // enough for the rebuild to take minutes, writes would block for that long.
+      // The transaction is what keeps a failed CREATE from leaving the table with
+      // no index at all: the caller only logs a warning, so that loss would be
+      // permanent and silent.
+      const client = await this.pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query(`DROP INDEX ${quoted}`);
+        await client.query(rewriteLists(indexdef, target));
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK').catch(() => { /* connection already broken */ });
+        throw err;
+      } finally {
+        client.release();
+      }
+    } else {
+      await this.pool.query(`REINDEX INDEX ${quoted}`);
     }
+
+    const listsAfter = resized ? target : listsBefore;
+    const probes = probesFor(listsAfter);
+    return { rows, listsBefore, listsAfter, probes, resized, probesApplied: await this.setProbes(database, probes) };
+  }
+
+  /**
+   * Persist `probes` as the database default and apply it to the connection
+   * already open.
+   *
+   * Deliberately outside the resize transaction: `ALTER DATABASE ... SET` is
+   * transactional, but it needs database ownership while the rebuild needs
+   * only table ownership, so folding it in would let a privilege error abort a
+   * resize that would otherwise have succeeded. A failure here is not fatal —
+   * searches still run, at pgvector's default of one probe — so it is reported
+   * rather than thrown, and the caller turns it into an actionable warning.
+   */
+  private async setProbes(database: string, probes: number): Promise<boolean> {
+    try {
+      await this.pool.query(setProbesSql(database, probes));
+    } catch {
+      return false;
+    }
+    // ALTER DATABASE only reaches sessions opened after it. Every connection
+    // serving requests will be one — but the connection this boot already
+    // opened (ensureSchema's, reused for the queries above) would keep the old
+    // value, and it is the one that serves the first searches.
+    await this.pool.query(`SET ivfflat.probes = ${probes}`);
+    return true;
   }
 
   /**
@@ -240,10 +322,12 @@ export class DbClient {
    * one reorders that pool by `updated_at`. It is deliberately NOT a plain
    * `ORDER BY updated_at DESC` over the table, which would ignore the query.
    *
-   * `total` keeps the same meaning in both modes — the number of rows
-   * matching the metadata filters, not the pool size. `COUNT(*) OVER()` sits
-   * inside the CTE, and Postgres evaluates window functions before that
-   * query level's `LIMIT`, so the pool cap does not truncate the count.
+   * `total` is not the pool size: `COUNT(*) OVER()` sits inside the CTE, and
+   * Postgres evaluates window functions before that query level's `LIMIT`, so
+   * the pool cap does not truncate the count. It is still only the number of
+   * rows the scan produced, which is a plan-level property rather than a
+   * table-level one — an index scan that stops early reports fewer rows than
+   * a sequential scan over the same filters.
    * Pagination stays reachable because the pool is derived from
    * `limit + offset`, never a fixed constant. The one caveat of any
    * oversample-then-rerank scheme: a deeper page widens the pool, so pages

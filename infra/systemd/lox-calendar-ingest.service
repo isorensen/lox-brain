@@ -1,5 +1,6 @@
 [Unit]
 Description=Lox calendar ingest (team ceremonies -> vault)
+Documentation=https://github.com/isorensen/lox-brain/blob/main/docs/calendar-ingest.md
 After=network-online.target
 Wants=network-online.target
 
@@ -8,8 +9,13 @@ Type=oneshot
 User=__LOX_VM_USER__
 WorkingDirectory=/home/__LOX_VM_USER__/lox-brain
 ExecStartPre=/usr/bin/test -f /home/__LOX_VM_USER__/.lox/config.json
-ExecStart=/bin/sh -c '/usr/bin/npm run ingest-calendar:prod --workspace=packages/core -- --since "$(date -d yesterday +%%F)"'
+ExecStartPre=/usr/bin/test -f /home/__LOX_VM_USER__/lox-brain/packages/core/dist/scripts/ingest-calendar.js
+ExecStartPre=/usr/bin/test -w /home/__LOX_VM_USER__/obsidian
+# Invoking the built entrypoint directly avoids depending on npm's location and on
+# npm being able to write its logs. `%%` escapes systemd's specifier expansion.
+ExecStart=/bin/sh -c '/usr/bin/env node packages/core/dist/scripts/ingest-calendar.js --since "$(date -d yesterday +%%F)"'
 TimeoutStartSec=900
 NoNewPrivileges=yes
+PrivateTmp=yes
 ProtectSystem=strict
-ReadWritePaths=/home/__LOX_VM_USER__/obsidian
+ReadWritePaths=/home/__LOX_VM_USER__/obsidian /home/__LOX_VM_USER__/lox-brain

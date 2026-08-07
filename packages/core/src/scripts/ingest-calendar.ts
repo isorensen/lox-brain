@@ -1,6 +1,6 @@
 import { readFile as fsReadFile, writeFile as fsWriteFile, mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { calendar as calendarApi } from '@googleapis/calendar';
 import { drive as driveApi } from '@googleapis/drive';
 import { loadIngestConfig } from '../ingest/config.js';
@@ -110,6 +110,10 @@ async function main(): Promise<void> {
   const configPath = join(homedir(), '.lox', 'config.json');
   const config = loadIngestConfig(JSON.parse(await fsReadFile(configPath, 'utf8')));
 
+  // Prove the vault is writable before spending any API call on a run whose every
+  // write would fail — and whose decision log would be lost with the throw.
+  await mkdir(join(config.vaultPath, config.notesFolder), { recursive: true });
+
   const resolver = createTokenResolver(config, (subject) =>
     getAccessToken(config.serviceAccount, subject),
   );
@@ -153,9 +157,7 @@ async function main(): Promise<void> {
     }
   };
   const writeFile: WriteFile = async (rel, content) => {
-    const abs = join(config.vaultPath, rel);
-    await mkdir(dirname(abs), { recursive: true });
-    await fsWriteFile(abs, content, 'utf8');
+    await fsWriteFile(join(config.vaultPath, rel), content, 'utf8');
   };
 
   const result = await runIngest(

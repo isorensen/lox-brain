@@ -62,22 +62,70 @@ describe('extractFileId', () => {
 });
 
 describe('parseGeminiDoc', () => {
-  it('extracts the summary', () => {
-    expect(parseGeminiDoc(fixture).summary).toContain('Equipe alinhou o corte da release');
+  it('reads the fixture in the format Drive really exports: CRLF and no Markdown', () => {
+    expect(fixture).toContain('\r\n');
+    expect(fixture).not.toMatch(/^#/m);
   });
 
-  it('extracts next steps preserving the responsible marker', () => {
+  it('takes only the first paragraph of Resumo, not the sub-topics that follow it', () => {
+    const { summary } = parseGeminiDoc(fixture);
+    expect(summary).toBe('Equipe alinhou o corte da release e reduziu o escopo.');
+  });
+
+  it('extracts next steps preserving the responsible marker and stripping the bullet', () => {
     const { nextSteps } = parseGeminiDoc(fixture);
-    expect(nextSteps).toHaveLength(2);
-    expect(nextSteps[0]).toMatch(/^\[Ana Lima\]/);
+    expect(nextSteps).toEqual([
+      '[Ana Lima] Congelar a branch: Fechar a branch de release ate sexta.',
+      '[Bo Reis] Revisar os testes de carga antes do corte.',
+      '[O grupo] Publicar a nota de versao apos o corte.',
+    ]);
   });
 
-  it('extracts detail bullets', () => {
-    expect(parseGeminiDoc(fixture).details.length).toBeGreaterThanOrEqual(2);
+  it('extracts every detail bullet', () => {
+    expect(parseGeminiDoc(fixture).details).toEqual([
+      'Escopo da release: O escopo foi reduzido para dois itens.',
+      'Riscos: Dependencia externa ainda sem data confirmada.',
+      'Comunicacao: A nota de versao sai junto com o deploy.',
+    ]);
+  });
+
+  it('never leaks a carriage return into a returned value', () => {
+    const { summary, nextSteps, details } = parseGeminiDoc(fixture);
+    for (const value of [summary, ...nextSteps, ...details]) {
+      expect(value).not.toContain('\r');
+    }
+  });
+
+  it('leaves the trailing Gemini boilerplate out of the details', () => {
+    const { details } = parseGeminiDoc(fixture);
+    expect(details.join('\n')).not.toMatch(/Revise as anota|qualidade destas observa/);
+  });
+
+  it('matches an unaccented "Proximas etapas" heading', () => {
+    const doc = 'Proximas etapas\r\n* [Ana Lima] Abrir o chamado.\r\n';
+    expect(parseGeminiDoc(doc).nextSteps).toEqual(['[Ana Lima] Abrir o chamado.']);
+  });
+
+  it('parses summary and next steps from a doc that has no Detalhes section', () => {
+    const doc = [
+      'Resumo',
+      'Reuniao curta apenas para alinhar datas.',
+      '',
+      'Próximas etapas',
+      '* [Bo Reis] Confirmar a data com o time.',
+      '',
+      'Revise as anotações do Gemini para checar se estão corretas.',
+    ].join('\r\n');
+    const parsed = parseGeminiDoc(doc);
+
+    expect(parsed.summary).toBe('Reuniao curta apenas para alinhar datas.');
+    expect(parsed.nextSteps).toEqual(['[Bo Reis] Confirmar a data com o time.']);
+    expect(parsed.details).toEqual([]);
   });
 
   it('returns empty sections for unparseable text without throwing', () => {
     const parsed = parseGeminiDoc('conteudo sem estrutura');
+    expect(parsed.summary).toBe('');
     expect(parsed.nextSteps).toEqual([]);
     expect(parsed.details).toEqual([]);
   });

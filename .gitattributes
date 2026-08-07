@@ -1,0 +1,3 @@
+# The CRLF line endings in this fixture are the thing under test: Drive's text/plain
+# export of a Gemini notes Doc uses them. Never let autocrlf normalize them away.
+packages/core/tests/fixtures/gemini-notes-ptbr.txt -text

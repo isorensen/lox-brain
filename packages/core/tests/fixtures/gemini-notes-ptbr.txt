@@ -1,21 +1,38 @@
-# Observações
-
+📝 Observações
 jul. 15, 2026
+Daily meeting
+Anexos Daily meeting Notas - Daily meeting
 
-## Daily meeting
 
-### Resumo
 
+
+Resumo
 Equipe alinhou o corte da release e reduziu o escopo.
 
-### Próximas etapas
+Congelamento da branch
+Ficou decidido que a branch de release fecha na sexta-feira.
 
-  - [Ana Lima] Congelar a branch: Fechar a branch de release ate sexta.
-  - [Bo Reis] Revisar os testes de carga antes do corte.
+Testes de carga
+A bateria de testes de carga roda antes do corte.
 
-### Detalhes
 
-  - **Escopo da release**: O escopo foi reduzido para dois itens.
-  - **Riscos**: Dependencia externa ainda sem data confirmada.
 
-Revise as anotações do Gemini para checar se estão corretas.
+
+Próximas etapas
+* [Ana Lima] Congelar a branch: Fechar a branch de release ate sexta.
+* [Bo Reis] Revisar os testes de carga antes do corte.
+* [O grupo] Publicar a nota de versao apos o corte.
+
+
+
+
+Detalhes
+* Escopo da release: O escopo foi reduzido para dois itens.
+* Riscos: Dependencia externa ainda sem data confirmada.
+* Comunicacao: A nota de versao sai junto com o deploy.
+
+
+
+
+Revise as anotações do Gemini para checar se estão corretas. Confira dicas.
+Como está a qualidade destas observações? Responda a uma breve pesquisa.

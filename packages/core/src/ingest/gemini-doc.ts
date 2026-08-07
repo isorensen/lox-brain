@@ -16,32 +16,67 @@ export function extractFileId(fileUrl: string): string | null {
   return fileUrl.match(/\/d\/([a-zA-Z0-9_-]+)/)?.[1] ?? null;
 }
 
-function sectionLines(text: string, heading: RegExp): string[] {
-  const lines = text.split('\n');
-  const start = lines.findIndex((l) => heading.test(l));
-  if (start === -1) return [];
-  const out: string[] = [];
-  for (const line of lines.slice(start + 1)) {
-    if (/^#{1,3}\s/.test(line)) break;
-    const trimmed = line.trim();
-    if (trimmed) out.push(trimmed);
+type SectionKey = 'summary' | 'nextSteps' | 'details';
+
+/** Drive's text/plain export carries no Markdown: a section title is a bare line whose
+ * text is just the section name, and accents come and go between documents. */
+const SECTION_HEADINGS = new Map<string, SectionKey>([
+  ['resumo', 'summary'],
+  ['proximas etapas', 'nextSteps'],
+  ['detalhes', 'details'],
+]);
+
+function foldAccents(value: string): string {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function headingKey(line: string): SectionKey | undefined {
+  return SECTION_HEADINGS.get(foldAccents(line.trim()).toLowerCase());
+}
+
+function splitSections(text: string): Map<SectionKey, string[]> {
+  const sections = new Map<SectionKey, string[]>();
+  let current: string[] | undefined;
+  for (const raw of text.split('\n')) {
+    const line = raw.replace(/\r/g, '');
+    const key = headingKey(line);
+    if (key) {
+      current = [];
+      sections.set(key, current);
+      continue;
+    }
+    current?.push(line);
   }
-  return out;
+  return sections;
+}
+
+/** The lines after "Resumo" are the one-paragraph summary followed by sub-topics rendered
+ * as title/paragraph pairs; only the first paragraph is the summary. */
+function firstParagraph(lines: string[]): string {
+  const paragraph: string[] = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed) paragraph.push(trimmed);
+    else if (paragraph.length > 0) break;
+  }
+  return paragraph.join(' ');
 }
 
 function stripBullet(line: string): string {
   return line.replace(/^[-*]\s*/, '').replace(/\\\[/g, '[').replace(/\\\]/g, ']').trim();
 }
 
+function bullets(lines: string[]): string[] {
+  return lines.map((l) => l.trim()).filter((l) => /^[-*]\s/.test(l)).map(stripBullet);
+}
+
 export function parseGeminiDoc(text: string): Omit<GeminiNotes, 'docUrls'> {
-  const summary = sectionLines(text, /^#{1,3}\s*\**Resumo\**/i).join(' ').trim();
-  const nextSteps = sectionLines(text, /^#{1,3}\s*\**Pr[óo]ximas etapas\**/i)
-    .filter((l) => /^[-*]/.test(l))
-    .map(stripBullet);
-  const details = sectionLines(text, /^#{1,3}\s*\**Detalhes\**/i)
-    .filter((l) => /^[-*]/.test(l))
-    .map(stripBullet);
-  return { summary, nextSteps, details };
+  const sections = splitSections(text);
+  return {
+    summary: firstParagraph(sections.get('summary') ?? []),
+    nextSteps: bullets(sections.get('nextSteps') ?? []),
+    details: bullets(sections.get('details') ?? []),
+  };
 }
 
 export interface FetchNotesResult {

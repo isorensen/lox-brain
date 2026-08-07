@@ -30,6 +30,15 @@ This account is referred to below as the **capture account**
 
 ## Creating the service account
 
+Enable the IAM Credentials API on the project. The pipeline calls
+`iamcredentials.googleapis.com/...:signJwt` to mint its own delegated JWTs; on
+a project where the API was never enabled, the very first call fails with
+`SERVICE_DISABLED` (403):
+
+```bash
+gcloud services enable iamcredentials.googleapis.com --project=<project>
+```
+
 Create a dedicated service account rather than reusing an existing one:
 
 ```bash

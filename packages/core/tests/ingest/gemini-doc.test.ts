@@ -83,27 +83,47 @@ describe('parseGeminiDoc', () => {
 });
 
 describe('fetchNotes', () => {
+  const twoDocs = {
+    attachments: [
+      { title: 'Anotações do Gemini', fileUrl: 'https://docs.example/document/d/d1/edit' },
+      { title: 'Anotações do Gemini', fileUrl: 'https://docs.example/document/d/d2/edit' },
+    ],
+  } as unknown as NormalizedEvent;
+
   it('returns null when the event has no notes attachment', async () => {
     const e = { attachments: [] } as unknown as NormalizedEvent;
-    expect(await fetchNotes(vi.fn(), e, PATTERNS)).toBeNull();
+    expect(await fetchNotes(vi.fn(), e, PATTERNS)).toEqual({ notes: null, errors: [] });
   });
 
   it('concatenates details from multiple docs and keeps every url', async () => {
-    const e = {
-      attachments: [
-        { title: 'Anotações do Gemini', fileUrl: 'https://docs.example/document/d/d1/edit' },
-        { title: 'Anotações do Gemini', fileUrl: 'https://docs.example/document/d/d2/edit' },
-      ],
-    } as unknown as NormalizedEvent;
     const exportDoc = vi.fn().mockResolvedValue(fixture);
-    const notes = await fetchNotes(exportDoc, e, PATTERNS);
+    const { notes } = await fetchNotes(exportDoc, twoDocs, PATTERNS);
     expect(exportDoc).toHaveBeenCalledTimes(2);
     expect(notes?.docUrls).toHaveLength(2);
     expect(notes?.details.length).toBeGreaterThanOrEqual(4);
   });
 
+  it('keeps the readable doc when a sibling doc on the same event fails', async () => {
+    const exportDoc = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('403 caller does not have permission'))
+      .mockResolvedValueOnce(fixture);
+    const { notes, errors } = await fetchNotes(exportDoc, twoDocs, PATTERNS);
+
+    expect(notes).not.toBeNull();
+    expect(notes?.summary).toContain('Equipe alinhou o corte da release');
+    expect(notes?.docUrls).toEqual(['https://docs.example/document/d/d2/edit']);
+    expect(errors).toEqual(['403 caller does not have permission']);
+  });
+
   it('returns null when every export fails, so the caller writes a skeleton', async () => {
     const exportDoc = vi.fn().mockRejectedValue(new Error('403'));
-    expect(await fetchNotes(exportDoc, event, PATTERNS)).toBeNull();
+    expect(await fetchNotes(exportDoc, event, PATTERNS)).toEqual({ notes: null, errors: ['403'] });
+  });
+
+  it('reports the failure reason so auth breakage is not read as a missing invite', async () => {
+    const exportDoc = vi.fn().mockRejectedValue(new Error('unauthorized_client'));
+    const { errors } = await fetchNotes(exportDoc, event, PATTERNS);
+    expect(errors).toEqual(['unauthorized_client']);
   });
 });

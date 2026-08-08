@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { DbClient } from '../../src/lib/db-client.js';
+import { DbClient, NOTE_DATE_PATTERN } from '../../src/lib/db-client.js';
 import type { NoteRow } from '@lox-brain/shared';
 
 describe('DbClient', () => {
@@ -355,7 +355,7 @@ describe('DbClient', () => {
       expect(defaultSql).not.toContain('candidates');
     });
 
-    it('should rerank a similarity-selected candidate pool by updated_at when sort=recency', async () => {
+    it('should rerank a similarity-selected candidate pool by note date when sort=recency', async () => {
       mockPool.query.mockResolvedValue({ rows: [] });
 
       await client.searchSemantic([0.1], { limit: 5, offset: 0, sort: 'recency' });
@@ -364,9 +364,59 @@ describe('DbClient', () => {
       // Inner stage: still selects candidates by cosine distance.
       expect(sql).toContain('WITH candidates AS');
       expect(sql).toContain('ORDER BY embedding <=> $1::vector');
-      // Outer stage: reorders that pool by recency.
+      // Outer stage: reorders that pool by the date the note declares,
+      // falling back to index time only for notes that declare none.
       expect(sql).toContain('FROM candidates');
-      expect(sql).toMatch(/ORDER BY updated_at DESC, similarity DESC/);
+      expect(sql).toMatch(/ORDER BY COALESCE\(/);
+      expect(sql).toContain('substring(file_path from');
+      expect(sql).toContain("to_char(updated_at, 'YYYY-MM-DD')");
+      expect(sql).toMatch(/DESC, updated_at DESC, similarity DESC/);
+    });
+
+    it('should never cast the extracted filename date to a date type', async () => {
+      mockPool.query.mockResolvedValue({ rows: [] });
+
+      await client.searchSemantic([0.1], { limit: 5, offset: 0, sort: 'recency' });
+
+      // `to_date` raises 22008 on an impossible date, and a single
+      // `2026-02-30 x.md` in the vault would take down every recency search.
+      const [sql] = mockPool.query.mock.calls[0];
+      expect(sql).not.toContain('to_date');
+      expect(sql).not.toMatch(/::\s*date/);
+    });
+
+    it('should compare note dates under the C collation', async () => {
+      mockPool.query.mockResolvedValue({ rows: [] });
+
+      await client.searchSemantic([0.1], { limit: 5, offset: 0, sort: 'recency' });
+
+      // Text ordering only equals date ordering if the database collation does
+      // not reweight the digits and hyphens.
+      const [sql] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('COLLATE "C"');
+    });
+
+    it('should only admit a plausible calendar date from the last path segment', () => {
+      // Postgres ARE and JS agree on every construct this pattern uses
+      // (`\d`, `(?:a|b)`, character classes, `$`), so JS can stand in here for
+      // the engine that actually runs it.
+      const pattern = new RegExp(NOTE_DATE_PATTERN);
+      const dateOf = (filePath: string) => filePath.match(pattern)?.[1];
+
+      expect(dateOf('Meetings/2026-08-03 Weekly Meeting.md')).toBe('2026-08-03');
+      expect(dateOf('Meetings/Weekly Meeting 2026-08-03.md')).toBe('2026-08-03');
+      // A dated folder is not the note's own date.
+      expect(dateOf('Journal/2026-08-03/notes.md')).toBeUndefined();
+      // The note's own date wins over a dated folder above it.
+      expect(dateOf('2026-01-01 Planning/2026-08-03 Weekly.md')).toBe('2026-08-03');
+      // Impossible months and days never reach the sort key.
+      expect(dateOf('Meetings/2026-13-45 x.md')).toBeUndefined();
+      expect(dateOf('Meetings/9999-99-99 x.md')).toBeUndefined();
+      expect(dateOf('Meetings/2026-00-00 x.md')).toBeUndefined();
+      // Unpadded and unseparated forms are not the vault convention.
+      expect(dateOf('Meetings/2026-8-3 x.md')).toBeUndefined();
+      expect(dateOf('Meetings/20260803 x.md')).toBeUndefined();
+      expect(dateOf('Meetings/no date here.md')).toBeUndefined();
     });
 
     it('should size the candidate pool from limit+offset with a floor of 100', async () => {

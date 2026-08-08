@@ -67,6 +67,40 @@ function candidatePoolSize(limit: number, offset: number): number {
   return Math.max((limit + offset) * 10, 100);
 }
 
+/**
+ * Extracts the date a note declares in its own filename (`YYYY-MM-DD Title.md`).
+ *
+ * `[^/]*$` confines the match to the last path segment, so a dated folder above
+ * the note is not mistaken for the note's date, and a note inside one still
+ * sorts by its own.
+ *
+ * The month and day alternations are not decoration. Whatever this yields is
+ * used as a sort key without a cast, and the wider `\d{2}-\d{2}` would let
+ * `9999-99-99 junk.md` outrank every real note in the vault.
+ */
+export const NOTE_DATE_PATTERN = '(\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01]))[^/]*$';
+
+/**
+ * The sort key behind `sort: 'recency'`: the date the note declares, or the
+ * time it last changed if it declares none.
+ *
+ * `updated_at` alone answers a different question — when the row was last
+ * written to the *index*, which any bulk reindex (`npm run index-vault`, a
+ * calendar backfill) resets across the whole vault at once, silently turning
+ * "newest note" into "last row ingested". See issue #200.
+ *
+ * Compared as text and never cast: `to_date` raises 22008 on an impossible
+ * date, so one `2026-02-30 x.md` in the vault would take down every recency
+ * search — and no regex can rule that case out, because it is well-formed and
+ * merely nonexistent. Zero-padded `YYYY-MM-DD` orders identically as text and
+ * as a date, so the cast buys nothing; `COLLATE "C"` keeps that true under a
+ * collation that would otherwise reweight the hyphens.
+ */
+const NOTE_DATE_SQL = `COALESCE(
+        substring(file_path from '${NOTE_DATE_PATTERN}'),
+        to_char(updated_at, 'YYYY-MM-DD')
+      ) COLLATE "C"`;
+
 export class DbClient {
   private readonly pool: Pool;
 
@@ -349,8 +383,10 @@ export class DbClient {
    * `sort: 'recency'` answers "which of the relevant notes is the latest?" —
    * a question pure cosine ranking cannot answer at all. It runs in two
    * stages: an inner query picks a candidate pool by similarity, the outer
-   * one reorders that pool by `updated_at`. It is deliberately NOT a plain
-   * `ORDER BY updated_at DESC` over the table, which would ignore the query.
+   * one reorders that pool by `NOTE_DATE_SQL` — the date the note declares in
+   * its filename, falling back to `updated_at` for notes that declare none. It
+   * is deliberately NOT a plain `ORDER BY` over the table, which would ignore
+   * the query.
    *
    * `total` is not the pool size: `COUNT(*) OVER()` sits inside the CTE, and
    * Postgres evaluates window functions before that query level's `LIMIT`, so
@@ -404,7 +440,7 @@ export class DbClient {
       LIMIT $${poolIdx}
       )
       SELECT * FROM candidates
-      ORDER BY updated_at DESC, similarity DESC
+      ORDER BY ${NOTE_DATE_SQL} DESC, updated_at DESC, similarity DESC
       LIMIT $${limitIdx}
       OFFSET $${offsetIdx}
     `

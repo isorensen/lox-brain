@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.19.0] — 2026-08-08
+
+### Fixed
+- **`sort: 'recency'` ranked by when a note was last written to the index, not by the date the note is about.** `updated_at` records ingestion time. For the question the parameter exists to answer — "what was the last Weekly Meeting?" — those are different values, and only one is right. It looked correct because the watcher skips unchanged files, so a note written once keeps an `updated_at` near its creation date. Any bulk rewrite breaks that correlation across the whole vault at once, silently: `npm run index-vault` (a documented command), a backfill that recreates notes, a vault-wide retag. The Credifit vault was already in that state — all 813 rows stamped inside a 20-minute window by the calendar backfill, two seconds apart, so recency ordering there was *ingestion order*, returning the right answer only because the backfill happened to run chronologically. Reproduced against `pgvector/pgvector:pg16` with that exact shape: the query for "Weekly Meeting" returned **2026-06-01 first and 2026-08-03 third** — the oldest meeting on top, because it was ingested last. After the fix the same rows come back 2026-08-03, 2026-07-06, 2026-06-01, with the scrambled `updated_at` no longer able to influence the answer.
+
+  Recency now orders by the date the note declares in its own filename (`YYYY-MM-DD Title.md`, the convention the vault already follows), falling back to `updated_at` only for notes that declare none — "newest by the date the note claims, or by when it last changed if it claims none". Deliberately **not** a `note_date` column: that needs a migration, a backfill over 6672 rows and frontmatter parsing, and the filename convention is what is actually in use. The recency path already sorts a bounded candidate pool, so an unindexed expression costs nothing measurable there.
+
+  The extracted date is compared **as text, never cast to `date`**. Issue #200 proposed `to_date(substring(file_path from '(\d{4}-\d{2}-\d{2})'), 'YYYY-MM-DD')`; against the seeded table that raises `date/time field value out of range: "2026-13-45"` and fails the entire search — one junk filename anywhere in the vault would take recency search down completely. Tightening the regex is necessary but not sufficient: `2026-02-30 x.md` matches any plausible-date pattern and still throws, because it is well-formed and merely nonexistent. Zero-padded `YYYY-MM-DD` sorts identically as text and as a date, so the cast bought nothing it could not lose; `COLLATE "C"` keeps that true under a collation that would otherwise reweight the hyphens. The pattern admits only a real month (`01`–`12`) and day (`01`–`31`) so that `9999-99-99 junk.md` cannot outrank every real note, and is anchored with `[^/]*$` to the last path segment so a dated folder is not mistaken for the note's own date. Verified on Postgres 16: `2026-13-45`, `9999-99-99`, `2026-00-00`, `2026-8-3`, `20260803` and `Journal/2026-12-31/note.md` all fall through to `updated_at`; `2026-01-01 Planning/2026-08-03 Weekly.md` resolves to the note's date, not the folder's.
+
+  The `'similarity'` path (the default) is byte-identical — same SQL, same parameters — and a test enforces that. The `sort` description in `search_semantic`'s `inputSchema`, which the model reads to decide when to use it, now says which date it ranks by.
+
 ## [0.18.1] — 2026-08-07
 
 ### Fixed

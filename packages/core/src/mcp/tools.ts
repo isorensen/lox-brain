@@ -147,7 +147,7 @@ export function createTools(
             type: 'string',
             enum: ['similarity', 'recency'],
             description:
-              "How to order results (default: 'similarity'). Use 'recency' whenever the question is about the latest of something — \"the last 1:1\", \"our most recent decision on X\", \"what did we discuss yesterday\" — otherwise the newest note is easily outranked by an older, slightly more similar one. It ranks the semantically relevant notes by date, not the whole vault: the query still decides which notes are candidates. Keep 'similarity' for topical questions where date does not matter.",
+              "How to order results (default: 'similarity'). Use 'recency' whenever the question is about the latest of something — \"the last 1:1\", \"our most recent decision on X\", \"what did we discuss yesterday\" — otherwise the newest note is easily outranked by an older, slightly more similar one. It ranks the semantically relevant notes by date, not the whole vault: the query still decides which notes are candidates. The date it ranks by is the one in the note's filename (`YYYY-MM-DD Title.md`) — the date the note is about, not when it was indexed; notes without a dated filename fall back to when they last changed. Keep 'similarity' for topical questions where date does not matter.",
           },
         },
         required: ['query'],

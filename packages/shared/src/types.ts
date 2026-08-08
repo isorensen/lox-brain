@@ -31,8 +31,9 @@ export interface SearchOptions {
   area?: string;
   source_type?: string;
   // Semantic search only. 'similarity' (default) ranks purely by cosine
-  // distance; 'recency' reranks a similarity-selected candidate pool by
-  // updated_at. See DbClient.searchSemantic.
+  // distance; 'recency' reranks a similarity-selected candidate pool by the
+  // date the note declares in its filename, falling back to updated_at.
+  // See DbClient.searchSemantic.
   sort?: SearchSort;
 }
 

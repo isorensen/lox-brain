@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.19.2] — 2026-08-15
+
+### Fixed
+- **`infra/deploy.sh` aborted on any host whose `~/.lox/config.json` exists but carries no `install_dir`.** The script resolved the install directory with `jq -r '.install_dir'`, which prints the literal string `null` for a missing key, so the deploy died on `cd null` under `set -e`. The `$HOME/lox-brain` fallback was unreachable because it only covered a config file that is *absent*, not one that is incomplete. The `node` branch had the same defect, printing `undefined`. Resolution now uses `// empty` (and `?? ''`), and the default is applied after resolution so it covers a missing key as well as a missing file. Hit in practice on the Credifit VM, whose config holds only a `calendar_ingest` key.
+
+### Documentation
+- **Corrected the runtime commands in `CLAUDE.md`.** `mcp`, `mcp:prod`, `watcher` and `index-vault` are defined in the core workspace, not at the root, so every documented form failed with `Missing script`; they now carry `--workspace=packages/core`. `npm run dev` was listed but no such script exists in any workspace, and has been dropped. Added the environment `index-vault` needs (`VAULT_PATH`, `PG_PASSWORD`, `OPENAI_API_KEY`), which systemd supplies to the services but a manual shell does not.
+
+### Chore
+- `package-lock.json` now carries the same version as the `package.json` files. It had drifted (lock `0.18.1` against package `0.19.0`, then lock `0.19.0` against package `0.19.1`); `npm ci` tolerates the mismatch, so it never surfaced in CI.
+
 ## [0.19.1] — 2026-08-15
 
 ### Fixed

@@ -47,12 +47,18 @@ npm install
 npm run build --workspaces               # tsc (all packages)
 npm run test --workspace=packages/core   # vitest (core package)
 npm run test:coverage                    # vitest --coverage (target: 80%+)
-npm run dev                              # tsx watch for development
-npm run mcp                              # start MCP server (dev, tsx)
-npm run mcp:prod                         # start MCP server (prod, node dist)
-npm run watcher                          # start vault watcher (dev)
-npm run index-vault                      # one-time vault indexing
+# The runtime entrypoints live in the core workspace, not the root — running
+# these without --workspace fails with `Missing script`.
+npm run mcp --workspace=packages/core          # start MCP server (dev, tsx)
+npm run mcp:prod --workspace=packages/core     # start MCP server (prod, node dist)
+npm run watcher --workspace=packages/core      # start vault watcher (dev)
+npm run index-vault --workspace=packages/core  # one-time vault indexing
 ```
+
+`index-vault` reads `VAULT_PATH`, `PG_PASSWORD` and `OPENAI_API_KEY` from the
+environment. systemd supplies them to the services from an `EnvironmentFile`,
+but a manual shell does not — on a VM, load them first with
+`set -a; . /etc/lox/secrets.env; set +a`.
 
 ## Configuration
 

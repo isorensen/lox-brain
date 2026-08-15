@@ -25,7 +25,9 @@ async function processFile(filePath: string, label: string): Promise<void> {
     await vaultWatcher.handleFileChange(filePath, content);
     console.log(`${label}: ${filePath}`);
   } catch (err) {
-    console.error(`Error ${label.toLowerCase()} ${filePath}:`, err);
+    // Reached for real now that handleFileChange propagates (#203); the old
+    // "Error indexed <path>" wording read as a status, not a failure.
+    console.error(`Failed to index ${filePath}:`, err);
   }
 }
 

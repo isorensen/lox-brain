@@ -143,11 +143,18 @@ describe('DbClient', () => {
       const [sql, params] = mockPool.query.mock.calls[0];
       expect(sql).toContain('created_by');
       expect(params).toContain('eduardo');
-      // On conflict, created_by should NOT be overwritten (preserve original over incoming)
-      expect(sql).toContain('COALESCE(vault_embeddings.created_by, EXCLUDED.created_by)');
+      // On conflict an existing attribution wins, but '' means "unattributed",
+      // not "attributed to nobody" — the column is NOT NULL DEFAULT '', so a
+      // plain COALESCE on the stored value can never fill it in later (#203).
+      expect(sql).toContain(
+        "COALESCE(NULLIF(vault_embeddings.created_by, ''), EXCLUDED.created_by)",
+      );
     });
 
-    it('should pass null created_by when not provided', async () => {
+    // Regression (#203): created_by is NOT NULL DEFAULT ''. An explicit NULL does
+    // not fall back to the column default, so sending null rejected every note
+    // whose frontmatter carries no created_by — which is most of them.
+    it('should pass empty string created_by when not provided', async () => {
       mockPool.query.mockResolvedValue({ rowCount: 1 });
 
       const note: NoteRow = {
@@ -165,7 +172,11 @@ describe('DbClient', () => {
 
       const [sql, params] = mockPool.query.mock.calls[0];
       expect(sql).toContain('created_by');
-      expect(params).toContain(null);
+      // created_by is $9 — assert by position: area/source_type are genuinely
+      // nullable columns and legitimately stay null in this same param list.
+      expect(params[8]).toBe('');
+      expect(params[9]).toBeNull();
+      expect(params[10]).toBeNull();
     });
 
     it('should propagate pool.query rejection', async () => {

@@ -138,18 +138,34 @@ describe('VaultWatcher', () => {
       expect(mockDb.upsertNote.mock.calls[0][0].file_hash).toBe('new-hash');
     });
 
-    it('should handle errors gracefully without crashing', async () => {
+    // Regression (#203): this used to swallow the error and resolve, so the
+    // caller in watcher/index.ts logged "Indexed: <path>" for a note that was
+    // never written. Failures must reach the caller, which owns the logging
+    // and already try/catches per file — so one bad note still can't kill the
+    // watcher.
+    it('should propagate indexing errors to the caller', async () => {
       mockEmbedding.generateEmbedding.mockRejectedValue(
         new Error('OpenAI API rate limit exceeded'),
       );
 
-      // Should not throw — error is handled internally
       await expect(
         watcher.handleFileChange(filePath, content),
-      ).resolves.toBeUndefined();
+      ).rejects.toThrow('OpenAI API rate limit exceeded');
 
       // upsertNote should NOT have been called since embedding failed
       expect(mockDb.upsertNote).not.toHaveBeenCalled();
+    });
+
+    // Regression (#203): a DB rejection must surface too — this is the exact
+    // path the not-null violation took.
+    it('should propagate upsert failures to the caller', async () => {
+      mockDb.upsertNote.mockRejectedValue(
+        new Error('null value in column "created_by" violates not-null constraint'),
+      );
+
+      await expect(
+        watcher.handleFileChange(filePath, content),
+      ).rejects.toThrow('not-null constraint');
     });
 
     it('should generate embedding per chunk and upsert each with chunk_index', async () => {
@@ -192,7 +208,9 @@ describe('VaultWatcher', () => {
         .mockResolvedValueOnce(new Array(1536).fill(0.1))
         .mockRejectedValueOnce(new Error('OpenAI API rate limit exceeded'));
 
-      await watcher.handleFileChange(`${VAULT_PATH}/notes/failing.md`, 'raw content');
+      await expect(
+        watcher.handleFileChange(`${VAULT_PATH}/notes/failing.md`, 'raw content'),
+      ).rejects.toThrow('OpenAI API rate limit exceeded');
 
       // No upserts should have happened since embedding failed on chunk 1
       expect(mockDb.upsertNote).not.toHaveBeenCalled();

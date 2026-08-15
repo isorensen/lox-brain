@@ -247,7 +247,12 @@ export class DbClient {
         tags = EXCLUDED.tags,
         embedding = EXCLUDED.embedding,
         file_hash = EXCLUDED.file_hash,
-        created_by = COALESCE(vault_embeddings.created_by, EXCLUDED.created_by),
+        -- An existing attribution wins over the incoming one, but the column is
+        -- NOT NULL DEFAULT '' — the stored value is never NULL, so a plain
+        -- COALESCE on it would pin every row to whatever it got first and a
+        -- note that later gains a created_by frontmatter field could never be
+        -- attributed. '' is the "unattributed" marker, so treat it as unset.
+        created_by = COALESCE(NULLIF(vault_embeddings.created_by, ''), EXCLUDED.created_by),
         area = COALESCE(EXCLUDED.area, vault_embeddings.area),
         source_type = COALESCE(EXCLUDED.source_type, vault_embeddings.source_type),
         updated_at = NOW()
@@ -262,7 +267,11 @@ export class DbClient {
       JSON.stringify(note.embedding),
       note.file_hash,
       note.chunk_index,
-      note.created_by ?? null,
+      // created_by is NOT NULL DEFAULT ''. An explicit NULL does not fall back
+      // to the column default, so it has to be the empty string here — sending
+      // null rejected every note without `created_by:` frontmatter, which is
+      // most of them (#203). area/source_type below are genuinely nullable.
+      note.created_by ?? '',
       note.area ?? null,
       note.source_type ?? null,
     ]);

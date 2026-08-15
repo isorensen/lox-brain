@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.19.1] — 2026-08-15
+
+### Fixed
+- **The watcher could not index any note whose frontmatter omits `created_by:` — and reported those notes as indexed.** `upsertNote` passed an explicit `NULL` for `created_by` into a `TEXT NOT NULL DEFAULT ''` column. An explicit `NULL` does not fall back to a column default, so Postgres rejected the row with `null value in column "created_by" of relation "vault_embeddings" violates not-null constraint`. `created_by` is optional on `NoteMetadata`/`NoteRow` and `parseNote` only populates it when the field is present in frontmatter, which for a personal vault is essentially never — so the failure covered nearly every note, not an edge case. The value sent is now `''`, matching the column default. `area`/`source_type` are genuinely nullable columns and still send `null`.
+
+  The bug survived because a unit test asserted it: `should pass null created_by when not provided` expected `params` to contain `null`, so the mocked suite stayed green while every real insert failed. That test now asserts `''`, and by parameter position — `area`/`source_type` legitimately sit as `null` in the same list, so a `toContain(null)`-style check cannot tell the two apart.
+
+- **A failed index was logged as a successful one.** `VaultWatcher.handleFileChange` caught its own errors and returned normally, so the caller in `watcher/index.ts` logged `Indexed: <path>` immediately after — for a note that was never written. On a live vault this hid the not-null violation above for weeks: the log showed a clean run while the database received nothing. `handleFileChange` now propagates; `processFile` already try/catches per file, so one bad note still cannot take the watcher down, and its error message reads `Failed to index <path>` rather than the previous `Error indexed <path>`, which scanned as a status line.
+
+- **`created_by` could never be filled in after a row was first stored.** The `ON CONFLICT` clause read `COALESCE(vault_embeddings.created_by, EXCLUDED.created_by)`, intending "an existing attribution wins". Because the column is `NOT NULL`, the stored value is never `NULL`, so the `COALESCE` always selected it and the incoming value was unreachable — a note indexed as unattributed stayed unattributed even after gaining a `created_by:` field. Now `COALESCE(NULLIF(vault_embeddings.created_by, ''), EXCLUDED.created_by)`, treating `''` as the unset marker it already is.
+
+  Closes [#203](https://github.com/isorensen/lox-brain/issues/203).
+
 ## [0.19.0] — 2026-08-08
 
 ### Fixed

@@ -3,13 +3,17 @@ set -euo pipefail
 
 # Resolve install directory from Lox config or fallback to default
 LOX_CONFIG="$HOME/.lox/config.json"
+PROJECT_DIR=""
 if [ -f "$LOX_CONFIG" ] && command -v jq &> /dev/null; then
-  PROJECT_DIR=$(jq -r '.install_dir' "$LOX_CONFIG")
+  PROJECT_DIR=$(jq -r '.install_dir // empty' "$LOX_CONFIG")
 elif [ -f "$LOX_CONFIG" ]; then
-  PROJECT_DIR=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$LOX_CONFIG','utf8')).install_dir)")
-else
-  PROJECT_DIR="$HOME/lox-brain"
+  PROJECT_DIR=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$LOX_CONFIG','utf8')).install_dir ?? '')")
 fi
+# A config file that exists but carries no install_dir used to yield the literal
+# string "null" (jq) or "undefined" (node), and the deploy died on `cd null`
+# instead of falling back. The default belongs here, after resolution, so it
+# covers a missing key as well as a missing file.
+PROJECT_DIR="${PROJECT_DIR:-$HOME/lox-brain}"
 
 cd "$PROJECT_DIR"
 

@@ -102,6 +102,29 @@ input[type=checkbox],input[type=radio]{accent-color:var(--acc);width:15px;height
 #info{max-height:52vh;overflow:auto}
 #app.mobile #diag{right:12px;bottom:60px;flex-direction:column;align-items:flex-end}
 #app.mobile #patho{display:none!important}
+
+#pbar{position:absolute;left:8px;right:8px;top:82px;display:none;gap:6px;align-items:center;padding:6px 8px}
+#pbar select{flex:1;min-width:0;background:#141a2a;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:7px 6px;font-size:13px}
+#pbar .seg{margin:0;width:140px;flex:none}
+#app.mobile.pathomode #pbar{display:flex}
+#app.mobile #top{left:8px;right:8px;top:8px;max-width:none;padding:8px 10px 6px}
+#app.mobile #top h1{font-size:15px}
+#app.mobile .views{flex-wrap:nowrap;overflow-x:auto;padding-bottom:3px;-webkit-overflow-scrolling:touch}
+#app.mobile .vbtn{white-space:nowrap;padding:5px 9px;font-size:12px;flex:none}
+#app.mobile #info{left:8px;right:8px;width:auto;min-width:0;bottom:auto;top:90px;max-height:42vh;padding:10px 12px 10px}
+#app.mobile.pathomode #info{top:134px}
+#app.mobile #info h2{font-size:15px;padding-right:24px}
+#info.collapsed .ps,#info.collapsed .chips,#info.collapsed .sub,#info.collapsed > p{display:none}
+#app.mobile #info .focus{right:40px;top:9px}
+#info h2.tgl{cursor:pointer}
+#info .caret{color:var(--acc2);font-size:13px}
+#app.mobile #diag{left:8px;right:8px;bottom:8px;flex-direction:row;align-items:flex-end;justify-content:center;gap:6px}
+#app.mobile .dg{padding:4px 5px 5px;min-width:0}
+#app.mobile #oct{flex:1}
+#app.mobile #vf{width:31%}
+.dg canvas{max-width:100%;height:auto}
+#app.mobile .dh{font-size:8.5px;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#app.mobile.pathomode #toggleUI{display:none}
 </style>
 </head>
 <body>
@@ -127,6 +150,7 @@ input[type=checkbox],input[type=radio]{accent-color:var(--acc);width:15px;height
   </div>
   <div id="left" class="panel"><h3>Estruturas</h3></div>
   <div id="patho" class="panel"><div class="phead"><span>Patologias</span><div class="seg" id="cmp"><button data-c="normal">Normal</button><button data-c="patho" class="on">Patologia</button></div></div><div id="pbusy">gerando fundo de olho…</div></div>
+  <div id="pbar" class="panel"><select id="pathoSel"></select><div class="seg" id="cmp2"><button data-c="normal">Normal</button><button data-c="patho" class="on">Patologia</button></div></div>
   <div id="diag"><div id="vf" class="panel dg"><div class="dh">Campo visual OD · esquemático</div><canvas id="vfC" width="190" height="190"></canvas></div><div id="oct" class="panel dg"><div class="dh">OCT macular · esquemático</div><canvas id="octC" width="520" height="190"></canvas></div></div>
   <div id="right" class="panel">
     <div class="sec"><h3>Plano de corte</h3>
@@ -353,8 +377,8 @@ function makeSpriteTexture(){const c=canvas(64,64),g=c.getContext('2d');const gr
 
 // ---------------- Renderer / cena ----------------
 const cv=document.getElementById('c');
-const renderer=new T.WebGLRenderer({canvas:cv,antialias:true,alpha:true,stencil:true,preserveDrawingBuffer:true,powerPreference:'high-performance'});
-renderer.setPixelRatio(/lowres/.test(location.search)?1:Math.min(devicePixelRatio,2));renderer.setSize(innerWidth,innerHeight);
+const renderer=new T.WebGLRenderer({canvas:cv,antialias:!isMobile,alpha:true,stencil:true,preserveDrawingBuffer:false,powerPreference:'high-performance'});
+renderer.setPixelRatio(/lowres/.test(location.search)?1:Math.min(devicePixelRatio,isMobile?1.5:2));renderer.setSize(innerWidth,innerHeight);
 renderer.outputEncoding=T.sRGBEncoding;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.05;
 renderer.localClippingEnabled=true;renderer.physicallyCorrectLights=false;
 const maxAniso=renderer.capabilities.getMaxAnisotropy();
@@ -391,7 +415,7 @@ const eye=new T.Group();eye.rotation.x=Math.PI/2;scene.add(eye); // lathe: eixo 
 const L2W=new T.Matrix4().makeRotationX(Math.PI/2);
 
 function arc(R,th0,th1,n,fn){const pts=[];for(let i=0;i<=n;i++){const th=th0+(th1-th0)*i/n;const r=fn?fn(th):R;pts.push(new T.Vector2(Math.max(0,r*Math.sin(th)),r*Math.cos(th)));}return pts;}
-function lathe(pts,seg=128){return new T.LatheGeometry(pts,seg);}
+function lathe(pts,seg=128){return new T.LatheGeometry(pts,isMobile?Math.round(seg*0.6):seg);}
 function setUV(geom,mode){const pos=geom.attributes.position,uv=geom.attributes.uv,v=new T.Vector3();
   for(let i=0;i<pos.count;i++){v.fromBufferAttribute(pos,i);const d=v.clone().normalize();
     if(mode==='equirect'){uv.setY(i,1-Math.acos(clamp(d.y,-1,1))/Math.PI);}
@@ -414,7 +438,7 @@ function capped(id,geom,mat,capColor,opts={}){
   const order=capOrder++;const sg=stencilGroup(geom,order);grp.add(sg);
   const capMat=new T.MeshStandardMaterial({color:capColor,roughness:opts.capRough??0.6,metalness:0,stencilWrite:true,stencilRef:0,stencilFunc:T.NotEqualStencilFunc,stencilFail:T.ReplaceStencilOp,stencilZFail:T.ReplaceStencilOp,stencilZPass:T.ReplaceStencilOp});
   const cap=new T.Mesh(capPlaneGeom,capMat);cap.renderOrder=order+0.1;cap.onAfterRender=r=>r.clearStencil();cap.userData.id=id;
-  scene.add(cap);capGroups.push({cap,grp,id});
+  scene.add(cap);capGroups.push({cap,grp,sg,id});
   eye.add(grp);if(!opts.nopick)pickables.push(mesh);
   const s=structures[id]||(structures[id]={mats:[],objs:[]});s.mats.push(mat,capMat);s.objs.push(grp,cap);
   return {mesh,grp,cap,mat,capMat};
@@ -501,7 +525,7 @@ const nerveDirL=new T.Vector3(0.46,-0.885,-0.06).normalize();
  // stencil/tampa para o nervo (corte horizontal)
  [sheath,nerve].forEach((m,i)=>{const order=capOrder++;const sg=stencilGroup(m.geometry,order);sg.quaternion.copy(m.quaternion);sg.position.copy(m.position);grp.add(sg);
    const capMat=new T.MeshStandardMaterial({color:i?0xf1dfb0:0xe9e0d0,roughness:0.6,stencilWrite:true,stencilRef:0,stencilFunc:T.NotEqualStencilFunc,stencilFail:T.ReplaceStencilOp,stencilZFail:T.ReplaceStencilOp,stencilZPass:T.ReplaceStencilOp});
-   const cap=new T.Mesh(capPlaneGeom,capMat);cap.renderOrder=order+0.1;cap.onAfterRender=r=>r.clearStencil();cap.userData.id='nerve';scene.add(cap);capGroups.push({cap,grp,id:'nerve'});structures.nerve.objs.push(cap);structures.nerve.mats.push(capMat);});}
+   const cap=new T.Mesh(capPlaneGeom,capMat);cap.renderOrder=order+0.1;cap.onAfterRender=r=>r.clearStencil();cap.userData.id='nerve';scene.add(cap);capGroups.push({cap,grp,sg,id:'nerve'});structures.nerve.objs.push(cap);structures.nerve.mats.push(capMat);});}
 
 // ---------------- Corte ----------------
 function applyCut(){
@@ -509,7 +533,7 @@ function applyCut(){
   if(mode==='sagittal'){cutPlane.normal.set(1,0,0);cutPlane.constant=-c;}
   else if(mode==='horizontal'){cutPlane.normal.set(0,-1,0);cutPlane.constant=c;}
   else{cutPlane.normal.set(1,0,0);cutPlane.constant=100;}
-  for(const {cap} of capGroups){
+  for(const {cap,sg} of capGroups){sg.visible=mode!=='none';
     if(mode==='sagittal'){cap.position.set(c,0,0);cap.lookAt(tmp.set(c-1,0,0));}
     else if(mode==='horizontal'){cap.position.set(0,c,0);cap.lookAt(tmp.set(0,c+1,0));}
     else{cap.position.set(100,0,0);cap.lookAt(tmp.set(99,0,0));}
@@ -1198,9 +1222,9 @@ function applyPatho(){const p=PATHO[currentPatho];const active=showPatho&&curren
   retinaObj.mat.map=(active&&pathoTex)?pathoTex:fundusTex;retinaObj.mat.needsUpdate=true;
   flap.visible=active&&currentPatho==='dr'&&structures.retina.objs[0].visible;if(flap.visible&&flapTex&&flap.material.map!==flapTex){flap.material.map=flapTex;flap.material.needsUpdate=true;}
   if(active&&p.vit){vitreousMesh.material.color.setHex(p.vit);vitreousMesh.material.opacity=p.vitOp;}else{vitreousMesh.material.color.setHex(vitBase.color);vitreousMesh.material.opacity=vitBase.op;}
-  document.querySelectorAll('#cmp button').forEach(b=>b.classList.toggle('on',(b.dataset.c==='patho')===showPatho));
-  document.getElementById('cmp').style.visibility=currentPatho==='normal'?'hidden':'visible';}
-function selectPatho(id){currentPatho=id;showPatho=true;document.querySelectorAll('.pitem').forEach(el=>el.classList.toggle('sel',el.dataset.id===id));
+  document.querySelectorAll('#cmp button,#cmp2 button').forEach(b=>b.classList.toggle('on',(b.dataset.c==='patho')===showPatho));
+  document.getElementById('cmp').style.visibility=document.getElementById('cmp2').style.visibility=currentPatho==='normal'?'hidden':'visible';}
+function selectPatho(id){currentPatho=id;showPatho=true;document.querySelectorAll('.pitem').forEach(el=>el.classList.toggle('sel',el.dataset.id===id));document.getElementById('pathoSel').value=id;
   const p=PATHO[id];const busy=document.getElementById('pbusy');
   const finish=()=>{applyPatho();showInfo(id);drawDiag(id);if(state.view==='patho'){orbit.flyTo(Object.assign({},VIEWS.patho,{r:p.cam}),1.2);}};
   if(id==='normal'||pathoTexId===id){finish();return;}
@@ -1277,20 +1301,23 @@ function drawDiag(id){const p=PATHO[id];const oct=document.getElementById('oct')
   if(p.oct){oct.style.display='block';drawOCT(p.oct);}else if(id==='normal'){oct.style.display='block';drawOCT(null);}else oct.style.display='none';
   if(p.vf||id==='normal'){vf.style.display='block';drawVF(p.vf||'normal');}else vf.style.display='none';
   updateDiagVis();}
-function updateDiagVis(){const on=(state.view==='patho'||(state.fundus&&currentPatho!=='normal'));document.getElementById('diag').style.display=on?'flex':'none';document.getElementById('hint').style.display=on?'none':'block';}
+function updateDiagVis(){const on=(state.view==='patho'||(state.fundus&&currentPatho!=='normal'));document.getElementById('diag').style.display=on?'flex':'none';document.getElementById('hint').style.display=on?'none':'';}
 
 // ---- UI ----
 {const panel=document.getElementById('patho');let cat='';PATHO_ORDER.forEach(id=>{const p=PATHO[id];if(p.cat&&p.cat!==cat){cat=p.cat;const h=document.createElement('h3');h.textContent=cat;panel.appendChild(h);}
   const d=document.createElement('div');d.className='pitem'+(id==='normal'?' sel':'');d.dataset.id=id;d.textContent=p.n;d.addEventListener('click',()=>selectPatho(id));panel.appendChild(d);});
- document.querySelectorAll('#cmp button').forEach(b=>b.addEventListener('click',()=>{showPatho=b.dataset.c==='patho';applyPatho();}));
+ document.querySelectorAll('#cmp button,#cmp2 button').forEach(b=>b.addEventListener('click',()=>{showPatho=b.dataset.c==='patho';applyPatho();}));
+ const sel=document.getElementById('pathoSel');PATHO_ORDER.forEach(id=>{const o=document.createElement('option');o.value=id;o.textContent=(PATHO[id].cat?PATHO[id].cat+' · ':'')+PATHO[id].n;sel.appendChild(o);});sel.addEventListener('change',()=>selectPatho(sel.value));
  document.getElementById('ckRetina').addEventListener('change',applyPatho);
  window.__onView=(name)=>{const on=name==='patho';document.getElementById('app').classList.toggle('pathomode',on);document.getElementById('patho').style.display=on?'block':'none';if(on){document.getElementById('left').style.display='none';document.getElementById('info').classList.remove('on');selectPatho(currentPatho);}
    updateDiagVis();};
- const _showInfo=showInfo;showInfo=function(id){const p=PATHO[id];if(!p){_showInfo(id);return;}
+ const mobileCollapse=()=>{if(!isMobile||!infoEl.classList.contains('on'))return;infoEl.classList.add('collapsed');const h=infoEl.querySelector('h2');if(!h||h.classList.contains('tgl'))return;h.classList.add('tgl');h.innerHTML+=' <span class="caret">▾</span>';h.onclick=()=>infoEl.classList.toggle('collapsed');};
+ const _showInfo=showInfo;showInfo=function(id){const p=PATHO[id];if(!p){_showInfo(id);mobileCollapse();return;}
    if(id==='normal'){infoEl.innerHTML=`<button class="x">×</button><h2>Retina normal</h2><div class="sub">Referência</div><p>Selecione uma doença na lista à esquerda. O fundo de olho é regenerado com as lesões típicas; os painéis de OCT e campo visual são esquemáticos e o botão Normal/Patologia permite comparar.</p>`;infoEl.classList.add('on');infoEl.querySelector('.x').onclick=()=>infoEl.classList.remove('on');return;}
    const sec=(t,x)=>x?`<div class="ps"><b>${t}</b>${x}</div>`:'';
    infoEl.innerHTML=`<button class="x" title="Fechar">×</button><h2>${p.n}</h2><div class="sub">${p.cat}</div>${sec('O que é',p.def)}${sec('Fisiopatologia',p.fisio)}${sec('Fundo de olho',p.fundo)}${sec('Sintomas',p.sint)}${sec('Exames',p.exam)}${sec('Conduta',p.cond)}<div class="chips">${(p.chips||[]).map(x=>`<span class="chip">${x}</span>`).join('')}</div>`;
-   infoEl.classList.add('on');infoEl.querySelector('.x').onclick=()=>infoEl.classList.remove('on');};
+   infoEl.classList.add('on');infoEl.querySelector('.x').onclick=()=>infoEl.classList.remove('on');
+   mobileCollapse();};
  addEventListener('keydown',e=>{if(e.target.tagName==='INPUT')return;if((e.key==='n'||e.key==='N')&&currentPatho!=='normal'){showPatho=!showPatho;applyPatho();}});
 }
 })();

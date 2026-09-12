@@ -1,7 +1,9 @@
-import { Pool } from 'pg';
+import { Pool, types } from 'pg';
 import { DEFAULT_CONFIG } from '@lox-brain/shared';
 
 const DB = DEFAULT_CONFIG.database!;
+
+types.setTypeParser(1082, (value) => value);
 
 export interface DbConfig {
   host: string;

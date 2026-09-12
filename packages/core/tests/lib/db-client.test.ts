@@ -1033,6 +1033,59 @@ describe('DbClient', () => {
       expect(result.results).toHaveLength(2);
     });
 
+    it('listTasks searches title and details with ILIKE when query is provided', async () => {
+      mockPool.query
+        .mockResolvedValueOnce({ rows: [{ count: '1' }] })
+        .mockResolvedValueOnce({ rows: [{ id: 'a' }] });
+
+      await client.listTasks({ query: 'invoice' });
+
+      const [countSql, countParams] = mockPool.query.mock.calls[0];
+      const [listSql, listParams] = mockPool.query.mock.calls[1];
+      expect(countSql).toContain("(title ILIKE $2 ESCAPE '\\' OR details ILIKE $2 ESCAPE '\\')");
+      expect(countParams).toEqual(['pending', '%invoice%']);
+      expect(listSql).toContain("(title ILIKE $2 ESCAPE '\\' OR details ILIKE $2 ESCAPE '\\')");
+      expect(listParams).toEqual(['pending', '%invoice%', 20, 0]);
+    });
+
+    it('listTasks keeps placeholder indices correct when query is combined with other filters', async () => {
+      mockPool.query
+        .mockResolvedValueOnce({ rows: [{ count: '0' }] })
+        .mockResolvedValueOnce({ rows: [] });
+
+      await client.listTasks({ status: 'done', priority: 'high', query: 'report', limit: 5, offset: 10 });
+
+      const [listSql, listParams] = mockPool.query.mock.calls[1];
+      expect(listSql).toContain('status = $1');
+      expect(listSql).toContain('priority = $2');
+      expect(listSql).toContain('title ILIKE $3');
+      expect(listSql).toContain('LIMIT $4 OFFSET $5');
+      expect(listParams).toEqual(['done', 'high', '%report%', 5, 10]);
+    });
+
+    it('listTasks ignores an empty or whitespace-only query', async () => {
+      mockPool.query
+        .mockResolvedValueOnce({ rows: [{ count: '0' }] })
+        .mockResolvedValueOnce({ rows: [] });
+
+      await client.listTasks({ query: '   ' });
+
+      const [countSql, countParams] = mockPool.query.mock.calls[0];
+      expect(countSql).not.toContain('ILIKE');
+      expect(countParams).toEqual(['pending']);
+    });
+
+    it('listTasks escapes LIKE wildcards in the query term', async () => {
+      mockPool.query
+        .mockResolvedValueOnce({ rows: [{ count: '0' }] })
+        .mockResolvedValueOnce({ rows: [] });
+
+      await client.listTasks({ query: '100%_a\\b' });
+
+      const [, countParams] = mockPool.query.mock.calls[0];
+      expect(countParams[1]).toBe('%100\\%\\_a\\\\b%');
+    });
+
     it('updateTask sets completed_at when status becomes done', async () => {
       mockPool.query.mockResolvedValue({ rows: [{ id: 'u1', status: 'done' }] });
 
@@ -1074,6 +1127,16 @@ describe('DbClient', () => {
       expect(sql).toContain('title ILIKE $1');
       expect(params).toEqual(['%buy milk%']);
       expect(result?.status).toBe('done');
+    });
+
+    it('completeTask escapes LIKE wildcards in the title fallback', async () => {
+      mockPool.query.mockResolvedValue({ rows: [{ id: 'x', status: 'done' }] });
+
+      await client.completeTask('Q3_review 100%');
+
+      const [sql, params] = mockPool.query.mock.calls[0];
+      expect(sql).toContain('ESCAPE');
+      expect(params).toEqual(['%Q3\\_review 100\\%%']);
     });
   });
 });

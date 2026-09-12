@@ -16,6 +16,13 @@
 
 ## Future Integrations
 
+### Read-only task view in the vault (DB → Markdown)
+- **Priority:** Medium
+- **Complexity:** Low
+- Tasks live only in the `tasks` table and are visible solely through the MCP tools, so the vault has no way to browse or group them (Dataview, Tasks plugin, folding).
+- Deliverable: a command (`lox tasks export` or an `export_tasks` tool) that regenerates a single `Tasks.md` in the vault, one line per pending task: `- [ ] Title — due YYYY-MM-DD · #tag ^task-<id>`. The database stays the source of truth; the file is disposable and overwritten on every run.
+- Explicit non-goal for now: writing back from the file. Completing a task by ticking its checkbox (watcher parses `- [x] … ^task-<id>` and calls `complete_task`) is deferred until the read-only view proves useful; full bidirectional sync is out of scope.
+
 ### Meeting recording transcription (extends calendar ingest)
 - **Priority:** Medium
 - **Complexity:** Medium-High

@@ -1,6 +1,6 @@
 {
   "name": "@lox-brain/core",
-  "version": "0.19.2",
+  "version": "0.19.3",
   "private": true,
   "license": "MIT",
   "main": "dist/index.js",

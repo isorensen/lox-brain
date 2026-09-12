@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { Pool } from 'pg';
+import { Pool, types } from 'pg';
 
-vi.mock('pg', () => {
+vi.mock('pg', async () => {
+  const actual = await vi.importActual<typeof import('pg')>('pg');
   const MockPool = vi.fn();
-  return { Pool: MockPool };
+  return { ...actual, Pool: MockPool };
 });
 
 // Must re-import after mock setup so the mock is used
@@ -31,6 +32,11 @@ describe('createPool', () => {
     process.env.DB_NAME = originalEnv.DB_NAME;
     process.env.DB_USER = originalEnv.DB_USER;
     process.env.PG_PASSWORD = originalEnv.PG_PASSWORD;
+  });
+
+  it('registers a type parser returning DATE (OID 1082) as a raw string', async () => {
+    await import('../../src/lib/create-pool.js');
+    expect(types.getTypeParser(1082)('2026-09-12')).toBe('2026-09-12');
   });
 
   it('throws when no password provided and PG_PASSWORD is unset', async () => {

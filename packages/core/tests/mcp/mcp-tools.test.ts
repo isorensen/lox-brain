@@ -75,9 +75,9 @@ describe('createTools', () => {
   });
 
   describe('tool definitions', () => {
-    it('should define exactly 11 tools', () => {
+    it('should define exactly 12 tools', () => {
       const tools = createTools(dbClient, embeddingService, tempVaultPath);
-      expect(tools).toHaveLength(11);
+      expect(tools).toHaveLength(12);
     });
 
     it('should define tools with correct names', () => {
@@ -94,6 +94,7 @@ describe('createTools', () => {
       expect(names).toContain('update_task');
       expect(names).toContain('complete_task');
       expect(names).toContain('daily_log');
+      expect(names).toContain('export_tasks');
     });
 
     it('each tool should have name, description, inputSchema, and handler', () => {
@@ -662,6 +663,109 @@ describe('createTools', () => {
     it('complete_task throws when no task matches', async () => {
       (dbClient.completeTask as unknown as { mockResolvedValueOnce: (v: unknown) => void }).mockResolvedValueOnce(null);
       await expect(tool('complete_task').handler({ id_or_title: 'nope' })).rejects.toThrow(/no pending task/i);
+    });
+  });
+
+  describe('export_tasks handler', () => {
+    function tool() {
+      return createTools(dbClient, embeddingService, tempVaultPath).find((t) => t.name === 'export_tasks')!;
+    }
+
+    function task(overrides: Record<string, unknown>) {
+      return {
+        id: 'id-1',
+        title: 'Task',
+        details: null,
+        status: 'pending',
+        priority: 'medium',
+        due_date: null,
+        tags: [],
+        project_context: null,
+        created_by: null,
+        assigned_to: null,
+        completed_at: null,
+        created_at: new Date(),
+        updated_at: new Date(),
+        ...overrides,
+      };
+    }
+
+    it('writes Tasks.md with frontmatter, heading and one formatted line per task', async () => {
+      vi.mocked(dbClient.listTasks).mockResolvedValueOnce({
+        results: [
+          task({ id: '9f3dfff6', title: 'Sign\nthe contract', priority: 'high', due_date: '2026-09-12', project_context: 'LinkPJ', tags: ['email triage', 'assinatura'] }),
+          task({ id: 'abc', title: 'Plan OKRs', due_date: '2026-10-01', tags: ['okr'] }),
+        ],
+        total: 2,
+      } as never);
+
+      const result = await tool().handler({});
+
+      expect(result).toEqual({ written: 'Tasks.md', count: 2 });
+      expect(dbClient.listTasks).toHaveBeenCalledWith({ status: 'pending', limit: 200 });
+      const written = await readFile(path.join(tempVaultPath, 'Tasks.md'), 'utf-8');
+      expect(written).toMatch(/^---\ntags: \[lox-tasks\]\nstatus: pending\ncount: 2\n---\n\n# Tasks — pending \(2\)\n\n/);
+      expect(written).toContain('- [ ] [high] Sign the contract — due 2026-09-12 · LinkPJ · #email-triage #assinatura ^task-9f3dfff6\n');
+      expect(written).toContain('- [ ] [medium] Plan OKRs — due 2026-10-01 · #okr ^task-abc\n');
+      expect(written.endsWith('\n')).toBe(true);
+    });
+
+    it('omits due/project/tags when absent and uses [x] for done', async () => {
+      vi.mocked(dbClient.listTasks).mockResolvedValueOnce({
+        results: [task({ id: 'd1', title: 'Old', status: 'done', priority: 'low' })],
+        total: 1,
+      } as never);
+
+      await tool().handler({ status: 'done', file_path: 'views/Done.md' });
+
+      const written = await readFile(path.join(tempVaultPath, 'views/Done.md'), 'utf-8');
+      expect(written).toContain('status: done\n');
+      expect(written).toContain('# Tasks — done (1)\n');
+      expect(written).toContain('- [x] [low] Old ^task-d1\n');
+    });
+
+    it('fetches only the total on a second call when the first page is short of it', async () => {
+      const page = (n: number, offset: number, total: number) =>
+        ({ results: Array.from({ length: n }, (_, i) => task({ id: `t${offset + i}` })), total }) as never;
+      vi.mocked(dbClient.listTasks)
+        .mockResolvedValueOnce(page(200, 0, 203))
+        .mockResolvedValueOnce(page(203, 0, 203));
+
+      const result = await tool().handler({});
+
+      expect(result).toEqual({ written: 'Tasks.md', count: 203 });
+      expect(dbClient.listTasks).toHaveBeenCalledTimes(2);
+      expect(dbClient.listTasks).toHaveBeenNthCalledWith(1, { status: 'pending', limit: 200 });
+      expect(dbClient.listTasks).toHaveBeenNthCalledWith(2, { status: 'pending', limit: 203 });
+      const written = await readFile(path.join(tempVaultPath, 'Tasks.md'), 'utf-8');
+      expect(written.match(/^- \[ \]/gm)).toHaveLength(203);
+      expect(written).toContain('count: 203\n');
+    });
+
+    it('makes a single call when the first page already covers the total', async () => {
+      vi.mocked(dbClient.listTasks).mockResolvedValueOnce({
+        results: [task({ id: 'a' }), task({ id: 'b' })],
+        total: 2,
+      } as never);
+
+      const result = await tool().handler({});
+
+      expect(result).toEqual({ written: 'Tasks.md', count: 2 });
+      expect(dbClient.listTasks).toHaveBeenCalledTimes(1);
+      expect(dbClient.listTasks).toHaveBeenCalledWith({ status: 'pending', limit: 200 });
+    });
+
+    it('rejects a path that escapes the vault', async () => {
+      await expect(tool().handler({ file_path: '../x.md' })).rejects.toThrow(/traversal/i);
+    });
+
+    it('falls back to pending when status is invalid', async () => {
+      await tool().handler({ status: 'bogus' });
+
+      expect(dbClient.listTasks).toHaveBeenCalledWith({ status: 'pending', limit: 200 });
+      const written = await readFile(path.join(tempVaultPath, 'Tasks.md'), 'utf-8');
+      expect(written).toContain('status: pending\n');
+      expect(written).toContain('count: 0\n');
     });
   });
 });

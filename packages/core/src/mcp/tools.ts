@@ -2,7 +2,8 @@ import { readFile, writeFile, unlink, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import type { DbClient } from '../lib/db-client.js';
 import type { EmbeddingService } from '../lib/embedding-service.js';
-import type { SearchOptions, TaskStatus, TaskPriority } from '@lox-brain/shared';
+import { TASK_STATUSES } from '@lox-brain/shared';
+import type { SearchOptions, TaskStatus, TaskPriority, TaskRow } from '@lox-brain/shared';
 
 export interface Tool {
   name: string;
@@ -46,6 +47,18 @@ export function addFrontmatter(content: string, tags: string[], createdBy?: stri
 
   if (fields.length === 0) return content;
   return `---\n${fields.join('\n')}\n---\n${content}`;
+}
+
+function formatTaskLine(task: TaskRow): string {
+  const box = task.status === 'done' || task.status === 'cancelled' ? '[x]' : '[ ]';
+  const title = task.title.replace(/\s*\n\s*/g, ' ');
+  let line = `- ${box} [${task.priority}] ${title}`;
+  if (task.due_date) {
+    line += ` — due ${task.due_date.slice(0, 10)}`;
+  }
+  if (task.project_context) line += ` · ${task.project_context}`;
+  if (task.tags.length > 0) line += ` · ${task.tags.map((t) => `#${t.replace(/\s+/g, '-')}`).join(' ')}`;
+  return `${line} ^task-${task.id}`;
 }
 
 export function createTools(
@@ -350,6 +363,35 @@ export function createTools(
         const result = await dbClient.completeTask(idOrTitle);
         if (!result) throw new Error(`No pending task found matching: ${idOrTitle}`);
         return result;
+      },
+    },
+    {
+      name: 'export_tasks',
+      description: 'Write a read-only Markdown view of tasks into the vault (one checkbox line per task, ^task-<id> anchor). The database remains the source of truth; the file is overwritten on every call.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          file_path: { type: 'string', description: 'Vault-relative path (default: Tasks.md)' },
+          status: { type: 'string', enum: ['pending', 'in_progress', 'done', 'cancelled'], description: 'Task status to export (default: pending)' },
+        },
+      },
+      async handler(args: Record<string, unknown>): Promise<unknown> {
+        const filePath = typeof args.file_path === 'string' && args.file_path.trim() !== '' ? args.file_path : 'Tasks.md';
+        const status = TASK_STATUSES.includes(args.status as TaskStatus) ? (args.status as TaskStatus) : 'pending';
+        const resolved = safePath(normalizedVault, filePath);
+
+        const first = await dbClient.listTasks({ status, limit: 200 });
+        const tasks =
+          first.total > first.results.length
+            ? (await dbClient.listTasks({ status, limit: first.total })).results
+            : first.results;
+
+        const header = `---\ntags: [lox-tasks]\nstatus: ${status}\ncount: ${tasks.length}\n---\n\n# Tasks — ${status} (${tasks.length})\n\n`;
+        const content = header + tasks.map((t) => `${formatTaskLine(t)}\n`).join('');
+
+        await mkdir(path.dirname(resolved), { recursive: true });
+        await writeFile(resolved, content, 'utf-8');
+        return { written: filePath, count: tasks.length };
       },
     },
 

@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.21.0] — 2026-09-12
+
+### Added
+- **`export_tasks` writes a read-only Markdown view of tasks into the vault.** One checkbox line per task — priority, title, due date, project, tags — ending in a `^task-<id>` block anchor, so lines can be referenced (and, later, matched back) even if titles change. Defaults to `Tasks.md` at the vault root and `status: pending`; the file is overwritten on every call and the database stays the source of truth. `details` are deliberately left out to keep the note small, since the watcher re-indexes it on every export. Writing back from the file (ticking a checkbox to complete a task) is intentionally not implemented yet.
+
+### Fixed
+- **`DATE` columns no longer shift by a day outside UTC.** `pg` returned `due_date` as a `Date` at local midnight, and formatting it through `toISOString()` produced the previous day for any process running east of UTC. The pool now registers a type parser that returns `DATE` values as plain `YYYY-MM-DD` strings, which is what `TaskRow.due_date` always declared. Visible change: `list_tasks` now returns `due_date` as `2026-09-12` instead of `2026-09-12T00:00:00.000Z`.
+
 ## [0.20.0] — 2026-09-12
 
 ### Added

@@ -96,6 +96,7 @@ export interface TaskListOptions {
   assigned_to?: string;
   tags?: string[];
   due_before?: string;
+  query?: string;
   limit?: number;
   offset?: number;
 }

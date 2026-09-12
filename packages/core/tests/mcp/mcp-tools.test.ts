@@ -608,6 +608,22 @@ describe('createTools', () => {
       );
     });
 
+    it('list_tasks forwards the query filter to dbClient.listTasks', async () => {
+      await tool('list_tasks').handler({ query: 'invoice' });
+
+      expect(dbClient.listTasks).toHaveBeenCalledWith(
+        expect.objectContaining({ query: 'invoice' }),
+      );
+    });
+
+    it('list_tasks drops a non-string query', async () => {
+      await tool('list_tasks').handler({ query: 123 });
+
+      expect(dbClient.listTasks).toHaveBeenCalledWith(
+        expect.objectContaining({ query: undefined }),
+      );
+    });
+
     it('update_task forwards updates and strips id/_created_by', async () => {
       await tool('update_task').handler({ id: 't1', _created_by: 'eduardo', status: 'in_progress', title: 'New' });
 

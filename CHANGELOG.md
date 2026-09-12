@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.20.0] — 2026-09-12
+
+### Added
+- **`list_tasks` accepts a `query` parameter for case-insensitive text search.** Matches `title` or `details` with a parameterised `ILIKE`, combinable with every existing filter (`status`, `priority`, `tags`, `project_context`, `assigned_to`, `due_before`) and reflected in the paginated `total`. User-supplied `%`, `_` and `\` are escaped so they match literally. Motivation: pending tasks created in bulk by e-mail triage could only be found by paging through the whole list. No index was added; the table is small and `pg_trgm` can be introduced later without changing the API.
+
+### Fixed
+- **`complete_task` treated `%` and `_` in a title fragment as wildcards.** The title fallback in `completeTask` interpolated the raw fragment into `ILIKE`, so a fragment such as `Q3_review` could silently mark a different pending task as done. It now uses the same escaping as the new `list_tasks` search.
+
 ## [0.19.3] — 2026-09-12
 
 ### Chore

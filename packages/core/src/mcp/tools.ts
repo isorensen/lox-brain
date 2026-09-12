@@ -274,7 +274,7 @@ export function createTools(
     },
     {
       name: 'list_tasks',
-      description: 'List tasks sorted by priority and due date. Defaults to pending tasks.',
+      description: 'List tasks sorted by priority and due date. Defaults to pending tasks. Use query for a case-insensitive text search in title and details, combinable with the other filters.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -284,6 +284,7 @@ export function createTools(
           assigned_to: { type: 'string', description: 'Filter by assignee' },
           tags: { type: 'array', items: { type: 'string' }, description: 'Filter by tags (overlap)' },
           due_before: { type: 'string', description: 'Show tasks due before this date (YYYY-MM-DD)' },
+          query: { type: 'string', description: 'Case-insensitive text search in title and details' },
           limit: { type: 'number', description: 'Max results (default: 20)' },
           offset: { type: 'number', description: 'Pagination offset (default: 0)' },
         },
@@ -296,6 +297,7 @@ export function createTools(
           assigned_to: args.assigned_to as string | undefined,
           tags: args.tags as string[] | undefined,
           due_before: args.due_before as string | undefined,
+          query: typeof args.query === 'string' ? args.query : undefined,
           limit: args.limit as number | undefined,
           offset: args.offset as number | undefined,
         });

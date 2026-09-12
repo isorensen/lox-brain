@@ -67,6 +67,10 @@ function candidatePoolSize(limit: number, offset: number): number {
   return Math.max((limit + offset) * 10, 100);
 }
 
+function escapeLike(term: string): string {
+  return term.replace(/[\\%_]/g, '\\$&');
+}
+
 /**
  * Extracts the date a note declares in its own filename (`YYYY-MM-DD Title.md`).
  *
@@ -676,6 +680,12 @@ export class DbClient {
       conditions.push(`due_date <= $${paramIdx++}`);
       values.push(options.due_before);
     }
+    const query = options.query?.trim();
+    if (query) {
+      conditions.push(`(title ILIKE $${paramIdx} ESCAPE '\\' OR details ILIKE $${paramIdx} ESCAPE '\\')`);
+      values.push(`%${escapeLike(query)}%`);
+      paramIdx++;
+    }
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     const limit = options.limit ?? 20;
@@ -756,9 +766,9 @@ export class DbClient {
     // given text.
     const byTitle = await this.pool.query<TaskRow>(
       `UPDATE tasks SET status = 'done', completed_at = NOW(), updated_at = NOW()
-       WHERE id = (SELECT id FROM tasks WHERE title ILIKE $1 AND status != 'done' ORDER BY created_at DESC LIMIT 1)
+       WHERE id = (SELECT id FROM tasks WHERE title ILIKE $1 ESCAPE '\\' AND status != 'done' ORDER BY created_at DESC LIMIT 1)
        RETURNING *`,
-      [`%${idOrTitle}%`],
+      [`%${escapeLike(idOrTitle)}%`],
     );
     return byTitle.rows[0] ?? null;
   }

@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.19.3] — 2026-09-12
+
+### Chore
+- **Cleared the high-severity `fast-uri` advisories that failed the CI audit step.** `fast-uri` (transitive via `@modelcontextprotocol/sdk` → `ajv`) carried four high-severity advisories (host confusion and SSRF via URI normalization), so `npm audit --audit-level=high` failed on `main` and blocked every PR. Lockfile-only `npm audit fix`; no `package.json` dependency changes. Remaining findings are 1 low and 3 moderate, below the CI threshold.
+
 ## [0.19.2] — 2026-08-15
 
 ### Fixed

@@ -82,3 +82,12 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assigned_to TEXT;
 -- the sibling project_context filter column.
 CREATE INDEX IF NOT EXISTS idx_tasks_assigned_to
   ON tasks(assigned_to) WHERE assigned_to IS NOT NULL;
+
+-- Bookkeeping for boot-time maintenance. The MCP server records here when it
+-- last reindexed the ivfflat indexes, so it does that once per PostgreSQL boot
+-- instead of on every start (see DbClient.reindexOncePerBoot). ensureSchema
+-- also creates it when the runtime role is allowed to.
+CREATE TABLE IF NOT EXISTS lox_maintenance (
+  task TEXT PRIMARY KEY,
+  done_at TIMESTAMPTZ NOT NULL
+);

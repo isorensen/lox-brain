@@ -142,9 +142,49 @@ npm install                              # Install all dependencies
 npm run build --workspaces               # Build all packages
 npm run test --workspace=packages/core   # Run tests (vitest)
 npm run test:coverage                    # Coverage report (target: 80%+)
-npm run dev                              # Dev mode (tsx watch)
-npm run watcher                          # Start vault watcher
-npm run index-vault                      # One-time full vault indexing
+npm run watcher --workspace=packages/core      # Start vault watcher (dev, tsx)
+npm run index-vault --workspace=packages/core  # One-time full vault indexing
+```
+
+## Operations
+
+### Run the MCP server from the compiled build
+
+Clients (Claude Code on each machine, scripts, anything that spawns the MCP over ssh) should run the compiled server:
+
+```bash
+node packages/core/dist/mcp/index.js
+```
+
+Not `npx tsx packages/core/src/mcp/index.ts`. The MCP is spawned once per stdio connection, and `tsx` transpiles on every spawn: about 3 s more per start and roughly twice the memory per process tree (~100 MB against ~50 MB), which adds up with several sessions open on a 2 GB VM.
+
+### Deploy on the VM after a `git pull`
+
+`dist` is not rebuilt by CI, so a `git pull` alone leaves the VM serving the old code. `bash infra/deploy.sh` does the whole sequence; by hand it is:
+
+```bash
+npm ci
+npm run build --workspaces       # rebuild dist; build off the VM if memory is tight, then sync dist
+# if infra/postgres/schema.sql changed, re-apply it as the table owner (see infra/deploy.sh)
+sudo systemctl restart lox-watcher   # when the watcher's code changed (packages/core/src/watcher or src/lib)
+```
+
+MCP processes that are already running keep the code they started with until their client reconnects.
+
+### Boot-time reindex
+
+The MCP server rebuilds the ivfflat indexes (`REINDEX`, or a resize when the row count has drifted) at most once per PostgreSQL boot. It records the last run in the `lox_maintenance` table and compares it with `pg_postmaster_start_time()`; concurrent starts are serialized by an advisory lock, and a start that finds the lock taken skips instead of waiting. Each start logs one line on stderr:
+
+- `ivfflat: reindexed (no reindex recorded | last reindex at … predates PostgreSQL start at …): …`
+- `ivfflat: reindex skipped (already reindexed at …, after PostgreSQL started at …)`
+- `ivfflat: reindex skipped (another process holds the reindex lock)`
+- `ivfflat: reindex skipped (lox_maintenance missing; apply infra/postgres/schema.sql)`: the runtime role could not create the table. Re-apply `schema.sql` as the owner (`infra/deploy.sh` does); until then no start reindexes.
+- `ivfflat: reindexed (…; marker not recorded (<error>); every start will reindex until fixed): …`: the reindex succeeded but the marker write failed, so the next start reindexes again. That is the pre-0.21.1 behavior, still serialized by the lock; fix the error (usually table privileges on `lox_maintenance`).
+
+A crash recovery is **not** a new boot. When a backend dies (for example OOM-killed), the postmaster resets the other backends and replays WAL but keeps running, so `pg_postmaster_start_time()` does not change and the next start skips. Only a real restart of the PostgreSQL service counts. To force a pass after a crash recovery, or at any other time, delete the marker and start an MCP:
+
+```sql
+DELETE FROM lox_maintenance WHERE task = 'ivfflat_reindex';
 ```
 
 ## Cost

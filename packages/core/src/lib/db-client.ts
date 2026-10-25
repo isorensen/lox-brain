@@ -25,6 +25,30 @@ export interface IvfflatState {
   probesApplied: boolean;
 }
 
+/** Outcome of {@link DbClient.reindexOncePerBoot}, for the boot log. */
+export type ReindexOutcome =
+  | { reindexed: false; reason: string }
+  /** `state` is null when the table has no ivfflat index. */
+  | { reindexed: true; reason: string; state: IvfflatState | null };
+
+/**
+ * Key of the session-level advisory lock that serializes the boot-time
+ * reindex across MCP processes. Advisory locks are scoped to the current
+ * database, so personal and team databases on one cluster do not collide.
+ */
+export const REINDEX_LOCK_KEY = 0x4c4f5852;
+
+/** Row in `lox_maintenance` recording the last successful reindex. */
+const REINDEX_TASK = 'ivfflat_reindex';
+
+const INSUFFICIENT_PRIVILEGE = '42501';
+const UNDEFINED_TABLE = '42P01';
+const UNIQUE_VIOLATION = '23505';
+
+function pgCode(err: unknown): string | undefined {
+  return (err as { code?: string }).code;
+}
+
 const SEMANTIC_DEFAULTS: SearchOptions = {
   limit: 5,
   offset: 0,
@@ -165,7 +189,9 @@ export class DbClient {
            WHERE table_schema = 'public' AND table_name = 'tasks') AS tasks_table,
         (SELECT COUNT(*) FROM information_schema.columns
            WHERE table_schema = 'public' AND table_name = 'tasks'
-             AND column_name = 'assigned_to') AS tasks_assigned_to
+             AND column_name = 'assigned_to') AS tasks_assigned_to,
+        (SELECT COUNT(*) FROM information_schema.tables
+           WHERE table_schema = 'public' AND table_name = 'lox_maintenance') AS maintenance_table
     `);
     const metadataCols = Number(schemaRows[0]?.metadata_cols ?? 0);
     const tasksTable = Number(schemaRows[0]?.tasks_table ?? 0);
@@ -179,6 +205,31 @@ export class DbClient {
           `Found metadata columns ${metadataCols}/2, tasks table ${tasksTable}/1, ` +
           `tasks.assigned_to ${tasksAssignedTo}/1.`,
       );
+    }
+    if (Number(schemaRows[0]?.maintenance_table ?? 0) < 1) {
+      await this.createMaintenanceTable();
+    }
+  }
+
+  /**
+   * Unlike the objects checked above, a missing `lox_maintenance` does not
+   * stop the server: it only holds the reindex marker. A role without CREATE
+   * on the schema (#169) leaves it to `schema.sql`; until that runs, the boot
+   * reindex is skipped with a log line instead of the server refusing to start.
+   */
+  private async createMaintenanceTable(): Promise<void> {
+    try {
+      await this.pool.query(`
+        CREATE TABLE IF NOT EXISTS lox_maintenance (
+          task TEXT PRIMARY KEY,
+          done_at TIMESTAMPTZ NOT NULL
+        )
+      `);
+    } catch (err) {
+      // 23505: a concurrent start won the race; IF NOT EXISTS does not cover
+      // two CREATEs in flight, which collide on the pg_type unique index.
+      const code = pgCode(err);
+      if (code !== INSUFFICIENT_PRIVILEGE && code !== UNIQUE_VIOLATION) throw err;
     }
   }
 
@@ -284,6 +335,80 @@ export class DbClient {
   async deleteNote(filePath: string): Promise<void> {
     const sql = 'DELETE FROM vault_embeddings WHERE file_path = $1';
     await this.pool.query(sql, [filePath]);
+  }
+
+  /**
+   * Run {@link reindexEmbeddings} at most once per PostgreSQL boot.
+   *
+   * The REINDEX exists because ivfflat indexes came back inconsistent after a
+   * PostgreSQL restart (#34), so once per boot is all it needs. Running it on
+   * every MCP start — one per stdio connection — had concurrent starts stack
+   * REINDEXes until the kernel OOM-killed Postgres on a 2 GB VM (#211).
+   *
+   * `pg_try_advisory_lock` never waits: a start that finds the lock taken
+   * skips, because the holder is doing the same work. The marker is written
+   * only after a successful pass and while the lock is still held, so the next
+   * process to get the lock sees it.
+   *
+   * The lock's connection is destroyed rather than returned to the pool, which
+   * also ends the lock. It was opened before the pass ran `ALTER DATABASE ...
+   * SET ivfflat.probes`, and `setProbes` only patches one pooled connection,
+   * so back in the pool it could serve searches with the old probes.
+   */
+  async reindexOncePerBoot(): Promise<ReindexOutcome> {
+    const lock = await this.pool.connect();
+    try {
+      const { rows: [{ acquired }] } = await lock.query<{ acquired: boolean }>(
+        'SELECT pg_try_advisory_lock($1) AS acquired',
+        [REINDEX_LOCK_KEY],
+      );
+      if (!acquired) {
+        return { reindexed: false, reason: 'another process holds the reindex lock' };
+      }
+
+      let marker;
+      try {
+        marker = await this.pool.query<{ booted_at: Date; reindexed_at: Date | null }>(
+          `SELECT pg_postmaster_start_time() AS booted_at,
+                  (SELECT done_at FROM lox_maintenance WHERE task = $1) AS reindexed_at`,
+          [REINDEX_TASK],
+        );
+      } catch (err) {
+        if (pgCode(err) !== UNDEFINED_TABLE) throw err;
+        return { reindexed: false, reason: 'lox_maintenance missing; apply infra/postgres/schema.sql' };
+      }
+      const { booted_at: bootedAt, reindexed_at: reindexedAt } = marker.rows[0];
+      const booted = bootedAt.toISOString();
+      if (reindexedAt && reindexedAt > bootedAt) {
+        return {
+          reindexed: false,
+          reason: `already reindexed at ${reindexedAt.toISOString()}, after PostgreSQL started at ${booted}`,
+        };
+      }
+
+      const state = await this.reindexEmbeddings();
+      const why = reindexedAt
+        ? `last reindex at ${reindexedAt.toISOString()} predates PostgreSQL start at ${booted}`
+        : 'no reindex recorded';
+      try {
+        await this.pool.query(
+          `INSERT INTO lox_maintenance (task, done_at) VALUES ($1, now())
+           ON CONFLICT (task) DO UPDATE SET done_at = EXCLUDED.done_at`,
+          [REINDEX_TASK],
+        );
+      } catch (err) {
+        // The reindex itself succeeded; letting this throw would log it as failed.
+        const message = err instanceof Error ? err.message : String(err);
+        return {
+          reindexed: true,
+          reason: `${why}; marker not recorded (${message}); every start will reindex until fixed`,
+          state,
+        };
+      }
+      return { reindexed: true, reason: why, state };
+    } finally {
+      lock.release(true);
+    }
   }
 
   /**

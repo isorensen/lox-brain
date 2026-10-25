@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { DbClient, NOTE_DATE_PATTERN } from '../../src/lib/db-client.js';
+import { DbClient, NOTE_DATE_PATTERN, REINDEX_LOCK_KEY } from '../../src/lib/db-client.js';
 import type { NoteRow } from '@lox-brain/shared';
 
 describe('DbClient', () => {
@@ -22,7 +22,7 @@ describe('DbClient', () => {
         // information_schema read returns a row -> created_by already present
         .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
         // read-only schema-currency check -> all owner-applied objects present
-        .mockResolvedValueOnce({ rows: [{ metadata_cols: '2', tasks_table: '1', tasks_assigned_to: '1' }] });
+        .mockResolvedValueOnce({ rows: [{ metadata_cols: '2', tasks_table: '1', tasks_assigned_to: '1', maintenance_table: '1' }] });
 
       await client.ensureSchema();
 
@@ -44,7 +44,7 @@ describe('DbClient', () => {
       mockPool.query
         .mockResolvedValueOnce({ rows: [] }) // probe -> missing
         .mockResolvedValueOnce({ rowCount: 0 }) // ALTER
-        .mockResolvedValueOnce({ rows: [{ metadata_cols: '2', tasks_table: '1', tasks_assigned_to: '1' }] }); // currency check
+        .mockResolvedValueOnce({ rows: [{ metadata_cols: '2', tasks_table: '1', tasks_assigned_to: '1', maintenance_table: '1' }] }); // currency check
 
       await client.ensureSchema();
 
@@ -85,6 +85,219 @@ describe('DbClient', () => {
         .mockRejectedValueOnce(new Error('42501: must be owner of table'));
 
       await expect(client.ensureSchema()).rejects.toThrow('42501');
+    });
+
+    describe('lox_maintenance (reindex marker)', () => {
+      const currentWithout = { rows: [{ metadata_cols: '2', tasks_table: '1', tasks_assigned_to: '1', maintenance_table: '0' }] };
+      const pgError = (code: string, message: string) => Object.assign(new Error(message), { code });
+
+      it('creates the table when it is missing', async () => {
+        mockPool.query
+          .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+          .mockResolvedValueOnce(currentWithout)
+          .mockResolvedValueOnce({ rowCount: 0 });
+
+        await client.ensureSchema();
+
+        expect(mockPool.query).toHaveBeenCalledTimes(3);
+        const [createSql] = mockPool.query.mock.calls[2];
+        expect(createSql).toContain('CREATE TABLE IF NOT EXISTS lox_maintenance');
+        expect(createSql).toContain('task TEXT PRIMARY KEY');
+        expect(createSql).toContain('done_at TIMESTAMPTZ NOT NULL');
+      });
+
+      it('starts anyway when the role may not create it (#169)', async () => {
+        mockPool.query
+          .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+          .mockResolvedValueOnce(currentWithout)
+          .mockRejectedValueOnce(pgError('42501', 'permission denied for schema public'));
+
+        await expect(client.ensureSchema()).resolves.toBeUndefined();
+      });
+
+      it('tolerates a concurrent start creating it at the same time', async () => {
+        mockPool.query
+          .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+          .mockResolvedValueOnce(currentWithout)
+          .mockRejectedValueOnce(pgError('23505', 'duplicate key value violates unique constraint "pg_type_typname_nsp_index"'));
+
+        await expect(client.ensureSchema()).resolves.toBeUndefined();
+      });
+
+      it('propagates any other failure to create it', async () => {
+        mockPool.query
+          .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+          .mockResolvedValueOnce(currentWithout)
+          .mockRejectedValueOnce(pgError('57P01', 'terminating connection'));
+
+        await expect(client.ensureSchema()).rejects.toThrow('terminating connection');
+      });
+    });
+  });
+
+  describe('reindexOncePerBoot', () => {
+    const BOOT = new Date('2026-10-25T19:04:00Z');
+    const inBandIndex = {
+      indexname: 'idx_embedding',
+      database: 'lox_brain',
+      indexdef: "CREATE INDEX idx_embedding ON public.vault_embeddings USING ivfflat (embedding vector_cosine_ops) WITH (lists='1')",
+      row_count: '812',
+    };
+    let lockClient: any;
+
+    const markerRow = (reindexedAt: Date | null) => ({ rows: [{ booted_at: BOOT, reindexed_at: reindexedAt }] });
+    /** Answers the marker read, then a single in-band index for the pass. */
+    const markerThenPass = (reindexedAt: Date | null) => {
+      mockPool.query
+        .mockResolvedValueOnce(markerRow(reindexedAt))
+        .mockResolvedValueOnce({ rows: [inBandIndex] })
+        .mockResolvedValue({ rowCount: 0 });
+    };
+    const poolSql = (): string[] => mockPool.query.mock.calls.map((c: any[]) => c[0]);
+    const markerWrites = () => mockPool.query.mock.calls.filter((c: any[]) => c[0].includes('INSERT INTO lox_maintenance'));
+
+    beforeEach(() => {
+      lockClient = { query: vi.fn().mockResolvedValue({ rows: [{ acquired: true }] }), release: vi.fn() };
+      mockPool.connect = vi.fn().mockResolvedValueOnce(lockClient).mockResolvedValue(mockClient);
+    });
+
+    it('skips without touching the indexes when the marker is newer than the PostgreSQL start', async () => {
+      mockPool.query.mockResolvedValueOnce(markerRow(new Date(BOOT.getTime() + 60_000)));
+
+      const outcome = await client.reindexOncePerBoot();
+
+      expect(outcome).toEqual({
+        reindexed: false,
+        reason: 'already reindexed at 2026-10-25T19:05:00.000Z, after PostgreSQL started at 2026-10-25T19:04:00.000Z',
+      });
+      expect(mockPool.query).toHaveBeenCalledTimes(1);
+      const [markerSql, markerParams] = mockPool.query.mock.calls[0];
+      expect(markerSql).toContain('pg_postmaster_start_time()');
+      expect(markerSql).toContain('FROM lox_maintenance WHERE task = $1');
+      expect(markerParams).toEqual(['ivfflat_reindex']);
+    });
+
+    it('reindexes when the marker predates the PostgreSQL start', async () => {
+      markerThenPass(new Date(BOOT.getTime() - 60_000));
+
+      const outcome = await client.reindexOncePerBoot();
+
+      expect(outcome).toMatchObject({
+        reindexed: true,
+        reason: 'last reindex at 2026-10-25T19:03:00.000Z predates PostgreSQL start at 2026-10-25T19:04:00.000Z',
+        state: { rows: 812, probes: 1 },
+      });
+      expect(poolSql()).toContain('REINDEX INDEX "idx_embedding"');
+    });
+
+    it('reindexes when no marker was ever written', async () => {
+      markerThenPass(null);
+
+      const outcome = await client.reindexOncePerBoot();
+
+      expect(outcome).toMatchObject({ reindexed: true, reason: 'no reindex recorded' });
+      expect(poolSql()).toContain('REINDEX INDEX "idx_embedding"');
+    });
+
+    it('updates the marker once, after the REINDEX succeeded', async () => {
+      markerThenPass(null);
+
+      await client.reindexOncePerBoot();
+
+      const writes = markerWrites();
+      expect(writes).toHaveLength(1);
+      expect(writes[0][0]).toContain('ON CONFLICT (task) DO UPDATE SET done_at = EXCLUDED.done_at');
+      expect(writes[0][1]).toEqual(['ivfflat_reindex']);
+      const sqls = poolSql();
+      expect(sqls.findIndex((s) => s.includes('INSERT INTO lox_maintenance')))
+        .toBeGreaterThan(sqls.indexOf('REINDEX INDEX "idx_embedding"'));
+    });
+
+    it('marks the boot as done when the table has no ivfflat index', async () => {
+      mockPool.query
+        .mockResolvedValueOnce(markerRow(null))
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValue({ rowCount: 0 });
+
+      const outcome = await client.reindexOncePerBoot();
+
+      expect(outcome).toEqual({ reindexed: true, reason: 'no reindex recorded', state: null });
+      expect(markerWrites()).toHaveLength(1);
+    });
+
+    it('skips without reading the marker when another process holds the lock', async () => {
+      lockClient.query.mockResolvedValueOnce({ rows: [{ acquired: false }] });
+
+      const outcome = await client.reindexOncePerBoot();
+
+      expect(outcome).toEqual({ reindexed: false, reason: 'another process holds the reindex lock' });
+      expect(lockClient.query).toHaveBeenCalledWith('SELECT pg_try_advisory_lock($1) AS acquired', [REINDEX_LOCK_KEY]);
+      expect(mockPool.query).not.toHaveBeenCalled();
+      expect(lockClient.release).toHaveBeenCalledWith(true);
+    });
+
+    it('does not update the marker when the pass fails', async () => {
+      mockPool.query
+        .mockResolvedValueOnce(markerRow(null))
+        .mockResolvedValueOnce({ rows: [inBandIndex] })
+        .mockRejectedValueOnce(new Error('out of memory'));
+
+      await expect(client.reindexOncePerBoot()).rejects.toThrow('out of memory');
+      expect(markerWrites()).toHaveLength(0);
+      expect(lockClient.release).toHaveBeenCalledWith(true);
+    });
+
+    it('reports a reindex that happened even when the marker cannot be written', async () => {
+      mockPool.query
+        .mockResolvedValueOnce(markerRow(null))
+        .mockResolvedValueOnce({ rows: [inBandIndex] })
+        .mockImplementation((sql: string) =>
+          sql.includes('INSERT INTO lox_maintenance')
+            ? Promise.reject(new Error('permission denied for table lox_maintenance'))
+            : Promise.resolve({ rowCount: 0 }));
+
+      const outcome = await client.reindexOncePerBoot();
+
+      expect(outcome).toMatchObject({
+        reindexed: true,
+        reason: 'no reindex recorded; marker not recorded (permission denied for table lox_maintenance); '
+          + 'every start will reindex until fixed',
+        state: { rows: 812 },
+      });
+      expect(poolSql()).toContain('REINDEX INDEX "idx_embedding"');
+      expect(lockClient.release).toHaveBeenCalledWith(true);
+    });
+
+    it('skips with an actionable reason when lox_maintenance is missing', async () => {
+      mockPool.query.mockRejectedValueOnce(
+        Object.assign(new Error('relation "lox_maintenance" does not exist'), { code: '42P01' }),
+      );
+
+      const outcome = await client.reindexOncePerBoot();
+
+      expect(outcome).toEqual({ reindexed: false, reason: 'lox_maintenance missing; apply infra/postgres/schema.sql' });
+      expect(mockPool.query).toHaveBeenCalledTimes(1);
+      expect(lockClient.release).toHaveBeenCalledWith(true);
+    });
+
+    it('propagates any other failure reading the marker', async () => {
+      mockPool.query.mockRejectedValueOnce(Object.assign(new Error('terminating connection'), { code: '57P01' }));
+
+      await expect(client.reindexOncePerBoot()).rejects.toThrow('terminating connection');
+      expect(lockClient.release).toHaveBeenCalledWith(true);
+    });
+
+    it('holds the lock on its own connection and destroys it afterwards', async () => {
+      // Ending the session is what releases the advisory lock, and it keeps a
+      // connection opened before `ALTER DATABASE ... SET ivfflat.probes` out of
+      // the pool that serves searches.
+      markerThenPass(null);
+
+      await client.reindexOncePerBoot();
+
+      expect(lockClient.query).toHaveBeenCalledTimes(1);
+      expect(lockClient.release).toHaveBeenCalledTimes(1);
+      expect(lockClient.release).toHaveBeenCalledWith(true);
     });
   });
 

@@ -2,7 +2,7 @@
   "name": "lox-brain",
   "version": "0.21.0",
   "private": true,
-  "description": "Lox \u2014 Where knowledge lives. Personal AI-powered Second Brain with semantic search, MCP Server, and Obsidian integration.",
+  "description": "Lox — Where knowledge lives. Personal AI-powered Second Brain with semantic search, MCP Server, and Obsidian integration.",
   "workspaces": [
     "packages/shared",
     "packages/core",
@@ -24,5 +24,8 @@
   "bugs": {
     "url": "https://github.com/isorensen/lox-brain/issues"
   },
-  "homepage": "https://github.com/isorensen/lox-brain#readme"
+  "homepage": "https://github.com/isorensen/lox-brain#readme",
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.12"
+  }
 }

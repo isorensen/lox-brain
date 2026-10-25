@@ -6,6 +6,9 @@ All notable changes to this project will be documented in this file.
 
 ## [0.21.1] — 2026-10-25
 
+### Security
+- **`npm audit fix`, and `@vitest/coverage-v8` declared at the root (#213).** Clears the critical `proxy-addr` advisory and the high ones (`vite`, `zod`, `source-map-js`, among others) that had kept the CI `Security audit` step red on `main` since June. The fix hoisted `vitest` to the root while the coverage plugin stayed nested in each workspace, so the plugin is now a root devDependency too. Three moderate advisories remain, under `--audit-level=high`.
+
 ### Fixed
 - **Every MCP start rebuilt the vector indexes, and concurrent starts got PostgreSQL OOM-killed.** Since #34, `main()` ran `reindexEmbeddings()` on each start: a `REINDEX INDEX` (or a resize rebuild) of every ivfflat index on `vault_embeddings`. The MCP is spawned once per stdio connection, so each Claude Code session and each call from another client started a rebuild, and each start took ~15 s. On 2026-10-25 five spawns at once ran five concurrent REINDEXes on the 2 GB VM, the kernel OOM-killed a Postgres backend, and the service hung in `deactivating` until an immediate stop.
 

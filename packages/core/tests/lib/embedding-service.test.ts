@@ -228,6 +228,45 @@ A note without domain metadata.`;
     });
   });
 
+  describe('chunkText overlap', () => {
+    const MAX_TOKENS = 100;
+    const OVERLAP_TOKENS = 20;
+    const CHARS_PER_TOKEN = 3;
+
+    it('Should never produce a chunk longer than the maximum when the carried paragraph is large', () => {
+      const paragraph = 'a'.repeat(250);
+      const text = Array.from({ length: 6 }, () => paragraph).join('\n\n');
+
+      const chunks = service.chunkText(text, MAX_TOKENS, OVERLAP_TOKENS);
+
+      expect(chunks.length).toBe(6);
+      for (const chunk of chunks) {
+        expect(chunk.length).toBeLessThanOrEqual(MAX_TOKENS * CHARS_PER_TOKEN);
+      }
+    });
+
+    it('Should still carry a small last paragraph into the next chunk', () => {
+      const big = 'b'.repeat(250);
+      const small = 'small paragraph here';
+      const text = [big, small, big].join('\n\n');
+
+      const chunks = service.chunkText(text, MAX_TOKENS, OVERLAP_TOKENS);
+
+      expect(chunks).toEqual([`${big}\n\n${small}`, `${small}\n\n${big}`]);
+    });
+
+    it('Should drop the overlap when carrying it would push the next chunk past the maximum', () => {
+      const first = 'c'.repeat(100);
+      const small = 'd'.repeat(30);
+      const nearlyFull = 'e'.repeat(295);
+      const text = [first, small, nearlyFull].join('\n\n');
+
+      const chunks = service.chunkText(text, MAX_TOKENS, OVERLAP_TOKENS);
+
+      expect(chunks[chunks.length - 1]).toBe(nearlyFull);
+    });
+  });
+
   describe('chunkText', () => {
     it('should return single chunk for text within token limit', () => {
       const shortText = 'This is a short note.';

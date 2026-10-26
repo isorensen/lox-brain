@@ -4,8 +4,42 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.22.0] — 2026-10-25
+
 ### Added
 - **Chunk size, overlap and title embedding are configurable.** `LOX_CHUNK_MAX_TOKENS` (1 to 6000), `LOX_CHUNK_OVERLAP_TOKENS` and `LOX_EMBED_TITLE` are read at startup and a bad value names the variable in the error. The defaults are unchanged. Smaller chunks with the title left out of the embedding retrieved better in a benchmark on a mixed vault; `LOX_EMBED_TITLE=false` makes a note whose title lives only in the frontmatter unfindable by that title. The variables belong in `/etc/lox/secrets.env`, and changing them needs a full re-index, since `file_hash` covers the content only.
+
+## [0.21.2] — 2026-10-25
+
+### Fixed
+- **`chunkText` no longer produces chunks larger than the maximum.** After a chunk was flushed, the overlap loop always carried at least the last paragraph into the next chunk, and the next paragraph was appended without checking the maximum again. When the carried overlap plus the new paragraph exceeded `maxTokens`, the chunk went over the limit. The overlap is now dropped in that case: a paragraph on its own always fits, because oversized paragraphs are split earlier. Smaller chunk sizes hit this far more often.
+
+## [0.21.1] — 2026-10-25
+
+### Security
+- **`npm audit fix`, and `@vitest/coverage-v8` declared at the root (#213).** Clears the critical `proxy-addr` advisory and the high ones (`vite`, `zod`, `source-map-js`, among others) that had kept the CI `Security audit` step red on `main` since June. The fix hoisted `vitest` to the root while the coverage plugin stayed nested in each workspace, so the plugin is now a root devDependency too. Three moderate advisories remain, under `--audit-level=high`.
+
+### Fixed
+- **Every MCP start rebuilt the vector indexes, and concurrent starts got PostgreSQL OOM-killed.** Since #34, `main()` ran `reindexEmbeddings()` on each start: a `REINDEX INDEX` (or a resize rebuild) of every ivfflat index on `vault_embeddings`. The MCP is spawned once per stdio connection, so each Claude Code session and each call from another client started a rebuild, and each start took ~15 s. On 2026-10-25 five spawns at once ran five concurrent REINDEXes on the 2 GB VM, the kernel OOM-killed a Postgres backend, and the service hung in `deactivating` until an immediate stop.
+
+  The reindex now runs at most once per PostgreSQL boot, which is all #34 needed (the indexes came back inconsistent after a restart). The new `DbClient.reindexOncePerBoot()` takes `pg_try_advisory_lock` on a dedicated connection and skips when another process holds it, never waiting; then it compares `pg_postmaster_start_time()` with the marker of the last successful reindex in a new `lox_maintenance` table, and skips when the marker is newer. Otherwise it runs the existing pass (resize logic and `ivfflat.probes` unchanged) and writes the marker only after it succeeds, so a failed pass is retried on the next start. The lock's connection is destroyed afterwards, which releases the lock and keeps a connection opened before `ALTER DATABASE ... SET ivfflat.probes` out of the search pool. `probes` needs nothing on a skipped start: the database default persists across restarts and every connection the new process opens already gets it. Checked against a local PostgreSQL: five simultaneous starts after a restart gave one reindex, one "lock held" skip and three "already reindexed" skips.
+
+  Each start logs one line saying whether it reindexed or skipped, and why. A side effect: a resize (vault doubled or halved) now also waits for the next PostgreSQL boot, or for the marker to be deleted (`DELETE FROM lox_maintenance WHERE task = 'ivfflat_reindex'`).
+
+  A crash recovery does **not** count as a new boot: when a backend is OOM-killed, the postmaster resets the others and replays WAL without restarting, so `pg_postmaster_start_time()` keeps its value and starts keep skipping. Only a restart of the PostgreSQL service triggers a new pass; to force one after a crash recovery, delete the marker as above and start an MCP.
+
+  Two failure paths are reported instead of thrown. If the marker write fails after a successful reindex, the start still reports `reindexed`, with `marker not recorded (<error>); every start will reindex until fixed` in the reason, rather than logging a reindex that worked as failed. If `lox_maintenance` does not exist (42P01, a role that could not create it), the start skips with `lox_maintenance missing; apply infra/postgres/schema.sql`.
+
+  Related to [#211](https://github.com/isorensen/lox-brain/issues/211).
+
+### Changed
+- **New table `lox_maintenance` (`task TEXT PRIMARY KEY, done_at TIMESTAMPTZ`).** Added to `infra/postgres/schema.sql`, and `ensureSchema` creates it when it is missing. A role without CREATE on the schema (#169) does not stop the server: the reindex is skipped with the log line above until `schema.sql` is re-applied as the owner. Two starts creating the table at the same moment (23505 on the catalog) are tolerated too.
+
+### Documentation
+- **README: new Operations section.** Clients run `node packages/core/dist/mcp/index.js` rather than `npx tsx`, the deploy sequence after a `git pull` on the VM (`npm ci`, `npm run build --workspaces`, `schema.sql` when it changed, restart `lox-watcher` when its code changed, or `infra/deploy.sh` for all of it), and how the boot-time reindex decides and logs. The Development commands for the watcher and `index-vault` now carry `--workspace=packages/core`, and the nonexistent `npm run dev` is gone.
+
+### Deploy
+- After `git pull` on the VM: `npm run build --workspaces` and `sudo systemctl restart lox-watcher` (the watcher imports `DbClient`, whose `ensureSchema` changed). `infra/deploy.sh` covers both and applies `schema.sql`.
 
 ## [0.21.0] — 2026-09-12
 

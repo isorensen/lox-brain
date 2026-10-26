@@ -182,10 +182,13 @@ async function main(): Promise<void> {
   console.error('Schema migration check complete');
 
   try {
-    const state = await dbClient.reindexEmbeddings();
-    if (state === null) {
+    const outcome = await dbClient.reindexOncePerBoot();
+    if (!outcome.reindexed) {
+      console.error(`ivfflat: reindex skipped (${outcome.reason})`);
+    } else if (outcome.state === null) {
       console.error('ivfflat: no embedding index on vault_embeddings, nothing to reindex');
     } else {
+      const { state } = outcome;
       // Every index is named individually. v0.18.0 logged one line in the
       // singular, which read as success while it had resized an index the
       // planner was not using.
@@ -195,7 +198,8 @@ async function main(): Promise<void> {
           : `${i.name} lists ${i.listsAfter}`))
         .join('; ');
       console.error(
-        `ivfflat: ${state.rows} rows, ${state.indexes.length} index(es) [${summary}], probes ${state.probes}`,
+        `ivfflat: reindexed (${outcome.reason}): ${state.rows} rows, ` +
+          `${state.indexes.length} index(es) [${summary}], probes ${state.probes}`,
       );
       if (state.indexes.length > 1) {
         console.error(

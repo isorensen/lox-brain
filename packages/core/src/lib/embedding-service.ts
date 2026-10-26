@@ -149,6 +149,11 @@ export class EmbeddingService {
           if (overlapCount >= overlapTokens) break;
         }
 
+        if (overlapCount + paraTokens > maxTokens) {
+          overlapParagraphs = [];
+          overlapCount = 0;
+        }
+
         currentParagraphs = [...overlapParagraphs, para];
         currentTokens = overlapCount + paraTokens;
       } else {

@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.21.2] — 2026-10-25
+
+### Fixed
+- **`chunkText` no longer produces chunks larger than the maximum.** After a chunk was flushed, the overlap loop always carried at least the last paragraph into the next chunk, and the next paragraph was appended without checking the maximum again. When the carried overlap plus the new paragraph exceeded `maxTokens`, the chunk went over the limit. The overlap is now dropped in that case: a paragraph on its own always fits, because oversized paragraphs are split earlier. Smaller chunk sizes hit this far more often.
+
 ## [0.21.1] — 2026-10-25
 
 ### Security

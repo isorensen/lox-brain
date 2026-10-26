@@ -187,6 +187,22 @@ A crash recovery is **not** a new boot. When a backend dies (for example OOM-kil
 DELETE FROM lox_maintenance WHERE task = 'ivfflat_reindex';
 ```
 
+## Chunking
+
+Notes are split into chunks before embedding. Three optional variables tune this; the defaults are unchanged.
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `LOX_CHUNK_MAX_TOKENS` | `4000` | Maximum chunk size, from 1 to 6000 (estimated at 3 characters per token) |
+| `LOX_CHUNK_OVERLAP_TOKENS` | `min(200, max / 5)` | Overlap between chunks; must be smaller than the maximum |
+| `LOX_EMBED_TITLE` | `true` | Prepend the note title to every chunk before embedding |
+
+Things to know before changing them:
+
+- **Put them in `/etc/lox/secrets.env`.** Both systemd units load that file, and so should a manual re-index: `set -a; . /etc/lox/secrets.env; set +a; npm run index-vault`. Set anywhere else, a manual re-index silently runs with the defaults.
+- **Re-index after changing them.** `file_hash` depends on the note content only, so without a re-index the notes you edit afterwards use the new settings and every other note keeps its old chunks, with no warning.
+- **`LOX_EMBED_TITLE=false` trades title lookups for cleaner small chunks.** The `# Title` heading stays in the first chunk, so notes that repeat their title in the body are still found by it. A note whose title lives only in the frontmatter can no longer be found by its title, because text search indexes `content` only and the title is no longer part of the embedding.
+
 ## Cost
 
 Estimated monthly cost: **~US$18/month** (GCE e2-small + 30GB pd-ssd + Cloud NAT + minimal traffic).

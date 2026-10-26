@@ -46,6 +46,49 @@ describe('VaultWatcher', () => {
     );
   });
 
+  describe('chunk size', () => {
+    it('Should chunk with the configured maximum and overlap', async () => {
+      const configuredWatcher = new VaultWatcher(
+        VAULT_PATH,
+        mockEmbedding as unknown as EmbeddingService,
+        mockDb as unknown as DbClient,
+        { maxTokens: 500, overlapTokens: 50, embedTitle: true },
+      );
+
+      await configuredWatcher.handleFileChange(`${VAULT_PATH}/notes/my-note.md`, '# Test\n\nSome content');
+
+      expect(mockEmbedding.chunkText).toHaveBeenCalledWith('Some content', 500, 50);
+    });
+  });
+
+  describe('embedding text', () => {
+    it('Should leave the note title out of the embedding text when embedTitle is false', async () => {
+      const untitledWatcher = new VaultWatcher(
+        VAULT_PATH,
+        mockEmbedding as unknown as EmbeddingService,
+        mockDb as unknown as DbClient,
+        { maxTokens: 500, overlapTokens: 50, embedTitle: false },
+      );
+
+      await untitledWatcher.handleFileChange(`${VAULT_PATH}/notes/my-note.md`, '# Test\n\nSome content');
+
+      expect(mockEmbedding.generateEmbedding).toHaveBeenCalledWith('Some content');
+    });
+
+    it('Should keep the stored content free of the title in both modes', async () => {
+      const untitledWatcher = new VaultWatcher(
+        VAULT_PATH,
+        mockEmbedding as unknown as EmbeddingService,
+        mockDb as unknown as DbClient,
+        { maxTokens: 500, overlapTokens: 50, embedTitle: false },
+      );
+
+      await untitledWatcher.handleFileChange(`${VAULT_PATH}/notes/my-note.md`, '# Test\n\nSome content');
+
+      expect(mockDb.upsertNote.mock.calls[0][0].content).toBe('Some content');
+    });
+  });
+
   describe('shouldProcess', () => {
     it('should accept markdown files', () => {
       expect(watcher.shouldProcess(`${VAULT_PATH}/notes/my-note.md`)).toBe(true);
@@ -89,7 +132,7 @@ describe('VaultWatcher', () => {
       expect(mockEmbedding.generateEmbedding).toHaveBeenCalledWith('Test Note\nSome content');
 
       // chunkText should be called with parsed content
-      expect(mockEmbedding.chunkText).toHaveBeenCalledWith('Some content');
+      expect(mockEmbedding.chunkText).toHaveBeenCalledWith('Some content', 4000, 200);
 
       // upsertNote should be called with correct data
       expect(mockDb.upsertNote).toHaveBeenCalledTimes(1);

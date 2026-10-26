@@ -2,12 +2,14 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { EmbeddingService } from '../lib/embedding-service.js';
 import type { DbClient } from '../lib/db-client.js';
+import { getChunkConfig, type ChunkConfig } from '../lib/chunk-config.js';
 
 export class VaultWatcher {
   constructor(
     private readonly vaultPath: string,
     private readonly embeddingService: EmbeddingService,
     private readonly dbClient: DbClient,
+    private readonly chunkConfig: ChunkConfig = getChunkConfig(),
   ) {}
 
   shouldProcess(filePath: string): boolean {
@@ -36,12 +38,16 @@ export class VaultWatcher {
     // try/catches per file, so propagating cannot take the watcher down over
     // one bad note.
     const metadata = this.embeddingService.parseNote(content);
-    const chunks = this.embeddingService.chunkText(metadata.content);
+    const chunks = this.embeddingService.chunkText(
+      metadata.content,
+      this.chunkConfig.maxTokens,
+      this.chunkConfig.overlapTokens,
+    );
 
     // Phase 1: Generate all embeddings (may fail — no DB writes yet)
     const chunkData: Array<{ content: string; embedding: number[] }> = [];
     for (const chunkContent of chunks) {
-      const embeddingText = [metadata.title, chunkContent]
+      const embeddingText = [this.chunkConfig.embedTitle ? metadata.title : null, chunkContent]
         .filter(Boolean)
         .join('\n');
       const embedding = await this.embeddingService.generateEmbedding(embeddingText);

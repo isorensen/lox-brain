@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.22.0] — 2026-10-25
+
+### Added
+- **Chunk size, overlap and title embedding are configurable.** `LOX_CHUNK_MAX_TOKENS` (1 to 6000), `LOX_CHUNK_OVERLAP_TOKENS` and `LOX_EMBED_TITLE` are read at startup and a bad value names the variable in the error. The defaults are unchanged. Smaller chunks with the title left out of the embedding retrieved better in a benchmark on a mixed vault; `LOX_EMBED_TITLE=false` makes a note whose title lives only in the frontmatter unfindable by that title. The variables belong in `/etc/lox/secrets.env`, and changing them needs a full re-index, since `file_hash` covers the content only.
+
 ## [0.21.2] — 2026-10-25
 
 ### Fixed
